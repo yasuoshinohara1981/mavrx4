@@ -323,6 +323,10 @@ export class Scene04_PunchSphere {
             this.circleEdges.material.dispose();
             this.circleEdges = null;
         }
+        
+        // Canvas参照をクリア（テキストが残らないように）
+        this.scopeCanvas = null;
+        this.scopeCtx = null;
     }
 }
 

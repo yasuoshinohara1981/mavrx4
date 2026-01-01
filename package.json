@@ -1,8 +1,8 @@
 {
-  "name": "threejs-mavrx4",
+  "name": "threejs-mavrx4-experiment",
   "version": "1.0.0",
   "type": "module",
-  "description": "Three.js GPU Particle System with OSC for Live Visual",
+  "description": "Three.js GPU Particle System with OSC for Live Visual (実験用: 共有リソースシステム)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

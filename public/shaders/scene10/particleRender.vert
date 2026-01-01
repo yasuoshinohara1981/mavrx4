@@ -7,6 +7,7 @@ attribute float size;
 attribute vec2 particleUv;
 
 varying vec3 vColor;
+varying vec3 vPosition;  // レーザースキャン用にワールド座標を渡す
 
 void main() {
     // 位置と色をテクスチャから取得
@@ -19,6 +20,7 @@ void main() {
     
     vec3 position = posData.xyz;
     vColor = colorData.rgb;
+    vPosition = position;  // ワールド座標を渡す
     
     vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
     

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { CameraParticle } from '../lib/CameraParticle.js';
 import { HUD } from '../lib/HUD.js';
 import { ColorInversion } from '../lib/ColorInversion.js';
+import { debugLog } from '../lib/DebugLogger.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -33,6 +34,7 @@ export class SceneBase {
         this.showHUD = true;
         this.lastFrameTime = null;  // FPS計算用
         this.oscStatus = 'Unknown';  // OSC接続状態
+        this.phase = 0;  // OSCの/phase/メッセージで受け取る値
         this.particleCount = 0;  // パーティクル数
         this.time = 0.0;  // 時間変数（サブクラスで設定）
         
@@ -110,9 +112,16 @@ export class SceneBase {
         // カメラとHUDを初期化
         this.initializeCameraAndHUD();
         
-        // カメラデバッグ用グループを作成（元のsceneに追加）
+        // カメラデバッグ用グループを作成（debugSceneに追加してライティングを有効化）
         this.cameraDebugGroup = new THREE.Group();
-        this.scene.add(this.cameraDebugGroup);
+        this.debugScene.add(this.cameraDebugGroup);
+        
+        // debugSceneにライトを追加（MeshStandardMaterial用）
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        this.debugScene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(1000, 2000, 1000);
+        this.debugScene.add(directionalLight);
         
         // カメラデバッグ用Canvasを作成
         this.cameraDebugCanvas = document.createElement('canvas');
@@ -208,25 +217,41 @@ export class SceneBase {
      */
     async setup() {
         // 色反転エフェクトを初期化（すべてのシーンで使用可能）
-        console.log('SceneBase.setup: ColorInversion初期化開始');
+        // 非同期で実行してブロッキングを防ぐ
+        debugLog('colorInversion', 'SceneBase.setup: 初期化開始');
         this.colorInversion = new ColorInversion(this.renderer, this.scene, this.camera);
-        console.log('SceneBase.setup: ColorInversionインスタンス作成完了');
+        debugLog('colorInversion', 'SceneBase.setup: インスタンス作成完了');
         
         // init()はコンストラクタで呼ばれるが、非同期処理が完了するまで待つ
         // シェーダーの読み込みが完了するまで待つ（最大2秒）
+        // ただし、待機中もフレームをブロックしないようにする
         let waitCount = 0;
         while (!this.colorInversion.initialized && waitCount < 100) {
             await new Promise(resolve => setTimeout(resolve, 20));
             waitCount++;
         }
         if (this.colorInversion.initialized) {
-            console.log('SceneBase.setup: ColorInversion初期化完了');
+            debugLog('colorInversion', 'SceneBase.setup: 初期化完了');
         } else {
             console.warn('SceneBase.setup: ColorInversion初期化タイムアウト');
         }
         
         // ポストプロセッシングエフェクトを初期化（すべてのシーンで使用可能）
-        await this.initChromaticAberration();
+        // 非同期で実行（awaitしないで、バックグラウンドで実行）
+        // サブクラスでinitChromaticAberration()をオーバーライドしている場合は、そのメソッドが呼ばれる
+        // オーバーライドしていない場合は、親クラスのメソッドが呼ばれる
+        try {
+            if (this.initChromaticAberration && typeof this.initChromaticAberration === 'function') {
+                const initPromise = this.initChromaticAberration();
+                if (initPromise && initPromise instanceof Promise) {
+                    initPromise.catch(err => {
+                        console.error('SceneBase.setup: initChromaticAberrationエラー:', err);
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('SceneBase.setup: initChromaticAberration呼び出しエラー:', err);
+        }
         
         // エフェクトの初期状態を設定（全てオフ）
         this.initializeEffectStates();
@@ -235,14 +260,26 @@ export class SceneBase {
     }
     
     /**
+     * カメラパーティクルの距離パラメータを設定（共通処理）
+     * サブクラスでオーバーライド可能
+     */
+    setupCameraParticleDistances() {
+        if (this.cameraParticles) {
+            for (const cameraParticle of this.cameraParticles) {
+                this.setupCameraParticleDistance(cameraParticle);
+            }
+        }
+    }
+    
+    /**
      * エフェクトの初期状態を設定（デフォルトは全てオフ）
      */
     initializeEffectStates() {
-        console.log('initializeEffectStates: 開始');
+        debugLog('effect', 'initializeEffectStates: 開始');
         
         // トラック2: 色反転エフェクト（デフォルトはオフ）
         if (this.colorInversion) {
-            console.log('initializeEffectStates: 色反転エフェクトをオフに設定');
+            debugLog('effect', '色反転エフェクトをオフ');
             this.colorInversion.setEnabled(false);
             // 確実にオフにするため、もう一度確認
             if (this.colorInversion.inversionPass) {
@@ -254,7 +291,7 @@ export class SceneBase {
         
         // トラック3: 色収差エフェクト（デフォルトはオフ）
         if (this.chromaticAberrationPass) {
-            console.log('initializeEffectStates: 色収差エフェクトをオフに設定');
+            debugLog('effect', '色収差エフェクトをオフ');
             this.chromaticAberrationPass.enabled = false;
             this.chromaticAberrationAmount = 0.0;
             this.chromaticAberrationEndTime = 0;
@@ -265,7 +302,7 @@ export class SceneBase {
         
         // トラック4: グリッチエフェクト（デフォルトはオフ）
         if (this.glitchPass) {
-            console.log('initializeEffectStates: グリッチエフェクトをオフに設定');
+            debugLog('effect', 'グリッチエフェクトをオフ');
             this.glitchPass.enabled = false;
             this.glitchAmount = 0.0;
             this.glitchEndTime = 0;
@@ -274,13 +311,16 @@ export class SceneBase {
             console.warn('initializeEffectStates: glitchPassがnull');
         }
         
-        console.log('initializeEffectStates: 完了 - 全てオフ');
+        debugLog('effect', 'initializeEffectStates完了');
     }
     
     /**
      * 色収差エフェクトを初期化
      */
     async initChromaticAberration() {
+        // 既に存在する場合はスキップ（重複追加を防ぐ）
+        if (this.chromaticAberrationPass) return;
+        
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/common/`;
         try {
@@ -288,6 +328,9 @@ export class SceneBase {
                 fetch(`${shaderBasePath}chromaticAberration.vert`).then(r => r.text()),
                 fetch(`${shaderBasePath}chromaticAberration.frag`).then(r => r.text())
             ]);
+            
+            // 再度チェック（非同期処理中に別の呼び出しで追加された可能性）
+            if (this.chromaticAberrationPass) return;
             
             // EffectComposerを作成
             if (!this.composer) {
@@ -327,6 +370,9 @@ export class SceneBase {
     async initGlitchShader() {
         if (!this.composer) return;
         
+        // 既に存在する場合はスキップ（重複追加を防ぐ）
+        if (this.glitchPass) return;
+        
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/common/`;
         try {
@@ -334,6 +380,9 @@ export class SceneBase {
                 fetch(`${shaderBasePath}glitch.vert`).then(r => r.text()),
                 fetch(`${shaderBasePath}glitch.frag`).then(r => r.text())
             ]);
+            
+            // 再度チェック（非同期処理中に別の呼び出しで追加された可能性）
+            if (this.glitchPass) return;
             
             // グリッチシェーダーを作成
             const glitchShader = {
@@ -530,7 +579,8 @@ export class SceneBase {
             // ポストプロセッシングエフェクトが有効な場合はEffectComposerを使用
             if (this.composer && 
                 ((this.chromaticAberrationPass && this.chromaticAberrationPass.enabled) ||
-                 (this.glitchPass && this.glitchPass.enabled))) {
+                 (this.glitchPass && this.glitchPass.enabled) ||
+                 (this.bloomPass && this.bloomPass.enabled))) {
                 this.composer.render();
             } else {
                 // 通常のレンダリング
@@ -564,7 +614,8 @@ export class SceneBase {
                     isInverted, // backgroundWhite（色反転エフェクトが有効な場合はtrue）
                     this.oscStatus,
                     this.particleCount,
-                    this.trackEffects  // エフェクト状態を渡す
+                    this.trackEffects,  // エフェクト状態を渡す
+                    this.phase  // phase値を渡す
                 );
             } else {
                 // HUDが非表示の時はCanvasをクリア
@@ -591,11 +642,29 @@ export class SceneBase {
      * @param {Object} message - OSCメッセージ
      */
     handleOSC(message) {
+        // デバッグ: 全てのOSCメッセージをログ出力（/phase/確認用）
+        if (message.address && (message.address.includes('phase') || message.address.includes('Phase'))) {
+            console.log('[SceneBase] OSC message received:', JSON.stringify(message));
+        }
+        
+        // /phase/メッセージを処理（/phase/ または /phase の両方に対応）
+        if (message.address === '/phase/' || message.address === '/phase') {
+            const args = message.args || [];
+            if (args.length > 0) {
+                const phaseValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+                if (!isNaN(phaseValue)) {
+                    this.phase = Math.floor(phaseValue);  // integerとして保存
+                    console.log(`[SceneBase] Phase updated: ${this.phase} (from ${message.address}, args: ${JSON.stringify(args)})`);
+                }
+            }
+            return;  // 処理済み
+        }
+        
         const trackNumber = message.trackNumber;
         
         // trackEffectsの状態をチェック（オフの場合は処理をスキップ）
         if (trackNumber >= 1 && trackNumber <= 9 && !this.trackEffects[trackNumber]) {
-            console.log(`Track ${trackNumber}: オフのため処理をスキップ`);
+            debugLog('track', `Track ${trackNumber}: オフのため処理をスキップ`);
             return;
         }
         
@@ -608,16 +677,22 @@ export class SceneBase {
         // トラック2: 色反転エフェクト（OSCで制御、共通化）
         if (trackNumber === 2) {
             const args = message.args || [];
-            const velocity = args[0] || 127.0;
+            // args = [noteNumber, velocity, durationMs, ???]
+            const noteNumber = args[0] || 64;
+            const velocity = args[1] || 127.0;
             const durationMs = args[2] || 0.0;
+            debugLog('colorInversion', `handleOSC track2: args=${JSON.stringify(args)}, note=${noteNumber}, velocity=${velocity}, durationMs=${durationMs}`);
             if (this.colorInversion) {
                 // durationMsが0の場合はトグル動作（キー入力時）
                 if (durationMs === 0 && args.length === 0) {
                     const currentState = this.colorInversion.isEnabled();
                     this.colorInversion.setEnabled(!currentState);
-                    console.log(`Track 2: Color inversion ${!currentState ? 'ON' : 'OFF'}`);
+                    // endTimeをリセット
+                    this.colorInversion.endTime = 0;
+                    debugLog('colorInversion', `Track 2: ${!currentState ? 'ON' : 'OFF'} (トグル)`);
                 } else {
                     // durationMsが指定されている場合はapplyを使用（OSC時）
+                    debugLog('colorInversion', `apply呼び出し前: velocity=${velocity}, durationMs=${durationMs}`);
                     this.colorInversion.apply(velocity, durationMs);
                 }
             }
@@ -667,7 +742,7 @@ export class SceneBase {
         if (trackNumber === 2) {
             if (this.colorInversion) {
                 this.colorInversion.setEnabled(false);
-                console.log('Track 2: Color inversion OFF');
+                debugLog('colorInversion', 'Track 2: OFF (キー解放)');
             }
         }
         // トラック3: 色収差エフェクト（キーが離されたら無効）
@@ -708,7 +783,7 @@ export class SceneBase {
         this.trackEffects[trackNumber] = !this.trackEffects[trackNumber];
         const isOn = this.trackEffects[trackNumber];
         
-        console.log(`Track ${trackNumber}: ${isOn ? 'ON' : 'OFF'}`);
+        debugLog('track', `Track ${trackNumber}: ${isOn ? 'ON' : 'OFF'}`);
         
         // 各トラックのエフェクトを実際に適用/解除
         if (trackNumber === 1) {
@@ -720,6 +795,8 @@ export class SceneBase {
             // 色反転エフェクト
             if (this.colorInversion) {
                 this.colorInversion.setEnabled(isOn);
+                // endTimeをリセットしてupdate()で即座にOFFにされないようにする
+                this.colorInversion.endTime = 0;
             }
         } else if (trackNumber === 3) {
             // 色収差エフェクト
@@ -768,13 +845,13 @@ export class SceneBase {
         this.currentCameraIndex = newIndex;
         
         // 8個全部のカメラにランダムな力を加える
-        console.log(`switchCameraRandom: Applying random force to all ${this.cameraParticles.length} camera particles`);
+        debugLog('camera', `switchCameraRandom: ${this.cameraParticles.length} particles`);
         this.cameraParticles.forEach((cp, index) => {
             cp.applyRandomForce();
-            console.log(`  - Camera particle #${index + 1}: force applied`);
+            debugLog('camera', `  - Camera #${index + 1}: force applied`);
         });
         
-        console.log(`Camera switched to index: ${this.currentCameraIndex}`);
+        debugLog('camera', `Camera switched to index: ${this.currentCameraIndex}`);
     }
     
     /**
@@ -794,7 +871,12 @@ export class SceneBase {
      * Three.jsのオブジェクトを破棄してメモリリークを防ぐ
      */
     dispose() {
-        console.log('SceneBase.dispose: クリーンアップ開始');
+        debugLog('init', 'SceneBase.dispose開始');
+        
+        // HUDのCanvasをクリア（テキストが残らないように）
+        if (this.hud && this.hud.ctx && this.hud.canvas) {
+            this.hud.ctx.clearRect(0, 0, this.hud.canvas.width, this.hud.canvas.height);
+        }
         
         // シーン内のすべてのオブジェクトを破棄
         if (this.scene) {
@@ -871,7 +953,7 @@ export class SceneBase {
         this.cameraDebugCircles = [];
         this.cameraDebugTextPositions = [];
         
-        console.log('SceneBase.dispose: クリーンアップ完了');
+        debugLog('init', 'SceneBase.dispose完了');
         
         // サブクラスで追加のクリーンアップ処理を実装可能
     }
@@ -906,7 +988,7 @@ export class SceneBase {
             this.chromaticAberrationEndTime = 0;
         }
         
-        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
+        debugLog('effect', `Track 3: Chromatic aberration - velocity:${velocity}, amount:${amount.toFixed(2)}, duration:${durationMs}ms`);
     }
     
     /**
@@ -939,7 +1021,7 @@ export class SceneBase {
             this.glitchEndTime = 0;
         }
         
-        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
+        debugLog('effect', `Track 4: Glitch - velocity:${velocity}, amount:${amount.toFixed(2)}, duration:${durationMs}ms`);
     }
     
     /**
@@ -1181,7 +1263,7 @@ export class SceneBase {
             return;
         }
         
-        console.log(`📸 スクリーンショット撮影開始: ${filename}`);
+        debugLog('init', `📸 スクリーンショット撮影開始: ${filename}`);
         
         // Three.jsのCanvasとスクリーンショット用Canvasを合成
         const size = new THREE.Vector2();
@@ -1248,7 +1330,7 @@ export class SceneBase {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        console.log(`✅ スクリーンショット保存成功: ${data.path}`);
+                        debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
                     } else {
                         console.error('❌ スクリーンショット保存エラー:', data.error);
                     }
@@ -1296,7 +1378,7 @@ export class SceneBase {
             // 小文字のc: カメラデバッグ表示を切り替え
             if (key === 'c') {
                 this.SHOW_CAMERA_DEBUG = !this.SHOW_CAMERA_DEBUG;
-                console.log(`Camera debug: ${this.SHOW_CAMERA_DEBUG ? 'ON' : 'OFF'}`);
+                debugLog('camera', `Camera debug: ${this.SHOW_CAMERA_DEBUG ? 'ON' : 'OFF'}`);
                 
                 // カメラデバッググループの表示/非表示を切り替え
                 if (this.cameraDebugGroup) {
@@ -1312,7 +1394,7 @@ export class SceneBase {
             // 大文字のC: カメラを切り替え
             else if (key === 'C') {
                 this.currentCameraIndex = (this.currentCameraIndex + 1) % this.cameraParticles.length;
-                console.log(`Camera switched to #${this.currentCameraIndex + 1}`);
+                debugLog('camera', `Camera switched to #${this.currentCameraIndex + 1}`);
             }
         }
         // aキー: 座標軸（AxesHelper）の表示/非表示を切り替え
@@ -1321,7 +1403,7 @@ export class SceneBase {
             if (this.axesHelper) {
                 this.axesHelper.visible = this.SHOW_AXES;
             }
-            console.log(`Axes helper: ${this.SHOW_AXES ? 'ON' : 'OFF'}`);
+            debugLog('init', `Axes helper: ${this.SHOW_AXES ? 'ON' : 'OFF'}`);
         }
     }
     
@@ -1403,7 +1485,7 @@ export class SceneBase {
             
             // デバッグ: Circleが正しく作成されたか確認
             if (i === 0) {
-                console.log(`initCameraDebugObjects: Created circles for camera particle #${i + 1}`, {
+                debugLog('camera', `initCameraDebugObjects: Camera #${i + 1}`, {
                     circleXY: !!circleXY,
                     circleXZ: !!circleXZ,
                     circleYZ: !!circleYZ,

@@ -928,7 +928,8 @@ export class Scene07 extends SceneBase {
                     isInverted, // backgroundWhite（色反転エフェクトが有効な場合はtrue）
                     this.oscStatus,
                     this.particleCount,
-                    this.trackEffects  // エフェクト状態を渡す
+                    this.trackEffects,  // エフェクト状態を渡す
+                    this.phase  // phase値を渡す
                 );
             } else {
                 this.hud.clear();
@@ -1040,13 +1041,14 @@ export class Scene07 extends SceneBase {
     /**
      * 色収差エフェクトを初期化
      */
-    initChromaticAberration() {
+    async initChromaticAberration() {
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/common/`;
-        Promise.all([
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
             fetch(`${shaderBasePath}chromaticAberration.vert`).then(r => r.text()),
             fetch(`${shaderBasePath}chromaticAberration.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
+            ]);
             // EffectComposerを作成
             this.composer = new EffectComposer(this.renderer);
             
@@ -1081,10 +1083,10 @@ export class Scene07 extends SceneBase {
             this.composer.addPass(this.bloomPass);
             
             // グリッチエフェクトも初期化（composerが作成された後）
-            this.initGlitchShader();
-        }).catch(err => {
+            await this.initGlitchShader();
+        } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
-        });
+        }
     }
     
     /**
@@ -1098,15 +1100,16 @@ export class Scene07 extends SceneBase {
     /**
      * グリッチシェーダーを初期化（composer作成後）
      */
-    initGlitchShader() {
+    async initGlitchShader() {
         if (!this.composer) return;
         
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/common/`;
-        Promise.all([
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
             fetch(`${shaderBasePath}glitch.vert`).then(r => r.text()),
             fetch(`${shaderBasePath}glitch.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
+            ]);
             // グリッチシェーダーを作成
             const glitchShader = {
                 uniforms: {
@@ -1123,9 +1126,9 @@ export class Scene07 extends SceneBase {
             this.glitchPass = new ShaderPass(glitchShader);
             this.glitchPass.enabled = false;  // デフォルトでは無効
             this.composer.addPass(this.glitchPass);
-        }).catch(err => {
+        } catch (err) {
             console.error('グリッチシェーダーの読み込みに失敗:', err);
-        });
+        }
     }
     
     /**

@@ -12,9 +12,13 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 export class Scene03 extends SceneBase {
-    constructor(renderer, camera) {
+    constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | uiojp';
+        
+        // 共有リソースマネージャー
+        this.sharedResourceManager = sharedResourceManager;
+        this.useSharedResources = !!sharedResourceManager;
         
         // 表示設定（デフォルトでパーティクルを表示）
         this.SHOW_PARTICLES = true;
@@ -89,25 +93,36 @@ export class Scene03 extends SceneBase {
         await super.setup();
         
         // カメラパーティクルの距離パラメータを再設定（親クラスで設定された後に上書き）
+        // カメラは共有リソースとして使いまわすため、初期化は不要
         if (this.cameraParticles) {
             for (const cameraParticle of this.cameraParticles) {
                 this.setupCameraParticleDistance(cameraParticle);
             }
         }
         
-        // GPUパーティクルシステムを初期化（シェーダーパスを指定）
+        // GPUパーティクルシステムを初期化（共有リソースを使う場合は取得、そうでない場合は新規作成）
         const particleCount = this.cols * this.rows;
+        
+        if (this.useSharedResources && this.sharedResourceManager) {
+            // 共有リソースから取得（既に初期化済み）
+            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene03');
+            console.log('[Scene03] 共有リソースからGPUパーティクルシステムを取得');
+        } else {
+            // 通常通り新規作成
         this.gpuParticleSystem = new GPUParticleSystem(
             this.renderer,
             particleCount,
             this.cols,
             this.rows,
             this.baseRadius,
-            'scene03'  // シェーダーパス
+            'scene03',  // シェーダーパス
+            3.0,  // particleSize
+            'sphere'  // placementType: 球体マッピング
         );
         
         // シェーダーの読み込み完了を待つ
         await this.gpuParticleSystem.initPromise;
+        }
         
         // Scene03専用：クレーター用のuniformを追加
         const positionUpdateMaterial = this.gpuParticleSystem.getPositionUpdateMaterial();
@@ -185,13 +200,14 @@ export class Scene03 extends SceneBase {
     /**
      * 色収差エフェクトを初期化
      */
-    initChromaticAberration() {
+    async initChromaticAberration() {
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/common/`;
-        Promise.all([
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
             fetch(`${shaderBasePath}chromaticAberration.vert`).then(r => r.text()),
             fetch(`${shaderBasePath}chromaticAberration.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
+            ]);
             // EffectComposerを作成
             if (!this.composer) {
                 this.composer = new EffectComposer(this.renderer);
@@ -218,13 +234,13 @@ export class Scene03 extends SceneBase {
             this.composer.addPass(this.chromaticAberrationPass);
             
             // グリッチエフェクトも初期化（composerが作成された後）
-            this.initGlitchShader();
+            await this.initGlitchShader();
             
             // レーザースキャンエフェクトも初期化（composerが作成された後）
-            this.initLaserScanShader();
-        }).catch(err => {
+            await this.initLaserScanShader();
+        } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
-        });
+        }
     }
     
     /**
@@ -238,15 +254,16 @@ export class Scene03 extends SceneBase {
     /**
      * グリッチシェーダーを初期化（composer作成後）
      */
-    initGlitchShader() {
+    async initGlitchShader() {
         if (!this.composer) return;
         
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/common/`;
-        Promise.all([
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
             fetch(`${shaderBasePath}glitch.vert`).then(r => r.text()),
             fetch(`${shaderBasePath}glitch.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
+            ]);
             // グリッチシェーダーを作成
             const glitchShader = {
                 uniforms: {
@@ -263,23 +280,25 @@ export class Scene03 extends SceneBase {
             this.glitchPass = new ShaderPass(glitchShader);
             this.glitchPass.enabled = false;  // デフォルトでは無効
             this.composer.addPass(this.glitchPass);
-        }).catch(err => {
+        } catch (err) {
             console.error('グリッチシェーダーの読み込みに失敗:', err);
-        });
+        }
     }
     
     /**
      * レーザースキャンシェーダーを初期化（composer作成後）
      */
-    initLaserScanShader() {
+    async initLaserScanShader() {
         if (!this.composer) return;
         
         // シェーダーを読み込む
         const shaderBasePath = `/shaders/scene03/`;
-        Promise.all([
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
             fetch(`${shaderBasePath}laserScan.vert`).then(r => r.text()),
             fetch(`${shaderBasePath}laserScan.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
+            ]);
+            
             // レーザースキャンシェーダーを作成
             const laserScanShader = {
                 uniforms: {
@@ -297,9 +316,9 @@ export class Scene03 extends SceneBase {
             this.laserScanPass = new ShaderPass(laserScanShader);
             this.laserScanPass.enabled = false;  // デフォルトでは無効
             this.composer.addPass(this.laserScanPass);
-        }).catch(err => {
+        } catch (err) {
             console.error('レーザースキャンシェーダーの読み込みに失敗:', err);
-        });
+        }
     }
     
     /**
@@ -754,7 +773,8 @@ export class Scene03 extends SceneBase {
                         this.backgroundWhite,
                         this.oscStatus,
                         this.particleCount,
-                        this.trackEffects  // エフェクト状態を渡す
+                        this.trackEffects,  // エフェクト状態を渡す
+                        this.phase  // phase値を渡す
                     );
                 } else {
                     this.hud.clear();
@@ -1071,14 +1091,30 @@ export class Scene03 extends SceneBase {
             this.lineSystem = null;
         }
         
-        // GPUパーティクルシステムを再初期化
+        // GPUパーティクルシステムを再初期化（共有リソースを使っている場合はスキップ）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
                 this.scene.remove(particleSystem);
             }
+            if (!this.useSharedResources || !this.sharedResourceManager) {
             this.gpuParticleSystem.dispose();
+            }
             this.gpuParticleSystem = null;
+        }
+        
+        // 共有リソースを使っている場合は、パーティクルシステムを再取得
+        if (this.useSharedResources && this.sharedResourceManager) {
+            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene03');
+            if (this.gpuParticleSystem) {
+                // パーティクルデータを再初期化
+                this.gpuParticleSystem.initializeParticleData();
+                // パーティクルシステムをシーンに追加
+                const particleSystem = this.gpuParticleSystem.getParticleSystem();
+                if (particleSystem) {
+                    this.scene.add(particleSystem);
+                }
+            }
         }
         
         // クレーターをクリア
@@ -1097,7 +1133,8 @@ export class Scene03 extends SceneBase {
             this.laserScanPass.enabled = false;
         }
         
-        // GPUパーティクルシステムを再作成
+        // GPUパーティクルシステムを再作成（共有リソースを使っている場合はスキップ）
+        if (!this.useSharedResources || !this.sharedResourceManager) {
         const particleCount = this.cols * this.rows;
         this.gpuParticleSystem = new GPUParticleSystem(
             this.renderer,
@@ -1157,6 +1194,11 @@ export class Scene03 extends SceneBase {
             console.error('Scene03 reset: GPUパーティクルシステムの初期化に失敗:', err);
             this.isInitializing = false;
         });
+        } else {
+            // 共有リソースを使っている場合は、線描画システムのみ再作成（パーティクルシステムは上で処理済み）
+            this.createLineSystem();
+            this.isInitializing = false;
+        }
     }
     
     /**
@@ -1188,18 +1230,67 @@ export class Scene03 extends SceneBase {
     }
     
     /**
+     * リソースの有効/無効を切り替え（update/レンダリングのスキップ制御）
+     */
+    setResourceActive(active) {
+        if (this.gpuParticleSystem && this.gpuParticleSystem.setActive) {
+            this.gpuParticleSystem.setActive(active);
+        }
+    }
+    
+    /**
+     * シーン固有の要素をクリーンアップ（共有リソースを使っている場合でも呼ばれる）
+     * GPUパーティクルシステム以外の要素をクリーンアップ
+     */
+    cleanupSceneSpecificElements() {
+        console.log('Scene03.cleanupSceneSpecificElements: シーン固有要素をクリーンアップ');
+        
+        // 線描画システムを破棄
+        if (this.lineSystem) {
+            this.lineSystem.children.forEach(line => {
+                if (line.geometry) line.geometry.dispose();
+                if (line.material) line.material.dispose();
+            });
+            this.scene.remove(this.lineSystem);
+            this.lineSystem = null;
+        }
+        
+        // クレーターをクリア
+        this.craters = [];
+        this.currentCrater = null;
+        
+        // レーザースキャンをリセット
+        this.laserScans = [];
+        if (this.laserScanPass) {
+            this.laserScanPass.enabled = false;
+        }
+        
+        // 時間変数をリセット
+        this.time = 0.0;
+        this.sketchStartTime = Date.now();
+    }
+    
+    /**
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
         console.log('Scene03.dispose: クリーンアップ開始');
         
-        // GPUパーティクルシステムを破棄
+        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
                 this.scene.remove(particleSystem);
             }
+            
+            if (this.useSharedResources && this.sharedResourceManager) {
+                // 共有リソースの場合は返却のみ（disposeしない）
+                this.sharedResourceManager.releaseGPUParticleSystem('scene03');
+                console.log('[Scene03] 共有リソースを返却（メモリ上には保持）');
+            } else {
+                // 通常の場合はdispose
             this.gpuParticleSystem.dispose();
+            }
             this.gpuParticleSystem = null;
         }
         

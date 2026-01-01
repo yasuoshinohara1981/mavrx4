@@ -15,9 +15,13 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 export class Scene01 extends SceneBase {
-    constructor(renderer, camera) {
+    constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | wzswrs';
+        
+        // 共有リソースマネージャー
+        this.sharedResourceManager = sharedResourceManager;
+        this.useSharedResources = !!sharedResourceManager;
         
         // 表示設定（デフォルトでパーティクルを表示）
         this.SHOW_PARTICLES = true;
@@ -83,25 +87,36 @@ export class Scene01 extends SceneBase {
         await super.setup();
         
         // カメラパーティクルの距離パラメータを再設定（親クラスで設定された後に上書き）
+        // カメラは共有リソースとして使いまわすため、初期化は不要
         if (this.cameraParticles) {
             for (const cameraParticle of this.cameraParticles) {
                 this.setupCameraParticleDistance(cameraParticle);
             }
         }
         
-        // GPUパーティクルシステムを初期化（シェーダーパスを指定）
+        // GPUパーティクルシステムを初期化（共有リソースを使う場合は取得、そうでない場合は新規作成）
         const particleCount = this.cols * this.rows;
+        
+        if (this.useSharedResources && this.sharedResourceManager) {
+            // 共有リソースから取得（既に初期化済み）
+            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene01');
+            console.log('[Scene01] 共有リソースからGPUパーティクルシステムを取得');
+        } else {
+            // 通常通り新規作成
         this.gpuParticleSystem = new GPUParticleSystem(
             this.renderer,
             particleCount,
             this.cols,
             this.rows,
             this.baseRadius,
-            'scene01'  // シェーダーパス
+            'scene01',  // シェーダーパス
+            3.0,  // particleSize
+            'sphere'  // placementType: 球体マッピング
         );
         
         // シェーダーの読み込み完了を待つ
         await this.gpuParticleSystem.initPromise;
+        }
         
         // パーティクルシステムをシーンに追加
         const particleSystem = this.gpuParticleSystem.getParticleSystem();
@@ -634,16 +649,33 @@ export class Scene01 extends SceneBase {
             this.lineSystem = null;
         }
         
-        // GPUパーティクルシステムを再初期化
+        // GPUパーティクルシステムを再初期化（共有リソースを使っている場合はパーティクルデータのみ再初期化）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
                 this.scene.remove(particleSystem);
             }
-            this.gpuParticleSystem.dispose();
+            if (!this.useSharedResources || !this.sharedResourceManager) {
+                this.gpuParticleSystem.dispose();
+            }
         }
         
-        // GPUパーティクルシステムを再作成
+        // 共有リソースを使っている場合は、パーティクルシステムを再取得
+        if (this.useSharedResources && this.sharedResourceManager) {
+            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene01');
+            if (this.gpuParticleSystem) {
+                // パーティクルデータを再初期化
+                this.gpuParticleSystem.initializeParticleData();
+                // パーティクルシステムをシーンに追加
+                const particleSystem = this.gpuParticleSystem.getParticleSystem();
+                if (particleSystem) {
+                    this.scene.add(particleSystem);
+                }
+            }
+        }
+        
+        // GPUパーティクルシステムを再作成（共有リソースを使っている場合はスキップ）
+        if (!this.useSharedResources || !this.sharedResourceManager) {
         const particleCount = this.cols * this.rows;
         this.gpuParticleSystem = new GPUParticleSystem(
             this.renderer,
@@ -662,6 +694,10 @@ export class Scene01 extends SceneBase {
             // 線描画システムを再作成
             this.createLineSystem();
         });
+        } else {
+            // 共有リソースを使っている場合は、線描画システムのみ再作成（パーティクルシステムは上で処理済み）
+            this.createLineSystem();
+        }
         
         // ミサイルとスコープを削除
         this.missiles.forEach(missile => {
@@ -705,18 +741,106 @@ export class Scene01 extends SceneBase {
     }
     
     /**
+     * リソースの有効/無効を切り替え（update/レンダリングのスキップ制御）
+     */
+    setResourceActive(active) {
+        if (this.gpuParticleSystem && this.gpuParticleSystem.setActive) {
+            this.gpuParticleSystem.setActive(active);
+        }
+    }
+    
+    /**
+     * シーン固有の要素をクリーンアップ（共有リソースを使っている場合でも呼ばれる）
+     * GPUパーティクルシステム以外の要素をクリーンアップ
+     */
+    cleanupSceneSpecificElements() {
+        console.log('Scene01.cleanupSceneSpecificElements: シーン固有要素をクリーンアップ');
+        
+        // ミサイルを破棄
+        this.missiles.forEach(missile => {
+            if (missile.dispose) {
+                missile.dispose(this.scene);
+            }
+        });
+        this.missiles = [];
+        
+        // スコープを破棄
+        this.activeScopes.forEach(scope => {
+            if (scope.dispose) {
+                scope.dispose(this.scene);
+            }
+        });
+        this.activeScopes = [];
+        
+        // スコープ用Canvasを削除（確実にクリアしてから削除）
+        const existingScopeCanvas = document.getElementById('scene01-scope-canvas');
+        if (existingScopeCanvas) {
+            const ctx = existingScopeCanvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, existingScopeCanvas.width, existingScopeCanvas.height);
+            }
+            if (existingScopeCanvas.parentElement) {
+                existingScopeCanvas.parentElement.removeChild(existingScopeCanvas);
+            }
+            if (document.body.contains(existingScopeCanvas)) {
+                document.body.removeChild(existingScopeCanvas);
+            }
+        }
+        
+        // インスタンス変数もクリア
+        if (this.scopeCanvas) {
+            if (this.scopeCtx) {
+                this.scopeCtx.clearRect(0, 0, this.scopeCanvas.width, this.scopeCanvas.height);
+            }
+            this.scopeCanvas = null;
+            this.scopeCtx = null;
+        }
+        
+        // 線描画システムを破棄
+        if (this.lineSystem) {
+            this.lineSystem.children.forEach(line => {
+                if (line.geometry) line.geometry.dispose();
+                if (line.material) line.material.dispose();
+            });
+            this.scene.remove(this.lineSystem);
+            this.lineSystem = null;
+        }
+        
+        // 時間変数をリセット
+        this.time = 0;
+        this.sketchStartTime = Date.now();
+        if (this.noiseScaleLFO) {
+            this.noiseScaleLFO.reset();
+        }
+        if (this.noiseStrengthLFO) {
+            this.noiseStrengthLFO.reset();
+        }
+        
+        this.lastMissileStartPos = null;
+        this.lastMissileTime = 0;
+    }
+    
+    /**
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
         console.log('Scene01.dispose: クリーンアップ開始');
         
-        // GPUパーティクルシステムを破棄
+        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
                 this.scene.remove(particleSystem);
             }
+            
+            if (this.useSharedResources && this.sharedResourceManager) {
+                // 共有リソースの場合は返却のみ（disposeしない）
+                this.sharedResourceManager.releaseGPUParticleSystem('scene01');
+                console.log('[Scene01] 共有リソースを返却（メモリ上には保持）');
+            } else {
+                // 通常の場合はdispose
             this.gpuParticleSystem.dispose();
+            }
             this.gpuParticleSystem = null;
         }
         

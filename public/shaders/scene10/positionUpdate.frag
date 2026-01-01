@@ -76,19 +76,17 @@ float randomLFO(float t, float seed) {
 }
 
 /**
- * 複数のRandomLFOを組み合わせた複雑さ制御
+ * 複雑さ制御（30秒周期でリニアに簡単→複雑に変化）
  */
 float getComplexityModulation(float t) {
-    // 複数のRandomLFOを組み合わせ
-    float lfo1 = randomLFO(t, 1.0);
-    float lfo2 = randomLFO(t * 0.7, 2.0);
-    float lfo3 = randomLFO(t * 0.5, 3.0);
+    // 30秒周期（30.0秒）
+    float period = 30.0;
     
-    // 重み付けして組み合わせ
-    float combined = lfo1 * 0.5 + lfo2 * 0.3 + lfo3 * 0.2;
+    // 周期内での位置（0.0 ～ 1.0）
+    float cyclePosition = mod(t, period) / period;
     
-    // 0.0 ～ 1.0 の範囲に正規化
-    return (combined + 1.0) * 0.5;
+    // リニアに0.0（簡単）から1.0（複雑）に変化
+    return cyclePosition;
 }
 
 /**
@@ -100,12 +98,12 @@ vec3 calabiYauPosition(float u, float v, float t) {
     float r = sqrt(u * u + v * v);
     float theta = atan(v, u);
     
-    // RandomLFOで複雑さを周期的に制御
+    // 30秒周期でリニアに複雑さを制御（簡単→複雑）
     float complexityMod = getComplexityModulation(t);
     
-    // 複雑さの範囲（0.7 ～ 1.8倍、より控えめに）
-    float minComplexity = 0.7;
-    float maxComplexity = 1.8;
+    // 複雑さの範囲（0.3倍（簡単）～ 1.0倍（複雑））
+    float minComplexity = 0.3;
+    float maxComplexity = 1.0;
     float timeComplexity = minComplexity + (maxComplexity - minComplexity) * complexityMod;
     float dynamicComplexity = manifoldComplexity * timeComplexity;
     
@@ -291,16 +289,17 @@ vec3 calabiYauPosition(float u, float v, float t) {
 }
 
 void main() {
-    // グリッド座標を計算
-    float gridX = floor(vUv.x * width);
-    float gridY = floor(vUv.y * height);
+    // グリッド座標を計算（連続的な値を使用、floor()を使わない）
+    // UV座標をピクセル座標に変換（0.5オフセットでピクセル中心を取得）
+    float x = (vUv.x * width) - 0.5;
+    float y = (vUv.y * height) - 0.5;
     
     // 現在の位置を取得（使用しないが、テクスチャ読み込みのために必要）
     vec4 posData = texture2D(positionTexture, vUv);
     
-    // パラメータ空間での座標（-1 ～ 1）
-    float u = (gridX / width) * 2.0 - 1.0;
-    float v = (gridY / height) * 2.0 - 1.0;
+    // パラメータ空間での座標（-1 ～ 1、連続的な値を使用）
+    float u = (x / (width - 1.0)) * 2.0 - 1.0;
+    float v = (y / (height - 1.0)) * 2.0 - 1.0;
     
     // カラビ・ヤウ多様体のパラメトリック方程式で位置を計算
     vec3 manifoldPos = calabiYauPosition(u, v, time);

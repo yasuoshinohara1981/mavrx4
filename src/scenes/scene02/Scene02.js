@@ -451,8 +451,8 @@ export class Scene02 extends SceneBase {
                 const direction = new THREE.Vector3().subVectors(toPos, fromPos).normalize();
                 const midPoint = new THREE.Vector3().addVectors(fromPos, toPos).multiplyScalar(0.5);
                 
-                // 円柱のジオメトリを作成（線の太さは1.0）
-                const cylinderGeometry = new THREE.CylinderGeometry(1.0, 1.0, distance, 8, 1);
+                // 円柱のジオメトリを作成（線の太さは1.0、セグメント数を減らして軽量化）
+                const cylinderGeometry = new THREE.CylinderGeometry(1.0, 1.0, distance, 4, 1);
                 
                 // 円柱を線の方向に回転
                 const up = new THREE.Vector3(0, 1, 0);

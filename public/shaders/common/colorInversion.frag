@@ -9,7 +9,7 @@ void main() {
     // 色を完全反転（RGBを反転）
     vec3 invertedColor = vec3(1.0) - color.rgb;
     
-    // 完全反転（intensityは常に1.0）
+    // 完全反転
     gl_FragColor = vec4(invertedColor, color.a);
 }
 

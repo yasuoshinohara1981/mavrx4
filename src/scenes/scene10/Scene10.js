@@ -5,13 +5,21 @@
 import { SceneBase } from '../SceneBase.js';
 import { GPUParticleSystem } from '../../lib/GPUParticleSystem.js';
 import { Scene10_ManifoldSphere } from './Scene10_ManifoldSphere.js';
+import { debugLog } from '../../lib/DebugLogger.js';
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 export class Scene10 extends SceneBase {
-    constructor(renderer, camera) {
+    constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'mathym | Calabi-Yau Manifold';
-        console.log('Scene10: コンストラクタ実行', this.title);
+        this.title = 'mathym | SP-n(Hrrr)';
+        debugLog('scene10', 'コンストラクタ実行', this.title);
+        
+        // 共有リソースマネージャー
+        this.sharedResourceManager = sharedResourceManager;
+        this.useSharedResources = !!sharedResourceManager;
         
         // 表示設定
         this.SHOW_PARTICLES = true;
@@ -50,6 +58,36 @@ export class Scene10 extends SceneBase {
         
         // トラック4（グリッチエフェクト）をオフにする
         this.trackEffects[4] = false;
+        
+        // 2Dテキストエフェクト用（トラック6）- Canvas 2Dで実装（軍事風情報表示）
+        this.textEffectActive = false;
+        this.textEffectEndTime = 0;  // エフェクト終了時刻（デュレーション用）
+        this.textEffectCanvas = null;
+        this.textEffectCtx = null;
+        this.currentText = '';  // 1行の長い軍事風情報（画面横幅いっぱい）
+        this.textEffectFrameCounter = 0;  // フレームカウンター（超高速切り替え用）
+        this.textEffectChangeInterval = 1;  // テキスト切り替え間隔（1フレームごと = 超高速）
+        this.currentTrackNumber = 6;  // 現在のトラック番号
+        
+        // レーザースキャンエフェクト（トラック8用、Z方向、手前から奥へ）
+        this.laserScans = [];  // 複数のレーザースキャンを管理（ポリフォニック）
+        // { position: float, speed: float, intensity: float, width: float, endTime: number }
+        this.laserScanWidth = 0.1;  // スキャンラインの幅（正規化Z座標の範囲）
+        this.laserScanKeyPressed = false;  // キーが押されているか
+        this.maxScans = 10;  // 最大スキャン数
+        this.laserScanPositions = new Float32Array(this.maxScans);
+        this.laserScanWidths = new Float32Array(this.maxScans);
+        this.laserScanIntensities = new Float32Array(this.maxScans);
+        this.zRange = 600.0;  // Z座標の範囲（正規化用、manifoldScaleに合わせる）
+        
+        // Scene10専用の色反転フラグ（ColorInversionの影響を受けずに独自管理）
+        this.scene10ColorInverted = false;
+        this.scene10ColorInversionEndTime = 0;
+        this.scene10ColorInversionKeyPressed = false;
+        
+        // カメラの視点オフセット（映画的な動き用）
+        this.cameraLookAtOffset = new THREE.Vector3(0, 0, 0);
+        this.cameraLookAtOffsetTime = 0.0;  // 視点オフセットの時間変数
     }
     
     async setup() {
@@ -57,45 +95,51 @@ export class Scene10 extends SceneBase {
         await super.setup();
         
         // カメラパーティクルの距離パラメータを再設定
+        // カメラは共有リソースとして使いまわすため、初期化は不要
         if (this.cameraParticles) {
             for (const cameraParticle of this.cameraParticles) {
                 this.setupCameraParticleDistance(cameraParticle);
             }
         }
         
-        // 初期カメラを設定
-        this.setupCamera();
-        
         // ライトを追加
         this.setupLights();
         
-        // GPUパーティクルシステムを初期化
+        // GPUパーティクルシステムを初期化（共有リソースを使う場合は取得、そうでない場合は新規作成）
         const particleCount = this.cols * this.rows;
-        this.gpuParticleSystem = new GPUParticleSystem(
-            this.renderer,
-            particleCount,
-            this.cols,
-            this.rows,
-            0,  // baseRadiusは使用しない
-            'scene10'  // シェーダーパス
-        );
         
-        // シェーダーの読み込み完了を待つ
-        await this.gpuParticleSystem.initPromise;
-        console.log('Scene10: GPUParticleSystem初期化完了');
+        if (this.useSharedResources && this.sharedResourceManager) {
+            // 共有リソースから取得（既に初期化済み）
+            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene10');
+            debugLog('scene10', '共有リソースからGPUパーティクルシステムを取得');
+        } else {
+            // 通常通り新規作成
+            this.gpuParticleSystem = new GPUParticleSystem(
+                this.renderer,
+                particleCount,
+                this.cols,
+                this.rows,
+                0,  // baseRadiusは使用しない
+                'scene10'  // シェーダーパス
+            );
+            
+            // シェーダーの読み込み完了を待つ
+            await this.gpuParticleSystem.initPromise;
+        }
+        debugLog('scene10', 'GPUParticleSystem初期化完了');
         
         // パーティクルシステムをシーンに追加
         const particleSystem = this.gpuParticleSystem.getParticleSystem();
         if (particleSystem) {
             particleSystem.visible = this.SHOW_PARTICLES;
             this.scene.add(particleSystem);
-            console.log('Scene10: パーティクルシステムをシーンに追加', particleSystem);
+            debugLog('scene10', 'パーティクルシステムをシーンに追加', particleSystem);
         
             // パーティクルマテリアルを透明にする
             if (this.gpuParticleSystem.particleMaterial) {
                 this.gpuParticleSystem.particleMaterial.transparent = true;
                 this.gpuParticleSystem.particleMaterial.depthWrite = false;
-                console.log('Scene10: パーティクルマテリアル設定完了', this.gpuParticleSystem.particleMaterial);
+                debugLog('scene10', 'パーティクルマテリアル設定完了');
             }
             
             // パーティクルサイズを設定
@@ -106,7 +150,7 @@ export class Scene10 extends SceneBase {
                     sizes[i] = 4.0;  // カラビ・ヤウ多様体用のサイズ（120万パーティクル用に細く）
                 }
                 sizeAttribute.needsUpdate = true;
-                console.log('Scene10: パーティクルサイズ設定完了', sizes.length, 'パーティクル');
+                debugLog('scene10', 'パーティクルサイズ設定完了', sizes.length);
             }
         } else {
             console.error('Scene10: パーティクルシステムが取得できません');
@@ -115,11 +159,15 @@ export class Scene10 extends SceneBase {
         // パーティクル数を設定
         this.setParticleCount(particleCount);
         
-        // 初期位置データを設定
-        this.initializeParticleData();
-        
-        // 初期色を計算
-        this.updateInitialColors();
+        // 初期位置データを設定（共有リソースを使っている場合はスキップ、既にテクスチャに保存済み）
+        if (!this.useSharedResources) {
+            // 通常の場合は初期化
+            this.initializeParticleData();
+            
+            // 初期色を計算
+            this.updateInitialColors();
+        }
+        // 共有リソースを使っている場合は、テクスチャリセット後にSceneManagerから呼ばれる
         
         // パーティクルマテリアルのテクスチャを明示的に設定（初期化時）
         if (this.gpuParticleSystem && this.gpuParticleSystem.particleMaterial && this.gpuParticleSystem.particleMaterial.uniforms) {
@@ -127,24 +175,179 @@ export class Scene10 extends SceneBase {
                 if (this.gpuParticleSystem.particleMaterial.uniforms.positionTexture) {
                     this.gpuParticleSystem.particleMaterial.uniforms.positionTexture.value = 
                         this.gpuParticleSystem.positionRenderTargets[0].texture;
-                    console.log('Scene10: positionTexture設定完了');
+                    debugLog('scene10', 'positionTexture設定完了');
                 }
             }
             if (this.gpuParticleSystem.colorRenderTargets && this.gpuParticleSystem.colorRenderTargets[0]) {
                 if (this.gpuParticleSystem.particleMaterial.uniforms.colorTexture) {
                     this.gpuParticleSystem.particleMaterial.uniforms.colorTexture.value = 
                         this.gpuParticleSystem.colorRenderTargets[0].texture;
-                    console.log('Scene10: colorTexture設定完了');
+                    debugLog('scene10', 'colorTexture設定完了');
                 }
             }
+            
+            // レーザースキャン用のuniformsを追加
+            const uniforms = this.gpuParticleSystem.particleMaterial.uniforms;
+            uniforms.laserScanCount = { value: 0 };
+            uniforms.laserScanPositions = { value: new Float32Array(this.maxScans) };
+            uniforms.laserScanWidths = { value: new Float32Array(this.maxScans) };
+            uniforms.laserScanIntensities = { value: new Float32Array(this.maxScans) };
+            uniforms.zRange = { value: this.zRange };
+            debugLog('laserScan', 'レーザースキャン用uniformsを追加');
         }
         
         // グループを作成
         this.manifoldGroup = new THREE.Group();
         this.scene.add(this.manifoldGroup);
         
+        // 地面にシンプルな格子メッシュを追加
+        this.createGroundGrid();
+        
         // 線描画システムを作成
         this.createLineSystem();
+        
+        // 2Dテキストエフェクト用Canvasを初期化
+        this.initTextEffectCanvas();
+        
+        // initChromaticAberration()の完了を待つ（色反転passが確実に追加されるように）
+        // SceneBaseのsetup()で非同期で呼ばれているが、完了を待つ必要がある
+        try {
+            if (this.initChromaticAberration && typeof this.initChromaticAberration === 'function') {
+                await this.initChromaticAberration();
+            }
+        } catch (err) {
+            console.error('[Scene10] initChromaticAberrationエラー:', err);
+        }
+        
+        // initChromaticAberration()の後でcolorInversionPassを確実に無効にする
+        // (super.setup()のinitializeEffectStates()はcolorInversionPass作成前に呼ばれるため)
+        if (this.colorInversionPass) {
+            this.colorInversionPass.enabled = false;
+        }
+    }
+    
+    /**
+     * エフェクトの初期状態を設定（デフォルトは全てオフ）
+     * Scene10独自のcolorInversionPassも無効にする
+     */
+    initializeEffectStates() {
+        // 親クラスのinitializeEffectStatesを呼ぶ
+        super.initializeEffectStates();
+        
+        // Scene10独自のcolorInversionPassを無効にする
+        if (this.colorInversionPass) {
+            this.colorInversionPass.enabled = false;
+        }
+    }
+    
+    /**
+     * 2Dテキストエフェクト用Canvasを初期化
+     */
+    initTextEffectCanvas() {
+        // 既存のCanvasがあれば削除
+        const existingCanvas = document.getElementById('scene10-text-effect-canvas');
+        if (existingCanvas) {
+            existingCanvas.parentElement?.removeChild(existingCanvas);
+        }
+        
+        this.textEffectCanvas = document.createElement('canvas');
+        this.textEffectCanvas.id = 'scene10-text-effect-canvas';
+        this.textEffectCanvas.width = window.innerWidth;
+        this.textEffectCanvas.height = window.innerHeight;
+        this.textEffectCanvas.style.position = 'absolute';
+        this.textEffectCanvas.style.top = '0';
+        this.textEffectCanvas.style.left = '0';
+        this.textEffectCanvas.style.pointerEvents = 'none';
+        this.textEffectCanvas.style.zIndex = '1002'; // HUDより上に表示
+        this.textEffectCtx = this.textEffectCanvas.getContext('2d');
+        document.body.appendChild(this.textEffectCanvas);
+    }
+    
+    /**
+     * 色収差エフェクトを初期化（Bloomエフェクトも追加）
+     */
+    async initChromaticAberration() {
+        // 既に初期化中または完了している場合はスキップ
+        if (this._initChromaticAberrationRunning || this.colorInversionPass) return;
+        this._initChromaticAberrationRunning = true;
+        
+        // シェーダーを読み込む
+        const shaderBasePath = `/shaders/common/`;
+        try {
+            const [vertexShader, fragmentShader, colorInversionVert, colorInversionFrag] = await Promise.all([
+                fetch(`${shaderBasePath}chromaticAberration.vert`).then(r => r.text()),
+                fetch(`${shaderBasePath}chromaticAberration.frag`).then(r => r.text()),
+                fetch(`${shaderBasePath}colorInversion.vert`).then(r => r.text()),
+                fetch(`${shaderBasePath}colorInversion.frag`).then(r => r.text())
+            ]);
+            
+            // EffectComposerを作成
+            const isNewComposer = !this.composer;
+            if (isNewComposer) {
+                this.composer = new EffectComposer(this.renderer);
+                
+                // RenderPassを追加（通常のシーン描画 - GPUパーティクル、トラック5のエフェクトなどすべてを含む）
+                const renderPass = new RenderPass(this.scene, this.camera);
+                this.composer.addPass(renderPass);
+            }
+            
+            // 色収差シェーダーを作成（既に存在する場合はスキップ）
+            if (!this.chromaticAberrationPass) {
+                const chromaticAberrationShader = {
+                    uniforms: {
+                        tDiffuse: { value: null },
+                        resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                        amount: { value: 0.0 }
+                    },
+                    vertexShader: vertexShader,
+                    fragmentShader: fragmentShader
+                };
+                
+                // ShaderPassを追加
+                this.chromaticAberrationPass = new ShaderPass(chromaticAberrationShader);
+                this.chromaticAberrationPass.enabled = false;  // デフォルトでは無効
+                this.composer.addPass(this.chromaticAberrationPass);
+            }
+            
+            // ブルームエフェクトは削除（効果がなかったため）
+            // トラック8用のbloomPassは使用しない
+            
+            // グリッチエフェクトも初期化（composerが作成された後、既に存在する場合はスキップ）
+            if (!this.glitchPass) {
+                await this.initGlitchShader();
+            }
+            
+            // 色反転シェーダーを作成（トラック2用、画面全体を反転）
+            // GPUパーティクル、Bloom、色収差など、すべてのエフェクトが適用された後に色反転を適用
+            // そのため、色反転passは最後に追加する
+            // 既にcolorInversionPassが存在する場合は追加しない（重複を防ぐ）
+            if (!this.colorInversionPass) {
+                const colorInversionShader = {
+                    uniforms: {
+                        tDiffuse: { value: null },
+                        intensity: { value: 1.0 }  // 反転の強度（0.0〜1.0、完全反転のため常に1.0）
+                    },
+                    vertexShader: colorInversionVert,
+                    fragmentShader: colorInversionFrag
+                };
+                
+                // 色反転ShaderPassを作成
+                this.colorInversionPass = new ShaderPass(colorInversionShader);
+                this.colorInversionPass.enabled = false;  // デフォルトでは無効
+                this.colorInversionPass.renderToScreen = true;  // 画面に直接レンダリング
+                
+                // 最後に追加（すべてのエフェクトが適用された後に色反転）
+                this.composer.addPass(this.colorInversionPass);
+                debugLog('colorInversion', '色反転passを追加しました（最後）:', {
+                    totalPasses: this.composer.passes.length,
+                    passOrder: this.composer.passes.map((p, i) => `${i}: ${p.constructor.name}`).join(', ')
+                });
+            } else {
+                debugLog('colorInversion', 'colorInversionPassは既に存在します');
+            }
+        } catch (err) {
+            console.error('色収差シェーダーの読み込みに失敗:', err);
+        }
     }
     
     /**
@@ -260,16 +463,20 @@ export class Scene10 extends SceneBase {
         };
         
         const getComplexityModulation = (t) => {
-            const lfo1 = randomLFO(t, 1.0);
-            const lfo2 = randomLFO(t * 0.7, 2.0);
-            const lfo3 = randomLFO(t * 0.5, 3.0);
-            const combined = lfo1 * 0.5 + lfo2 * 0.3 + lfo3 * 0.2;
-            return (combined + 1.0) * 0.5;  // 0.0 ～ 1.0
+            // 30秒周期（30.0秒）
+            const period = 30.0;
+            
+            // 周期内での位置（0.0 ～ 1.0）
+            const cyclePosition = (t % period) / period;
+            
+            // リニアに0.0（簡単）から1.0（複雑）に変化
+            return cyclePosition;
         };
         
         const complexityMod = getComplexityModulation(t);
-        const minComplexity = 0.7;
-        const maxComplexity = 1.8;
+        // 複雑さの範囲（0.3倍（簡単）～ 1.0倍（複雑））
+        const minComplexity = 0.3;
+        const maxComplexity = 1.0;
         const timeComplexity = minComplexity + (maxComplexity - minComplexity) * complexityMod;
         const dynamicComplexity = this.manifoldComplexity * timeComplexity;
         
@@ -419,6 +626,7 @@ export class Scene10 extends SceneBase {
                 colorUpdateMaterial.uniforms.time.value = this.time;
             }
             
+            
             // 位置テクスチャを設定
             if (this.gpuParticleSystem.positionRenderTargets && this.gpuParticleSystem.positionRenderTargets[0]) {
                 colorUpdateMaterial.uniforms.positionTexture.value = this.gpuParticleSystem.positionRenderTargets[0].texture;
@@ -442,7 +650,7 @@ export class Scene10 extends SceneBase {
                 if (this.gpuParticleSystem.particleMaterial.uniforms.colorTexture) {
                     this.gpuParticleSystem.particleMaterial.uniforms.colorTexture.value = this.gpuParticleSystem.colorRenderTargets[0].texture;
                 }
-                console.log('Scene10: updateInitialColors - テクスチャ設定完了');
+                debugLog('scene10', 'updateInitialColors - テクスチャ設定完了');
             } else {
                 console.error('Scene10: updateInitialColors - particleMaterialまたはuniformsが存在しません');
             }
@@ -475,8 +683,23 @@ export class Scene10 extends SceneBase {
         // 時間を更新
         this.time += this.timeIncrement;
         
+        // カメラの視点オフセット時間を更新
+        this.cameraLookAtOffsetTime += 0.001;
+        
         // マーカースフィアを更新
         this.updateManifoldSpheres();
+        
+        // レーザースキャンエフェクトの更新
+        this.updateLaserScan(deltaTime);
+        
+        // Scene10専用色反転のサスティン終了チェック
+        if (this.scene10ColorInverted && !this.scene10ColorInversionKeyPressed) {
+            if (this.scene10ColorInversionEndTime > 0 && Date.now() >= this.scene10ColorInversionEndTime) {
+                this.scene10ColorInverted = false;
+                this.scene10ColorInversionEndTime = 0;
+                debugLog('colorInversion', '色反転OFF (サスティン終了)');
+            }
+        }
         
         // GPUパーティクルシステムの更新
         if (this.gpuParticleSystem) {
@@ -505,6 +728,7 @@ export class Scene10 extends SceneBase {
                 if (positionUpdateMaterial.uniforms.height) {
                     positionUpdateMaterial.uniforms.height.value = this.rows;
                 }
+                // トラック8の時間スケールは削除（Bloomエフェクトに変更）
             }
             
             // 色更新用シェーダーにuniformを設定（update()の前に設定する必要がある）
@@ -541,6 +765,98 @@ export class Scene10 extends SceneBase {
         // 線描画の更新（SHOW_LINESがtrueの場合のみ）
         if (this.SHOW_LINES && this.lineSystem && this.gpuParticleSystem) {
             this.updateLineSystem();
+        }
+        
+        // 2Dテキストエフェクトのデュレーション管理
+        if (this.textEffectActive && this.textEffectEndTime > 0) {
+            const currentTime = Date.now();
+            if (currentTime >= this.textEffectEndTime) {
+                // デュレーション終了
+                this.textEffectActive = false;
+                this.currentText = '';
+            }
+        }
+        
+        // 2Dテキストエフェクトの更新（高速切り替え - ギリギリ読めない速度）
+        if (this.textEffectActive) {
+            this.updateTextEffect();
+        }
+    }
+    
+    
+    /**
+     * 軍事風情報を生成（1行の長い文字列、画面横幅いっぱい）
+     */
+    generateMilitaryInfo() {
+        const now = Date.now();
+        const timestamp = (now / 1000.0).toFixed(7);
+        const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
+        const fps = this.lastFrameTime ? (1.0 / ((performance.now() - this.lastFrameTime) / 1000.0)).toFixed(1) : '60.0';
+        
+        // 軍事風の情報を1行の長い文字列として生成（画面横幅いっぱいになるように）
+        const parts = [
+            `osc~~${this.currentTrackNumber} : ${(Math.random() * 1000000).toFixed(7)}`,
+            `track_${this.currentTrackNumber}_status : ACTIVE`,
+            `timestamp : ${timestamp}`,
+            `coords : x:${cameraPos.x.toFixed(6)} y:${cameraPos.y.toFixed(6)} z:${cameraPos.z.toFixed(6)}`,
+            `fps : ${fps}`,
+            `particles : ${this.particleCount || 0}`,
+            `manifold_complexity : ${this.manifoldComplexity.toFixed(4)}`,
+            `manifold_scale : ${this.manifoldScale.toFixed(2)}`,
+            `camera_index : ${this.currentCameraIndex}`,
+            `rotation_x : ${(this.cameraParticles[this.currentCameraIndex]?.getRotationX() || 0).toFixed(4)}`,
+            `rotation_y : ${(this.cameraParticles[this.currentCameraIndex]?.getRotationY() || 0).toFixed(4)}`,
+            `distance : ${cameraPos.length().toFixed(4)}`,
+            `time : ${this.time.toFixed(4)}`,
+            `active_spheres : ${this.manifoldSpheres.filter(s => s.isActive()).length}`,
+            `signal_strength : ${(Math.random() * 100).toFixed(2)}%`,
+            `data_rate : ${(Math.random() * 10000).toFixed(0)} bps`,
+            `packet_loss : ${(Math.random() * 5).toFixed(2)}%`,
+            `latency : ${(Math.random() * 100).toFixed(2)}ms`,
+            `bandwidth : ${(Math.random() * 1000).toFixed(0)} Mbps`,
+            `memory_usage : ${(Math.random() * 100).toFixed(1)}%`,
+            `cpu_load : ${(Math.random() * 100).toFixed(1)}%`,
+            `network_status : ${Math.random() > 0.5 ? 'CONNECTED' : 'STANDBY'}`,
+            `protocol : UDP/${this.currentTrackNumber}`,
+            `sequence : ${Math.floor(Math.random() * 100000)}`,
+            `checksum : 0x${Math.floor(Math.random() * 0xFFFF).toString(16).toUpperCase().padStart(4, '0')}`,
+            `buffer_size : ${Math.floor(Math.random() * 10000)} bytes`,
+            `queue_depth : ${Math.floor(Math.random() * 100)}`,
+            `error_count : ${Math.floor(Math.random() * 10)}`,
+            `retry_count : ${Math.floor(Math.random() * 5)}`,
+            `connection_id : ${Math.floor(Math.random() * 1000000)}`,
+            `session_key : ${Math.random().toString(36).substring(2, 10).toUpperCase()}`,
+            `encryption : ${Math.random() > 0.5 ? 'AES-256' : 'TLS-1.3'}`,
+            `auth_status : ${Math.random() > 0.5 ? 'AUTHENTICATED' : 'PENDING'}`,
+            `sync_status : ${Math.random() > 0.5 ? 'SYNCED' : 'SYNCING'}`,
+            `last_update : ${new Date().toISOString()}`
+        ];
+        
+        // 配列をランダムにシャッフル
+        for (let i = parts.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [parts[i], parts[j]] = [parts[j], parts[i]];
+        }
+        
+        // すべての情報をスペース区切りで1行に結合（画面横幅いっぱいになるように）
+        this.currentText = parts.join(' | ');
+    }
+    
+    /**
+     * 2Dテキストエフェクトを更新（超高速切り替え - 1フレームごと）
+     */
+    updateTextEffect() {
+        this.textEffectFrameCounter++;
+        
+        // 1フレームごとに軍事風情報を再生成（超高速）
+        if (this.textEffectFrameCounter >= this.textEffectChangeInterval) {
+            this.textEffectFrameCounter = 0;
+            this.generateMilitaryInfo();
+        }
+        
+        // 最初のフレームでも情報を生成（エフェクト開始時）
+        if (!this.currentText) {
+            this.generateMilitaryInfo();
         }
     }
     
@@ -582,8 +898,70 @@ export class Scene10 extends SceneBase {
             }
         }
         
-        // SceneBaseのrenderメソッドを使用
-        super.render();
+        // 背景色を設定
+        if (this.backgroundWhite) {
+            this.renderer.setClearColor(0xffffff);
+        } else {
+            this.renderer.setClearColor(0x000000);
+        }
+        
+        // Scene10独自のcomposerでレンダリング（色収差、グリッチなど）
+        // 色反転は無効化
+        if (this.composer) {
+            this.composer.render();
+        } else if (this.scene) {
+            this.renderer.render(this.scene, this.camera);
+        }
+        
+        // 2Dテキストエフェクトを描画（黒い矩形 + 高速切り替えテキスト）
+        // エフェクトがアクティブな時のみ描画（デュレーション終了時は描画しない）
+        if (this.textEffectActive && this.textEffectCtx && this.textEffectCanvas) {
+            this.drawTextEffect();
+        } else if (this.textEffectCtx && this.textEffectCanvas) {
+            // エフェクトが非アクティブな時はCanvasをクリア（黒い矩形も消す）
+            this.textEffectCtx.clearRect(0, 0, this.textEffectCanvas.width, this.textEffectCanvas.height);
+        }
+        
+        // Scene10専用色反転が有効な場合はCanvas 2Dの内容も反転
+        if (this.scene10ColorInverted && this.textEffectCtx && this.textEffectCanvas) {
+            this.textEffectCtx.save();
+            this.textEffectCtx.globalCompositeOperation = 'difference';
+            this.textEffectCtx.fillStyle = 'white';
+            this.textEffectCtx.fillRect(0, 0, this.textEffectCanvas.width, this.textEffectCanvas.height);
+            this.textEffectCtx.restore();
+        }
+        
+        // HUDを描画（常に描画、composer使用時も）
+        if (this.hud) {
+            if (this.showHUD) {
+                const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
+                const now = performance.now();
+                const frameRate = this.lastFrameTime ? 1.0 / ((now - this.lastFrameTime) / 1000.0) : 60.0;
+                this.lastFrameTime = now;
+                
+                // Scene10専用の色反転フラグを使用（HUDの色も反転する）
+                const isInverted = this.scene10ColorInverted;
+                
+                this.hud.display(
+                    frameRate,
+                    this.currentCameraIndex,
+                    cameraPos,
+                    0, // activeSpheres
+                    this.time, // time
+                    this.cameraParticles[this.currentCameraIndex]?.getRotationX() || 0,
+                    this.cameraParticles[this.currentCameraIndex]?.getRotationY() || 0,
+                    cameraPos.length(),
+                    0, // noiseLevel
+                    isInverted, // backgroundWhite（色反転エフェクトが有効な場合はtrue）
+                    this.oscStatus,
+                    this.particleCount,
+                    this.trackEffects,  // エフェクト状態を渡す
+                    this.phase  // phase値を渡す
+                );
+            } else {
+                this.hud.clear();
+            }
+        }
         
         // マーカースフィアのコールアウトを描画（HUDの後に描画、時間経過で自動的に消える）
         if (this.hud && this.hud.ctx) {
@@ -593,6 +971,57 @@ export class Scene10 extends SceneBase {
                 }
             });
         }
+        
+        // スクリーンショットテキストを描画
+        this.drawScreenshotText();
+        
+    }
+    
+    /**
+     * 2Dテキストエフェクトを描画（黒い帯の中に1行で長い情報を表示）
+     */
+    drawTextEffect() {
+        const ctx = this.textEffectCtx;
+        const canvas = this.textEffectCanvas;
+        
+        if (!ctx || !canvas || !this.currentText) return;
+        
+        // Canvasをクリア
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // 画面中央に黒い矩形を描画（帯状、文字より少し太い程度）
+        const fontSize = 20;
+        const rectHeight = fontSize * 1.5;  // 文字サイズの1.5倍（30px）
+        const rectY = (canvas.height - rectHeight) / 2;
+        ctx.fillStyle = 'rgba(0, 0, 0, 1.0)';  // 真っ黒
+        ctx.fillRect(0, rectY, canvas.width, rectHeight);
+        
+        // 細くてモダンなフォント（小さめサイズ）
+        ctx.font = `300 ${fontSize}px "Inter", "Roboto", "Arial", monospace`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';  // 白色
+        
+        // 黒い帯の中央に1行で長い情報を表示
+        const centerY = canvas.height / 2;
+        const padding = 20;
+        ctx.fillText(this.currentText, padding, centerY);
+    }
+    
+    /**
+     * 地面にシンプルな格子メッシュを作成
+     */
+    createGroundGrid() {
+        // グリッドのサイズと分割数（シンプルに）
+        const size = 2000;  // グリッドのサイズ
+        const divisions = 20;  // 分割数（細かくない）
+        
+        // グリッドヘルパーを作成
+        const gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0x444444);
+        gridHelper.position.y = -500;  // 地面の位置（カラビ・ヤウ多様体の下）
+        this.scene.add(gridHelper);
+        
+        this.groundGrid = gridHelper;
     }
     
     /**
@@ -739,15 +1168,28 @@ export class Scene10 extends SceneBase {
     }
     
     /**
-     * カメラを設定
+     * カメラを設定（映画的な視点の外し方）
      */
     setupCamera() {
         const eye = this.cameraParticles[this.currentCameraIndex].getPosition();
         const center = new THREE.Vector3(0, 0, 0);
         const up = new THREE.Vector3(0, 1, 0);
         
+        // 映画的な視点の外し方：時間と共にゆっくりと視点をずらす
+        // 円形の軌道で視点をずらす（映画的な動き）
+        const offsetRadius = 50.0;  // オフセットの半径
+        const offsetSpeed = 0.3;  // オフセットの速度（ゆっくり）
+        const offsetX = Math.sin(this.cameraLookAtOffsetTime * offsetSpeed) * offsetRadius;
+        const offsetY = Math.cos(this.cameraLookAtOffsetTime * offsetSpeed * 0.7) * offsetRadius * 0.5;
+        const offsetZ = Math.sin(this.cameraLookAtOffsetTime * offsetSpeed * 0.5) * offsetRadius * 0.3;
+        
+        this.cameraLookAtOffset.set(offsetX, offsetY, offsetZ);
+        
+        // 中心位置にオフセットを追加
+        const lookAtTarget = center.clone().add(this.cameraLookAtOffset);
+        
         this.camera.position.copy(eye);
-        this.camera.lookAt(center);
+        this.camera.lookAt(lookAtTarget);
         this.camera.up.copy(up);
     }
     
@@ -843,10 +1285,10 @@ export class Scene10 extends SceneBase {
         const end2X = end1X + horizontalLength;
         const end2Y = end1Y;
         
-        // 線を描画（赤色）
+        // 線を描画（色反転時はシアン、通常時は赤）
         ctx.save();
         ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.78)';
+        ctx.strokeStyle = this.scene10ColorInverted ? 'rgba(0, 255, 255, 0.78)' : 'rgba(255, 0, 0, 0.78)';
         
         // コールアウトの線を描画
         ctx.beginPath();
@@ -856,8 +1298,8 @@ export class Scene10 extends SceneBase {
         ctx.lineTo(end2X, end2Y);  // 水平線
         ctx.stroke();
         
-        // テキストを描画
-        ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+        // テキストを描画（色反転時は黒、通常時は白）
+        ctx.fillStyle = this.scene10ColorInverted ? 'rgba(0, 0, 0, 1.0)' : 'rgba(255, 255, 255, 1.0)';
         ctx.font = '16px monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
@@ -936,9 +1378,27 @@ export class Scene10 extends SceneBase {
         sphere.createThreeObjects(this.scene);
         this.manifoldSpheres.push(sphere);
         
-        console.log(`Scene10: マーカースフィアを作成: ${label} at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
-        console.log(`  パラメータ: u=${u.toFixed(3)}, v=${v.toFixed(3)}`);
-        console.log(`  現在のマーカースフィア数: ${this.manifoldSpheres.length}`);
+        debugLog('scene10', `マーカースフィアを作成: ${label} at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`);
+        debugLog('scene10', `  パラメータ: u=${u.toFixed(3)}, v=${v.toFixed(3)}`);
+        debugLog('scene10', `  現在のマーカースフィア数: ${this.manifoldSpheres.length}`);
+    }
+    
+    
+    /**
+     * OSCメッセージのハンドリング（Scene10専用オーバーライド）
+     * トラック2の色反転はScene10では無効（技術的問題のため）
+     */
+    handleOSC(message) {
+        const trackNumber = message.trackNumber;
+        
+        // トラック2: Scene10では色反転を無効化（SceneBaseの処理もスキップ）
+        if (trackNumber === 2) {
+            // 何もせずreturn（色反転を無効）
+            return;
+        }
+        
+        // その他のトラックは親クラスに委譲
+        super.handleOSC(message);
     }
     
     /**
@@ -956,12 +1416,145 @@ export class Scene10 extends SceneBase {
             const velocity = args[1] !== undefined ? args[1] : null;
             this.createManifoldSphere(noteNumber, velocity);
         }
-        // トラック6: 多様体の複雑さや形を変形
+        // トラック6: 多様体の複雑さや形を変形 + 2Dテキストエフェクト
         else if (trackNumber === 6) {
             const args = message.args || [];
             const noteNumber = args[0] !== undefined ? args[0] : null;
             const velocity = args[1] !== undefined ? args[1] : null;
+            const durationMs = args[2] !== undefined ? args[2] : 0.0;  // デュレーション（ms）
             this.transformManifold(noteNumber, velocity);
+            
+            // 2Dテキストエフェクトを有効化（軍事風情報表示）
+            this.textEffectActive = true;
+            this.textEffectFrameCounter = 0;
+            this.currentTrackNumber = trackNumber;
+            // 最初の軍事風情報を生成
+            this.generateMilitaryInfo();
+            
+            // デュレーションに合わせてエフェクト終了時刻を設定
+            if (durationMs > 0) {
+                this.textEffectEndTime = Date.now() + durationMs;
+            } else {
+                // デュレーションが指定されていない場合は無期限（手動でオフにするまで）
+                this.textEffectEndTime = 0;
+            }
+        }
+        // トラック2はhandleOSC()で処理済み
+        // トラック8: レーザースキャン（Z方向、手前から奥へ）
+        else if (trackNumber === 8) {
+            const args = message.args || [];
+            const velocity = args[1] !== undefined ? args[1] : 127.0;
+            const noteNumber = args[0] !== undefined ? args[0] : 64.0;
+            const durationMs = args[2] !== undefined ? args[2] : 1000.0;
+            this.applyLaserScan(velocity, noteNumber, durationMs);
+        }
+    }
+    
+    /**
+     * レーザースキャンエフェクトを適用（Z方向、手前から奥へ、ポリフォニック対応）
+     */
+    applyLaserScan(velocity, noteNumber, durationMs) {
+        // ベロシティ（0〜127）をスキャン速度と強度に変換
+        const speed = THREE.MathUtils.mapLinear(velocity, 0, 127, 0.01, 0.08);  // スキャン速度
+        const intensity = THREE.MathUtils.mapLinear(velocity, 0, 127, 0.3, 1.0);  // エフェクト強度
+        
+        // デュレーション（サスティン）を設定
+        const minDuration = 1000;  // 最低1秒
+        const actualDuration = Math.max(durationMs, minDuration);
+        const endTime = actualDuration > 0 ? Date.now() + actualDuration : 0;
+        
+        // 新しいレーザースキャンを追加（ポリフォニック）
+        // 手前（Z = +zRange）から奥（Z = -zRange）へスキャン
+        this.laserScans.push({
+            position: 1.0,  // 手前から開始（正規化Z座標 = 1.0）
+            speed: speed,
+            intensity: intensity,
+            width: this.laserScanWidth,
+            endTime: endTime
+        });
+        
+        // 最大10個まで（シェーダーのuniform配列の制限）
+        if (this.laserScans.length > this.maxScans) {
+            this.laserScans.shift();  // 古いスキャンを削除
+        }
+        
+        debugLog('laserScan', `applied - velocity:${velocity}, speed:${speed.toFixed(3)}, intensity:${intensity.toFixed(2)}, duration:${durationMs}ms, totalScans:${this.laserScans.length}`);
+    }
+    
+    /**
+     * レーザースキャンエフェクトの更新（Z方向、ポリフォニック対応）
+     */
+    updateLaserScan(deltaTime) {
+        const currentTime = Date.now();
+        
+        // 全てのレーザースキャンを更新
+        this.laserScans = this.laserScans.filter(scan => {
+            // スキャン位置を更新（手前から奥へ、Z軸方向）
+            scan.position -= scan.speed * deltaTime * 60.0;  // 60fps想定
+            
+            // 奥端（-1.0）に達したら配列から削除
+            if (scan.position <= -1.0) {
+                return false;
+            }
+            
+            // サスティン終了チェック（キーが押されている場合は無効化しない）
+            if (!this.laserScanKeyPressed && scan.endTime > 0 && currentTime >= scan.endTime) {
+                return false;
+            }
+            
+            return true;
+        });
+        
+        // パーティクルマテリアルのuniformを更新（最大10個のレーザースキャン）
+        const scanCount = Math.min(this.laserScans.length, this.maxScans);
+        
+        if (this.gpuParticleSystem && this.gpuParticleSystem.particleMaterial && 
+            this.gpuParticleSystem.particleMaterial.uniforms) {
+            const uniforms = this.gpuParticleSystem.particleMaterial.uniforms;
+            
+            // 再利用可能なFloat32Arrayを更新
+            for (let i = 0; i < scanCount; i++) {
+                const scan = this.laserScans[i];
+                this.laserScanPositions[i] = scan.position;
+                this.laserScanWidths[i] = scan.width;
+                this.laserScanIntensities[i] = scan.intensity;
+            }
+            
+            // 残りのスロットを0で埋める
+            for (let i = scanCount; i < this.maxScans; i++) {
+                this.laserScanPositions[i] = 1.0;  // 手前側（見えない位置）
+                this.laserScanWidths[i] = 0.0;
+                this.laserScanIntensities[i] = 0.0;
+            }
+            
+            // uniformsを更新
+            if (uniforms.laserScanCount) {
+                uniforms.laserScanCount.value = scanCount;
+            }
+            if (uniforms.laserScanPositions) {
+                const existingPositions = uniforms.laserScanPositions.value;
+                if (existingPositions && existingPositions.length === this.laserScanPositions.length) {
+                    existingPositions.set(this.laserScanPositions);
+                } else {
+                    uniforms.laserScanPositions.value = this.laserScanPositions;
+                }
+            }
+            if (uniforms.laserScanWidths) {
+                const existingWidths = uniforms.laserScanWidths.value;
+                if (existingWidths && existingWidths.length === this.laserScanWidths.length) {
+                    existingWidths.set(this.laserScanWidths);
+                } else {
+                    uniforms.laserScanWidths.value = this.laserScanWidths;
+                }
+            }
+            if (uniforms.laserScanIntensities) {
+                const existingIntensities = uniforms.laserScanIntensities.value;
+                if (existingIntensities && existingIntensities.length === this.laserScanIntensities.length) {
+                    existingIntensities.set(this.laserScanIntensities);
+                } else {
+                    uniforms.laserScanIntensities.value = this.laserScanIntensities;
+                }
+            }
         }
     }
     
@@ -980,16 +1573,16 @@ export class Scene10 extends SceneBase {
             if (mode === 0) {
                 // 複雑さを急激に変更（より極端な値）
                 this.manifoldComplexity = 0.3 + Math.random() * 7.7;  // 0.3 ～ 8.0
-                console.log(`Scene10: 複雑さを急激に変更: ${this.manifoldComplexity.toFixed(2)}`);
+                debugLog('scene10', `複雑さを急激に変更: ${this.manifoldComplexity.toFixed(2)}`);
             } else if (mode === 1) {
                 // スケールを急激に変更（より極端な値）
                 this.manifoldScale = 50.0 + Math.random() * 450.0;  // 50.0 ～ 500.0
-                console.log(`Scene10: スケールを急激に変更: ${this.manifoldScale.toFixed(2)}`);
+                debugLog('scene10', `スケールを急激に変更: ${this.manifoldScale.toFixed(2)}`);
             } else {
                 // 両方を急激に変更
                 this.manifoldComplexity = 0.3 + Math.random() * 7.7;
                 this.manifoldScale = 50.0 + Math.random() * 450.0;
-                console.log(`Scene10: 複雑さとスケールを急激に変更: ${this.manifoldComplexity.toFixed(2)}, ${this.manifoldScale.toFixed(2)}`);
+                debugLog('scene10', `複雑さとスケールを急激に変更: ${this.manifoldComplexity.toFixed(2)}, ${this.manifoldScale.toFixed(2)}`);
             }
         } else {
             // ノート番号に基づいて急激に変形
@@ -997,24 +1590,24 @@ export class Scene10 extends SceneBase {
                 // 0-11: 複雑さを急激に変更（0.3 ～ 8.0）
                 const complexityRange = 7.7;  // より広い範囲
                 this.manifoldComplexity = 0.3 + (noteNumber / 11.0) * complexityRange;
-                console.log(`Scene10: 複雑さを急激に変更 (Note ${noteNumber}): ${this.manifoldComplexity.toFixed(2)}`);
+                debugLog('scene10', `複雑さを急激に変更 (Note ${noteNumber}): ${this.manifoldComplexity.toFixed(2)}`);
             } else if (noteNumber < 24) {
                 // 12-23: スケールを急激に変更（50.0 ～ 500.0）
                 const scaleRange = 450.0;  // より広い範囲
                 const normalizedNote = (noteNumber - 12) / 11.0;
                 this.manifoldScale = 50.0 + normalizedNote * scaleRange;
-                console.log(`Scene10: スケールを急激に変更 (Note ${noteNumber}): ${this.manifoldScale.toFixed(2)}`);
+                debugLog('scene10', `スケールを急激に変更 (Note ${noteNumber}): ${this.manifoldScale.toFixed(2)}`);
             } else if (noteNumber < 36) {
                 // 24-35: 複雑さとスケールの急激な組み合わせ（極端な値）
                 const normalizedNote = (noteNumber - 24) / 11.0;
                 this.manifoldComplexity = 0.3 + normalizedNote * 7.7;
                 this.manifoldScale = 50.0 + (1.0 - normalizedNote) * 450.0;  // 逆相関
-                console.log(`Scene10: 複雑さとスケールを急激に変更 (Note ${noteNumber}): ${this.manifoldComplexity.toFixed(2)}, ${this.manifoldScale.toFixed(2)}`);
+                debugLog('scene10', `複雑さとスケールを急激に変更 (Note ${noteNumber}): ${this.manifoldComplexity.toFixed(2)}, ${this.manifoldScale.toFixed(2)}`);
             } else {
                 // 36以上: リセット
                 this.manifoldComplexity = this.baseManifoldComplexity;
                 this.manifoldScale = this.baseManifoldScale;
-                console.log(`Scene10: リセット: ${this.manifoldComplexity.toFixed(2)}, ${this.manifoldScale.toFixed(2)}`);
+                debugLog('scene10', `リセット: ${this.manifoldComplexity.toFixed(2)}, ${this.manifoldScale.toFixed(2)}`);
             }
         }
         
@@ -1032,11 +1625,56 @@ export class Scene10 extends SceneBase {
         }
     }
     
+    
     /**
      * キーダウン処理
      */
     handleKeyDown(trackNumber) {
         super.handleKeyDown(trackNumber);
+        
+        // トラック2: Scene10専用色反転開始
+        if (trackNumber === 2) {
+            this.scene10ColorInversionKeyPressed = true;
+            this.scene10ColorInverted = true;
+            debugLog('colorInversion', '色反転ON (キー押下)');
+        }
+        // トラック8: レーザースキャン開始
+        else if (trackNumber === 8) {
+            this.laserScanKeyPressed = true;
+            this.applyLaserScan(127.0, 64.0, 0.0);  // デフォルト値で有効化
+        }
+    }
+    
+    /**
+     * キーが離された時の処理
+     */
+    handleKeyUp(trackNumber) {
+        super.handleKeyUp(trackNumber);
+        
+        // トラック2: Scene10専用色反転キー解放
+        if (trackNumber === 2) {
+            this.scene10ColorInversionKeyPressed = false;
+            this.scene10ColorInverted = false;
+            debugLog('colorInversion', '色反転OFF (キー解放)');
+        }
+        // トラック8: レーザースキャンキー解放
+        else if (trackNumber === 8) {
+            this.laserScanKeyPressed = false;
+            // キーが離されたらすべてのスキャンを削除
+            this.laserScans = [];
+            
+            // uniformsをリセット
+            if (this.gpuParticleSystem && this.gpuParticleSystem.particleMaterial && 
+                this.gpuParticleSystem.particleMaterial.uniforms) {
+                const uniforms = this.gpuParticleSystem.particleMaterial.uniforms;
+                if (uniforms.laserScanCount) {
+                    uniforms.laserScanCount.value = 0;
+                }
+                if (uniforms.laserScanIntensities) {
+                    uniforms.laserScanIntensities.value = new Float32Array(this.maxScans);
+                }
+            }
+        }
     }
     
     /**
@@ -1057,30 +1695,128 @@ export class Scene10 extends SceneBase {
         });
         this.manifoldSpheres = [];
         
-        console.log('Scene10 reset');
+        // レーザースキャンをリセット
+        this.laserScans = [];
+        this.laserScanKeyPressed = false;
+        for (let i = 0; i < this.maxScans; i++) {
+            this.laserScanPositions[i] = 1.0;
+            this.laserScanWidths[i] = 0.0;
+            this.laserScanIntensities[i] = 0.0;
+        }
+        
+        debugLog('scene10', 'reset');
+    }
+    
+    
+    /**
+     * リソースの有効/無効を切り替え（update/レンダリングのスキップ制御）
+     */
+    setResourceActive(active) {
+        if (this.gpuParticleSystem && this.gpuParticleSystem.setActive) {
+            this.gpuParticleSystem.setActive(active);
+        }
     }
     
     /**
-     * リサイズ処理
+     * シーン固有の要素をクリーンアップ（共有リソースを使っている場合でも呼ばれる）
+     * GPUパーティクルシステム以外の要素をクリーンアップ
      */
-    onResize() {
-        super.onResize();
+    cleanupSceneSpecificElements() {
+        debugLog('scene10', 'cleanupSceneSpecificElements');
+        
+        // Scene10独自のcolorInversionPassを無効にする（シーン切り替え時にリセット）
+        if (this.colorInversionPass) {
+            this.colorInversionPass.enabled = false;
+        }
+        
+        // HUDのCanvasをクリア（テキストが残らないように）
+        if (this.hud && this.hud.ctx && this.hud.canvas) {
+            this.hud.ctx.clearRect(0, 0, this.hud.canvas.width, this.hud.canvas.height);
+        }
+        
+        // 地面のグリッドを削除
+        if (this.groundGrid) {
+            this.scene.remove(this.groundGrid);
+            if (this.groundGrid.geometry) this.groundGrid.geometry.dispose();
+            if (this.groundGrid.material) this.groundGrid.material.dispose();
+            this.groundGrid = null;
+        }
+        
+        // 線描画システムを破棄
+        if (this.lineSystem) {
+            this.lineSystem.children.forEach(line => {
+                if (line.geometry) line.geometry.dispose();
+                if (line.material) line.material.dispose();
+            });
+            this.scene.remove(this.lineSystem);
+            this.lineSystem = null;
+        }
+        
+        // グループをクリア
+        if (this.manifoldGroup) {
+            while (this.manifoldGroup.children.length > 0) {
+                const child = this.manifoldGroup.children[0];
+                this.manifoldGroup.remove(child);
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+            }
+            this.scene.remove(this.manifoldGroup);
+            this.manifoldGroup = null;
+        }
+        
+        // すべてのマーカースフィアを破棄
+        this.manifoldSpheres.forEach(sphere => {
+            if (sphere.dispose) {
+                sphere.dispose(this.scene);
+            }
+        });
+        this.manifoldSpheres = [];
+        
+        // 時間変数をリセット
+        this.time = 0.0;
+        this.sketchStartTime = Date.now();
+        
+        // 2Dテキストエフェクトを無効化
+        this.textEffectActive = false;
+        this.textEffectEndTime = 0;
+        this.currentText = '';
+        this.textEffectFrameCounter = 0;
+        if (this.textEffectCtx && this.textEffectCanvas) {
+            this.textEffectCtx.clearRect(0, 0, this.textEffectCanvas.width, this.textEffectCanvas.height);
+        }
+        
     }
     
     /**
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene10.dispose: クリーンアップ開始');
+        debugLog('scene10', 'dispose開始');
         
-        // GPUパーティクルシステムを破棄
+        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
                 this.scene.remove(particleSystem);
             }
-            this.gpuParticleSystem.dispose();
+            
+            if (this.useSharedResources && this.sharedResourceManager) {
+                // 共有リソースの場合は返却のみ（disposeしない）
+                this.sharedResourceManager.releaseGPUParticleSystem('scene10');
+                debugLog('scene10', '共有リソースを返却');
+            } else {
+                // 通常の場合はdispose
+                this.gpuParticleSystem.dispose();
+            }
             this.gpuParticleSystem = null;
+        }
+        
+        // 地面のグリッドを削除
+        if (this.groundGrid) {
+            this.scene.remove(this.groundGrid);
+            if (this.groundGrid.geometry) this.groundGrid.geometry.dispose();
+            if (this.groundGrid.material) this.groundGrid.material.dispose();
+            this.groundGrid = null;
         }
         
         // 線描画システムを破棄
@@ -1125,9 +1861,48 @@ export class Scene10 extends SceneBase {
             }
         });
         
-        console.log('Scene10.dispose: クリーンアップ完了');
+        // 2Dテキストエフェクト用Canvasを削除
+        if (this.textEffectCanvas) {
+            if (this.textEffectCanvas.parentElement) {
+                this.textEffectCanvas.parentElement.removeChild(this.textEffectCanvas);
+            }
+            if (document.body.contains(this.textEffectCanvas)) {
+                document.body.removeChild(this.textEffectCanvas);
+            }
+            this.textEffectCanvas = null;
+            this.textEffectCtx = null;
+        }
+        
+        this.currentText = '';
+        this.textEffectFrameCounter = 0;
+        
+        debugLog('scene10', 'dispose完了');
         
         // 親クラスのdisposeを呼ぶ
         super.dispose();
+    }
+    
+    /**
+     * リサイズ処理
+     */
+    onResize() {
+        super.onResize();
+        
+        // 2Dテキストエフェクト用Canvasのサイズを更新
+        if (this.textEffectCanvas) {
+            this.textEffectCanvas.width = window.innerWidth;
+            this.textEffectCanvas.height = window.innerHeight;
+        }
+        
+        // 2Dテキストエフェクト用Canvasもリサイズ
+        if (this.textEffectCanvas) {
+            this.textEffectCanvas.width = window.innerWidth;
+            this.textEffectCanvas.height = window.innerHeight;
+        }
+        
+        // composerの解像度も更新
+        if (this.composer) {
+            this.composer.setSize(window.innerWidth, window.innerHeight);
+        }
     }
 }

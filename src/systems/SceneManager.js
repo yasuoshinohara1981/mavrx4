@@ -14,11 +14,13 @@ import { Scene07 } from '../scenes/scene07/Scene07.js';
 import { Scene08 } from '../scenes/scene08/Scene08.js';
 import { Scene09 } from '../scenes/scene09/Scene09.js';
 import { Scene10 } from '../scenes/scene10/Scene10.js';
+import { Scene11 } from '../scenes/scene11/Scene11.js';
 
 export class SceneManager {
-    constructor(renderer, camera) {
+    constructor(renderer, camera, sharedResourceManager = null) {
         this.renderer = renderer;
         this.camera = camera;
+        this.sharedResourceManager = sharedResourceManager;
         this.scenes = [];
         this.currentSceneIndex = 0;
         this.onSceneChange = null;
@@ -32,16 +34,18 @@ export class SceneManager {
     
     initScenes() {
         // シーンを追加（Processingと同じ順序）
-        this.scenes.push(new Scene01(this.renderer, this.camera));
+        // シーン1と3は共有リソースマネージャーを使用
+        this.scenes.push(new Scene01(this.renderer, this.camera, this.sharedResourceManager));
         this.scenes.push(new Scene02(this.renderer, this.camera));
-        this.scenes.push(new Scene03(this.renderer, this.camera));
-        this.scenes.push(new Scene04(this.renderer, this.camera));
+        this.scenes.push(new Scene03(this.renderer, this.camera, this.sharedResourceManager));
+        this.scenes.push(new Scene04(this.renderer, this.camera, this.sharedResourceManager));
         this.scenes.push(new Scene05(this.renderer, this.camera));
         this.scenes.push(new Scene06(this.renderer, this.camera));
         this.scenes.push(new Scene07(this.renderer, this.camera));
         this.scenes.push(new Scene08(this.renderer, this.camera));
-        this.scenes.push(new Scene09(this.renderer, this.camera));
-        this.scenes.push(new Scene10(this.renderer, this.camera));
+        this.scenes.push(new Scene09(this.renderer, this.camera, this.sharedResourceManager));
+        this.scenes.push(new Scene10(this.renderer, this.camera, this.sharedResourceManager));
+        this.scenes.push(new Scene11(this.renderer, this.camera, this.sharedResourceManager));
         
         // デフォルトシーンを設定（非同期）
         if (this.scenes.length > 0) {
@@ -57,18 +61,35 @@ export class SceneManager {
             return;
         }
         
-        // 現在のシーンをクリーンアップ（dispose処理を追加）
+        // 同じシーンへの切り替えは無視
+        if (index === this.currentSceneIndex) {
+            console.log(`既にシーン ${index + 1} がアクティブです`);
+            return;
+        }
+        
+        try {
+            // 現在のシーンを非アクティブ化（全てのシーンで同じ処理）
         if (this.scenes[this.currentSceneIndex]) {
             const oldScene = this.scenes[this.currentSceneIndex];
             
-            // dispose処理があれば実行（メモリリークを防ぐ）
-            if (oldScene.dispose) {
-                console.log(`古いシーン（${oldScene.title}）をクリーンアップ中...`);
+                // シーン固有の要素をクリーンアップ（ミサイル、テキスト、Canvasなど）
+                if (oldScene.cleanupSceneSpecificElements) {
+                    oldScene.cleanupSceneSpecificElements();
+                } else if (oldScene.dispose) {
+                    // cleanupSceneSpecificElementsがなければ、dispose()を呼ぶ（GPUパーティクル以外をクリーンアップ）
                 oldScene.dispose();
             }
             
-            // リセット処理は呼ばない（setup()で再初期化されるため、二重初期化を防ぐ）
-            // oldScene.reset();
+                // 共有リソースを使っている場合は非アクティブ化のみ（メモリ上には保持）
+                if (oldScene.setResourceActive) {
+                    oldScene.setResourceActive(false);
+                }
+                
+                console.log(`古いシーン（${oldScene.title}）を非アクティブ化`);
+            }
+        } catch (err) {
+            console.error('シーン切り替え時のクリーンアップエラー:', err);
+            // エラーが発生してもシーン切り替えは続行
         }
         
         // シーンを切り替え
@@ -79,19 +100,45 @@ export class SceneManager {
             // HUDの状態をグローバル状態に合わせる（シーン切り替え時）
             newScene.showHUD = this.globalShowHUD;
             
-            // 非同期セットアップ
-            newScene.setup().catch(err => {
-                console.error('シーンのセットアップエラー:', err);
-            }).then(() => {
-                // HUDの状態を再度設定（setup()後に確実に適用）
-                newScene.showHUD = this.globalShowHUD;
-                
-                // コールバックを呼び出し
-                if (this.onSceneChange) {
-                    this.onSceneChange(newScene.title || `Scene ${index + 1}`);
-                }
-                
-                console.log(`シーン切り替え: ${newScene.title || `Scene ${index + 1}`}`);
+            // 共有リソースを使っている場合は即座にアクティブ化（表示を開始）
+            // setup()は非同期で実行されるため、ブロッキングしない
+            if (newScene.setResourceActive) {
+                newScene.setResourceActive(true);
+            }
+            
+            // 全てのシーンで同じ処理フロー（setupは軽量に保つ、非同期で実行）
+            // setup()を非同期で実行し、完了後に後処理を実行
+            requestAnimationFrame(() => {
+                newScene.setup().catch(err => {
+                    console.error('シーンのセットアップエラー:', err);
+                }).then(() => {
+                    // HUDの状態を再度設定（setup()後に確実に適用）
+                    newScene.showHUD = this.globalShowHUD;
+                    
+                    // コールバックを呼び出し
+                    if (this.onSceneChange) {
+                        this.onSceneChange(newScene.title || `Scene ${index + 1}`);
+                    }
+                    
+                    console.log(`シーン切り替え: ${newScene.title || `Scene ${index + 1}`}`);
+                    
+                    // テクスチャのリセット処理は呼ばない（前のシーンの状態を保持）
+                    // シーン固有の後処理を実行（非同期で実行）
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            // シーン4の場合は、初期色を再計算
+                            if (index === 3 && newScene.updateInitialColors) {
+                                newScene.updateInitialColors();
+                            }
+                            // シーン10の場合は、初期色を再計算
+                            if (index === 9 && newScene.updateInitialColors) {
+                                newScene.updateInitialColors();
+                            }
+                        });
+                    });
+                }).catch(err => {
+                    console.error('シーン切り替えエラー:', err);
+                });
             });
         }
     }

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { OSCManager } from './systems/OSCManager.js';
 import { SceneManager } from './systems/SceneManager.js';
+import { SharedResourceManager } from './lib/SharedResourceManager.js';
 
 // ============================================
 // 初期化
@@ -14,6 +15,7 @@ import { SceneManager } from './systems/SceneManager.js';
 let renderer, camera, scene;
 let sceneManager;
 let oscManager;
+let sharedResourceManager;
 
 // アニメーションループ用
 let time = 0;
@@ -30,7 +32,8 @@ let ctrlPressed = false;
 function initRenderer() {
     renderer = new THREE.WebGLRenderer({ 
         antialias: true,
-        powerPreference: 'high-performance'
+        powerPreference: 'high-performance',
+        preserveDrawingBuffer: true  // Canvas 2D で drawImage するために必要
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -85,11 +88,24 @@ function initOSC() {
 }
 
 // ============================================
+// 共有リソースマネージャーの初期化
+// ============================================
+
+async function initSharedResourceManager() {
+    sharedResourceManager = new SharedResourceManager(renderer);
+    
+    // 初期化（最大量のリソースを事前に作成）
+    console.log('[main] 共有リソースマネージャーを初期化中...');
+    await sharedResourceManager.init();
+    console.log('[main] 共有リソースマネージャー初期化完了');
+}
+
+// ============================================
 // シーンマネージャーの初期化
 // ============================================
 
 function initSceneManager() {
-    sceneManager = new SceneManager(renderer, camera);
+    sceneManager = new SceneManager(renderer, camera, sharedResourceManager);
     
     // シーン切り替え時のコールバック
     sceneManager.onSceneChange = (sceneName) => {
@@ -178,8 +194,11 @@ function handleKeyDown(e) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= 9) {
             e.preventDefault();
-            // Ctrl+6でScene06に切り替え（Scene06はインデックス5）
-            if (num === 6) {
+            // Ctrl+1でScene11に切り替え（Scene11はインデックス10）
+            if (num === 1) {
+                sceneManager.switchScene(10);
+            } else if (num === 6) {
+                // Ctrl+6でScene06に切り替え（Scene06はインデックス5）
                 sceneManager.switchScene(5);
             } else if (num === 7) {
                 // Ctrl+7でScene07に切り替え（Scene07はインデックス6）
@@ -377,10 +396,15 @@ document.addEventListener('visibilitychange', handleVisibilityChange);
 // 初期化と起動
 // ============================================
 
-function init() {
+async function init() {
     initRenderer();
     initCamera();
     initOSC();
+    
+    // 共有リソースマネージャーを先に初期化（重い初期化を最初に実行）
+    await initSharedResourceManager();
+    
+    // その後、シーンマネージャーを初期化
     initSceneManager();
     
     window.addEventListener('resize', onWindowResize);

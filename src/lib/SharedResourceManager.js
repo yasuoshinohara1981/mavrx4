@@ -49,6 +49,12 @@ export class SharedResourceManager {
                 particleSize: 10.0,  // 地形用に大きく
                 placementType: 'terrain',  // terrain
                 shaderPath: 'scene04',
+                initOptions: {
+                    terrainNoiseScale: 0.0001,
+                    terrainNoiseSeed: null,  // 初期化時に生成
+                    terrainScale: 5.0,
+                    terrainZRange: { min: -100, max: 100 }
+                },
                 pool: []
             },
             // シーン9で使用：1万粒 = 100 x 100（リキッドグラス風エフェクト、メタボール効果）
@@ -105,6 +111,11 @@ export class SharedResourceManager {
             console.log(`[SharedResourceManager] ${sceneName}のGPUパーティクルシステムを初期化中... (${config.maxParticles}粒)`);
             
             // 最大量のGPUパーティクルシステムを作成
+            const initOptions = config.initOptions || {};
+            // scene04の場合はノイズシードを生成
+            if (sceneName === 'scene04' && !initOptions.terrainNoiseSeed) {
+                initOptions.terrainNoiseSeed = Math.random() * 10000.0;
+            }
             const gpuParticleSystem = new GPUParticleSystem(
                 this.renderer,
                 config.maxParticles,
@@ -113,25 +124,16 @@ export class SharedResourceManager {
                 config.baseRadius,
                 config.shaderPath,
                 config.particleSize,
-                config.placementType
+                config.placementType,
+                initOptions
             );
             
-            // 初期化完了を待つ
+            // 初期化完了を待つ（GPUParticleSystemのinitializeParticleData()も含まれる）
             await gpuParticleSystem.initPromise;
             
-            // シーン4、9、10の場合は、初期位置データを事前に計算してテクスチャに保存
-            if (sceneName === 'scene04') {
-                console.log(`[SharedResourceManager] ${sceneName}の初期位置データを計算中...`);
-                const calcStartTime = performance.now();
-                // terrain用のパラメータを設定
-                gpuParticleSystem.terrainScl = 5.0;
-                gpuParticleSystem.terrainNoiseScale = 0.0001;
-                gpuParticleSystem.terrainNoiseSeed = Math.random() * 10000.0;
-                // terrainタイプはGPUParticleSystemのinitializeParticleData()で計算される
-                gpuParticleSystem.initializeParticleData();
-                const calcEndTime = performance.now();
-                console.log(`[SharedResourceManager] ${sceneName}の初期位置データ計算完了 (${(calcEndTime - calcStartTime).toFixed(2)}ms)`);
-            } else if (sceneName === 'scene09') {
+            // シーン9、10の場合は、初期位置データを事前に計算してテクスチャに保存
+            // scene04はGPUParticleSystemのinitializeParticleData()で既に計算済み
+            if (sceneName === 'scene09') {
                 console.log(`[SharedResourceManager] ${sceneName}の初期位置データを計算中...`);
                 const calcStartTime = performance.now();
                 // sphereタイプはGPUParticleSystemのinitializeParticleData()で計算される
@@ -214,6 +216,11 @@ export class SharedResourceManager {
         
         // プールが空の場合は新規作成（通常は発生しない）
         console.warn(`[SharedResourceManager] ${sceneName}のプールが空です。新規作成します。`);
+        const initOptions = config.initOptions || {};
+        // scene04の場合はノイズシードを生成
+        if (sceneName === 'scene04' && !initOptions.terrainNoiseSeed) {
+            initOptions.terrainNoiseSeed = Math.random() * 10000.0;
+        }
         const newSystem = new GPUParticleSystem(
             this.renderer,
             config.maxParticles,
@@ -222,7 +229,8 @@ export class SharedResourceManager {
             config.baseRadius,
             config.shaderPath,
             config.particleSize,
-            config.placementType
+            config.placementType,
+            initOptions
         );
         config.pool.push(newSystem);
         this.activeResources.set(sceneName, newSystem);

@@ -8,10 +8,14 @@ import { Scene04_PunchSphere } from './Scene04_PunchSphere.js';
 import * as THREE from 'three';
 
 export class Scene04 extends SceneBase {
-    constructor(renderer, camera) {
+    constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | drmsh';
         console.log('Scene04: コンストラクタ実行', this.title);
+        
+        // 共有リソースマネージャー
+        this.sharedResourceManager = sharedResourceManager;
+        this.useSharedResources = !!sharedResourceManager;
         
         // 表示設定
         this.SHOW_PARTICLES = true;
@@ -95,20 +99,41 @@ export class Scene04 extends SceneBase {
         // ライトを追加
         this.setupLights();
         
-        // GPUパーティクルシステムを初期化
+        // GPUパーティクルシステムを初期化（共有リソースを使う場合は取得、そうでない場合は新規作成）
         const particleCount = this.cols * this.rows;
-        this.gpuParticleSystem = new GPUParticleSystem(
-            this.renderer,
-            particleCount,
-            this.cols,
-            this.rows,
-            0,  // baseRadiusは使用しない（地形なので）
-            'scene04'  // シェーダーパス
-        );
         
-        // シェーダーの読み込み完了を待つ
-        await this.gpuParticleSystem.initPromise;
-        console.log('Scene04: GPUParticleSystem初期化完了');
+        if (this.useSharedResources && this.sharedResourceManager) {
+            // 共有リソースから取得（既に初期化済み）
+            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene04');
+            console.log('[Scene04] 共有リソースからGPUパーティクルシステムを取得');
+        } else {
+            // 通常通り新規作成
+            this.gpuParticleSystem = new GPUParticleSystem(
+                this.renderer,
+                particleCount,
+                this.cols,
+                this.rows,
+                0,  // baseRadiusは使用しない（地形なので）
+                'scene04',  // シェーダーパス
+                10.0,  // particleSize（地形用に大きく）
+                'terrain',  // placementType: 地形配置
+                {
+                    terrainNoiseScale: this.noiseScale,
+                    terrainNoiseSeed: this.noiseSeed,
+                    terrainScale: this.scl,
+                    terrainZRange: { min: -100, max: 100 }
+                }
+            );
+            
+            // シェーダーの読み込み完了を待つ（初期化も完了する）
+            await this.gpuParticleSystem.initPromise;
+            console.log('Scene04: GPUParticleSystem初期化完了');
+        }
+        
+        // ノイズオフセットテクスチャを取得
+        if (this.gpuParticleSystem.noiseOffsetTexture) {
+            this.noiseOffsetTexture = this.gpuParticleSystem.noiseOffsetTexture;
+        }
         
         // パーティクルシステムをシーンに追加
         const particleSystem = this.gpuParticleSystem.getParticleSystem();
@@ -122,25 +147,11 @@ export class Scene04 extends SceneBase {
                 this.gpuParticleSystem.particleMaterial.depthWrite = false;
             }
             
-            // パーティクルサイズを大きくする（地形用）
-            const sizeAttribute = this.gpuParticleSystem.particleGeometry.getAttribute('size');
-            if (sizeAttribute) {
-                const sizes = sizeAttribute.array;
-                for (let i = 0; i < sizes.length; i++) {
-                    sizes[i] = 10.0;  // 地形用にサイズを大きく（5.0 → 10.0）
-                }
-                sizeAttribute.needsUpdate = true;
-            }
+            // パーティクルサイズはコンストラクタで既に設定済み（10.0）
         }
         
         // パーティクル数を設定
         this.setParticleCount(particleCount);
-        
-        // 初期位置データを設定
-        this.initializeParticleData();
-        
-        // 初期色を計算
-        this.updateInitialColors();
         
         // グループを作成
         this.sphereGroup = new THREE.Group();
@@ -161,8 +172,13 @@ export class Scene04 extends SceneBase {
         this.scopeCtx.textBaseline = 'top';
         document.body.appendChild(this.scopeCanvas);
         
-        // 線描画システムを作成
+        // 線描画システムを作成（非同期で実行される）
         this.createLineSystem();
+        
+        // 初期色を計算（GPUParticleSystemの初期化は既に完了している）
+        this.updateInitialColors();
+        
+        console.log('Scene04: パーティクルデータ初期化完了');
     }
     
     /**
@@ -179,91 +195,6 @@ export class Scene04 extends SceneBase {
             this.scene.add(directionalLight);
     }
     
-    /**
-     * 初期パーティクルデータを設定（グリッド状に配置）
-     */
-    initializeParticleData() {
-        if (!this.gpuParticleSystem) return;
-        
-        const width = this.cols;
-        const height = this.rows;
-        const dataSize = width * height * 4;
-        const positionData = new Float32Array(dataSize);
-        const colorData = new Float32Array(dataSize);
-        const noiseOffsetData = new Float32Array(dataSize);
-        
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const index = (y * width + x) * 4;
-                    // 地形の中心を画面の中心（0, 0, 0）に合わせる
-                    const px = (x - width / 2) * this.scl;
-                    const py = (y - height / 2) * this.scl;
-                
-                // ノイズオフセットデータ（更新時用、各パーティクルで異なる値）
-                const noiseOffsetX = Math.random() * 10000.0;
-                const noiseOffsetY = Math.random() * 10000.0;
-                const noiseOffsetZ = Math.random() * 10000.0;
-                
-                // 初期化時のZ値をノイズで計算
-                // noiseScaleを使うように変更（0.1は元のnoiseScale=0.0005の時の値）
-                // 0.1 / 0.0005 = 200 なので、noiseScale * 200で元のスケールを維持
-                const noiseX = x * this.noiseScale * 200.0;
-                const noiseY = y * this.noiseScale * 200.0;
-                const pz = this.map(this.noise(noiseX, noiseY), 0, 1, -100, 100);
-                
-                // 位置データ（基準位置のZをwに保存）
-                positionData[index] = px;
-                positionData[index + 1] = py;
-                positionData[index + 2] = pz;
-                positionData[index + 3] = pz;  // 基準位置のZ
-                
-                // 色データ（初期色、明るくする）
-                colorData[index] = 0.8;  // 0.5 → 0.8（明るく）
-                colorData[index + 1] = 0.8;  // 0.5 → 0.8（明るく）
-                colorData[index + 2] = 0.8;  // 0.5 → 0.8（明るく）
-                colorData[index + 3] = 1.0;
-                
-                // ノイズオフセットデータを保存
-                noiseOffsetData[index] = noiseOffsetX;
-                noiseOffsetData[index + 1] = noiseOffsetY;
-                noiseOffsetData[index + 2] = noiseOffsetZ;
-                noiseOffsetData[index + 3] = 0.0;
-            }
-        }
-        
-        // RenderTargetにデータを書き込む
-        const positionTexture = new THREE.DataTexture(
-            positionData,
-            width,
-            height,
-            THREE.RGBAFormat,
-            THREE.FloatType
-        );
-        positionTexture.needsUpdate = true;
-        
-        const colorTexture = new THREE.DataTexture(
-            colorData,
-            width,
-            height,
-            THREE.RGBAFormat,
-            THREE.FloatType
-        );
-        colorTexture.needsUpdate = true;
-        
-        // ノイズオフセットテクスチャを作成
-        this.noiseOffsetTexture = new THREE.DataTexture(
-            noiseOffsetData,
-            width,
-            height,
-            THREE.RGBAFormat,
-            THREE.FloatType
-        );
-        this.noiseOffsetTexture.needsUpdate = true;
-        
-        // RenderTargetにコピー
-        this.gpuParticleSystem.copyTextureToRenderTarget(positionTexture, this.gpuParticleSystem.positionRenderTargets[0]);
-        this.gpuParticleSystem.copyTextureToRenderTarget(colorTexture, this.gpuParticleSystem.colorRenderTargets[0]);
-    }
     
     /**
      * 初期色を計算（色更新シェーダーを実行）
@@ -404,147 +335,20 @@ export class Scene04 extends SceneBase {
         
         // GPUパーティクルシステムの更新
         if (this.gpuParticleSystem) {
-            const positionUpdateMaterial = this.gpuParticleSystem.getPositionUpdateMaterial();
-            if (positionUpdateMaterial && positionUpdateMaterial.uniforms) {
-                // Scene04専用のuniformを設定
-                if (!positionUpdateMaterial.uniforms.scl) {
-                    positionUpdateMaterial.uniforms.scl = { value: this.scl };
-                } else {
-                    positionUpdateMaterial.uniforms.scl.value = this.scl;
-                }
-                // ノイズオフセットテクスチャを設定
-                if (!positionUpdateMaterial.uniforms.noiseOffsetTexture) {
-                    positionUpdateMaterial.uniforms.noiseOffsetTexture = { value: this.noiseOffsetTexture };
-                } else {
-                    positionUpdateMaterial.uniforms.noiseOffsetTexture.value = this.noiseOffsetTexture;
-                }
-                // 地形のオフセットを設定（地形の中心を画面の中心（0, 0, 0）に合わせたので、オフセットは0）
-                if (!positionUpdateMaterial.uniforms.terrainOffset) {
-                    positionUpdateMaterial.uniforms.terrainOffset = { 
-                        value: new THREE.Vector3(0, 0, 0) 
-                    };
-                } else {
-                    positionUpdateMaterial.uniforms.terrainOffset.value.set(0, 0, 0);
-                }
-                
-                // 圧力用のuniformを設定
-                const maxSpheres = 10;
-                const activeSpheres = this.punchSpheres.filter(ps => {
-                    const strength = ps.getStrength();
-                    return strength > 0.01;
-                }).slice(0, maxSpheres);
-                
-                // デバッグ: activeSpheresの数を確認（毎回ログ出力）
-                if (this.punchSpheres.length > 0) {
-                    console.log(`onUpdate: activeSpheres.length: ${activeSpheres.length}, total punchSpheres: ${this.punchSpheres.length}`);
-                    if (activeSpheres.length > 0) {
-                        activeSpheres.forEach((ps, idx) => {
-                            console.log(`  activeSphere #${idx + 1}: strength=${ps.getStrength().toFixed(2)}, radius=${ps.getRadius().toFixed(2)}, pos=(${ps.getPosition().x.toFixed(1)}, ${ps.getPosition().y.toFixed(1)}, ${ps.getPosition().z.toFixed(1)})`);
-                        });
-                    } else {
-                        // activeSpheresが空の場合、strengthを確認
-                        console.log(`  No active spheres! Checking strengths:`);
-                        this.punchSpheres.slice(0, 5).forEach((ps, idx) => {
-                            console.log(`    punchSphere #${idx + 1}: strength=${ps.getStrength().toFixed(4)}, radius=${ps.getRadius().toFixed(2)}`);
-                        });
-                    }
-                }
-                
-                if (!positionUpdateMaterial.uniforms.punchSphereCount) {
-                    positionUpdateMaterial.uniforms.punchSphereCount = { value: 0 };
-                }
-                if (!positionUpdateMaterial.uniforms.punchSphereCenters) {
-                    // vec3の配列をFloat32Arrayで表現（x, y, z, x, y, z, ...）
-                    positionUpdateMaterial.uniforms.punchSphereCenters = { 
-                        value: new Float32Array(maxSpheres * 3)
-                    };
-                }
-                if (!positionUpdateMaterial.uniforms.punchSphereStrengths) {
-                    positionUpdateMaterial.uniforms.punchSphereStrengths = { value: new Float32Array(maxSpheres) };
-                }
-                if (!positionUpdateMaterial.uniforms.punchSphereRadii) {
-                    positionUpdateMaterial.uniforms.punchSphereRadii = { value: new Float32Array(maxSpheres) };
-                }
-                if (!positionUpdateMaterial.uniforms.punchSphereReturnProbs) {
-                    positionUpdateMaterial.uniforms.punchSphereReturnProbs = { value: new Float32Array(maxSpheres) };
-                }
-                
-                positionUpdateMaterial.uniforms.punchSphereCount.value = activeSpheres.length;
-                
-                const centers = positionUpdateMaterial.uniforms.punchSphereCenters.value;
-                const strengths = positionUpdateMaterial.uniforms.punchSphereStrengths.value;
-                const radii = positionUpdateMaterial.uniforms.punchSphereRadii.value;
-                const returnProbs = positionUpdateMaterial.uniforms.punchSphereReturnProbs.value;
-                
-                for (let i = 0; i < maxSpheres; i++) {
-                    if (i < activeSpheres.length) {
-                        const ps = activeSpheres[i];
-                        const pos = ps.getPosition();  // 位置を取得（更新された位置）
-                        // パーティクルの位置は地形のオフセット（-w/2, -h/2, 0）を考慮しているので、
-                        // sphereの位置も同じ座標系で渡す（既に地形の座標系で計算されているのでそのまま）
-                        // Float32Arrayにx, y, zを順番に格納
-                        centers[i * 3] = pos.x;
-                        centers[i * 3 + 1] = pos.y;
-                        centers[i * 3 + 2] = pos.z;
-                        strengths[i] = ps.getStrength();
-                        radii[i] = ps.getRadius();
-                        returnProbs[i] = ps.getReturnProbability();
-                        
-                        // デバッグ: 最初のsphereのみログ出力
-                        if (i === 0 && Math.random() < 0.01) {
-                            console.log(`Setting uniform for sphere #${i + 1}:`, {
-                                center: `(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`,
-                                strength: strengths[i].toFixed(2),
-                                radius: radii[i].toFixed(2)
-                            });
-                        }
-                    } else {
-                        centers[i * 3] = 0;
-                        centers[i * 3 + 1] = 0;
-                        centers[i * 3 + 2] = 0;
-                        strengths[i] = 0;
-                        radii[i] = 0;
-                        returnProbs[i] = 0;
-                    }
-                }
-                
-                // uniformの更新を確実にする
-                if (positionUpdateMaterial.uniforms.punchSphereCenters) {
-                    positionUpdateMaterial.uniforms.punchSphereCenters.needsUpdate = true;
-                }
-                if (positionUpdateMaterial.uniforms.punchSphereStrengths) {
-                    positionUpdateMaterial.uniforms.punchSphereStrengths.needsUpdate = true;
-                }
-                if (positionUpdateMaterial.uniforms.punchSphereRadii) {
-                    positionUpdateMaterial.uniforms.punchSphereRadii.needsUpdate = true;
-                }
-                if (positionUpdateMaterial.uniforms.punchSphereReturnProbs) {
-                    positionUpdateMaterial.uniforms.punchSphereReturnProbs.needsUpdate = true;
-                }
-            }
-            
-            // 色更新用シェーダーにuniformを設定
-            const colorUpdateMaterial = this.gpuParticleSystem.colorUpdateMaterial;
-            if (colorUpdateMaterial && colorUpdateMaterial.uniforms) {
-                // もっとガッツリ凹ませるので、Zオフセットの範囲も拡大
-                if (!colorUpdateMaterial.uniforms.minZOffset) {
-                    colorUpdateMaterial.uniforms.minZOffset = { value: -500.0 };  // -120.0 → -500.0
-                } else {
-                    colorUpdateMaterial.uniforms.minZOffset.value = -500.0;
-                }
-                if (!colorUpdateMaterial.uniforms.maxZOffset) {
-                    colorUpdateMaterial.uniforms.maxZOffset = { value: 500.0 };  // 120.0 → 500.0
-                } else {
-                    colorUpdateMaterial.uniforms.maxZOffset.value = 500.0;
-                }
-            }
-            
-            // GPUParticleSystemの基本更新
+            // GPUParticleSystemの更新（圧力計算も含む）
             this.gpuParticleSystem.update({
                 time: this.time,
                 noiseScale: this.noiseScale,
                 noiseStrength: this.noiseStrength,
-                baseRadius: 0
+                baseRadius: 0,
+                // Scene04専用のパラメータ
+                scl: this.scl,
+                noiseOffsetTexture: this.noiseOffsetTexture,
+                terrainOffset: new THREE.Vector3(0, 0, 0),
+                punchSpheres: this.punchSpheres,  // 圧力計算用（GPUParticleSystem側でuniform設定）
+                // 色更新用シェーダーのuniform（Zオフセット範囲）
+                minZOffset: -500.0,
+                maxZOffset: 500.0
             });
         }
         
@@ -758,12 +562,10 @@ export class Scene04 extends SceneBase {
      */
     processPendingSpheres() {
         if (this.pendingSpheres.length > 0) {
-            console.log(`processPendingSpheres: Processing ${this.pendingSpheres.length} pending spheres`);
-            this.pendingSpheres.forEach((ps, index) => {
+            this.pendingSpheres.forEach((ps) => {
                 ps.createThreeObjects(this.scene, this.sphereGroup, this.scene, this.terrainRotationX);
                 ps.initScopeCanvas(this.scopeCanvas, this.scopeCtx);
                 this.punchSpheres.push(ps);
-                console.log(`  Processed sphere #${index + 1}, total punchSpheres: ${this.punchSpheres.length}`);
             });
             this.pendingSpheres = [];
         }
@@ -800,7 +602,6 @@ export class Scene04 extends SceneBase {
      * 力を発生させる（単純に地面のどこかにランダムで圧力を掛ける）
      */
     updatePunchForces(forceTrigger = false) {
-        console.log(`updatePunchForces called with forceTrigger: ${forceTrigger}`);
         if (forceTrigger) {
             // 地面の範囲内にランダムで発生（地形の中心を画面の中心（0, 0, 0）に合わせた）
             // 地形の実際の範囲: (-w/2, -h/2) から (w/2, h/2)
@@ -835,14 +636,7 @@ export class Scene04 extends SceneBase {
             const punchRadius = THREE.MathUtils.randFloat(this.punchRadiusMin, this.punchRadiusMax);
             const punchReturnProbability = Math.random();
             
-            console.log(`Creating punch sphere at (${punchX.toFixed(1)}, ${punchY.toFixed(1)}, ${punchZ.toFixed(1)}), strength: ${punchStrength.toFixed(1)}, radius: ${punchRadius.toFixed(1)}`);
-            console.log(`  pendingSpheres.length before: ${this.pendingSpheres.length}`);
-            
             this.createPunchSphere(punchX, punchY, punchZ, punchStrength, punchRadius, punchReturnProbability);
-            
-            console.log(`  pendingSpheres.length after: ${this.pendingSpheres.length}`);
-        } else {
-            console.log(`updatePunchForces: forceTrigger is false, skipping`);
         }
     }
     
@@ -853,7 +647,6 @@ export class Scene04 extends SceneBase {
         const punchCenter = new THREE.Vector3(x, y, z);
         const sphere = new Scene04_PunchSphere(punchCenter, strength, radius, returnProbability);
         this.pendingSpheres.push(sphere);
-        console.log(`createPunchSphere: Added sphere to pendingSpheres, total: ${this.pendingSpheres.length}`);
     }
     
     /**
@@ -891,8 +684,7 @@ export class Scene04 extends SceneBase {
      */
     reset() {
         super.reset(); // TIMEをリセット
-        // 初期パーティクルデータを再設定
-        this.initializeParticleData();
+        // 初期パーティクルデータの再設定は不要（GPUParticleSystemの初期化時に完了している）
         
         // すべてのカメラパーティクルをリセット
         this.cameraParticles.forEach(cp => cp.reset());
@@ -955,13 +747,16 @@ export class Scene04 extends SceneBase {
     dispose() {
         console.log('Scene04.dispose: クリーンアップ開始');
         
-        // GPUパーティクルシステムを破棄
+        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は破棄しない）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
                 this.scene.remove(particleSystem);
             }
-            this.gpuParticleSystem.dispose();
+            if (!this.useSharedResources || !this.sharedResourceManager) {
+                // 共有リソースを使っていない場合のみ破棄
+                this.gpuParticleSystem.dispose();
+            }
             this.gpuParticleSystem = null;
         }
         
@@ -1003,11 +798,8 @@ export class Scene04 extends SceneBase {
             this.scopeCtx = null;
         }
         
-        // ノイズオフセットテクスチャを破棄
-        if (this.noiseOffsetTexture) {
-            this.noiseOffsetTexture.dispose();
-            this.noiseOffsetTexture = null;
-        }
+        // ノイズオフセットテクスチャはGPUParticleSystemが管理しているため、ここでは破棄しない
+        // GPUParticleSystem.dispose()で破棄される
         
         // すべてのライトを削除
         const lightsToRemove = [];

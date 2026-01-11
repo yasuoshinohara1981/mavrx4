@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 
 export class GPUParticleSystem {
-    constructor(renderer, particleCount, cols, rows, baseRadius, shaderPath = 'scene01', particleSize = 3.0) {
+    constructor(renderer, particleCount, cols, rows, baseRadius, shaderPath = 'scene01', particleSize = 3.0, placementType = 'sphere', initOptions = {}) {
         if (!renderer) {
             throw new Error('GPUParticleSystem: renderer is required');
         }
@@ -19,10 +19,15 @@ export class GPUParticleSystem {
         this.baseRadius = baseRadius;
         this.shaderPath = shaderPath;
         this.particleSize = particleSize;  // パーティクルサイズ（シーン側から指定可能）
+        this.placementType = placementType;  // 配置タイプ: 'sphere'（デフォルト）または'terrain'
+        this.initOptions = initOptions;  // 初期化オプション
         
         // テクスチャサイズ（パーティクル数に合わせる）
         this.width = cols;
         this.height = rows;
+        
+        // ノイズオフセットテクスチャ（terrain配置の場合に使用）
+        this.noiseOffsetTexture = null;
         
         // Ping-pongバッファ用のRenderTarget
         this.positionRenderTargets = [];
@@ -261,6 +266,70 @@ export class GPUParticleSystem {
     }
     
     /**
+     * 簡易パーリンノイズ関数（Scene04用、最適化版）
+     * @param {number} x - X座標
+     * @param {number} y - Y座標
+     * @param {number} z - Z座標（デフォルト: 0）
+     * @param {number} seed - ノイズシード
+     * @returns {number} ノイズ値（0.0-1.0）
+     */
+    _terrainNoise(x, y = 0, z = 0, seed) {
+        // ハッシュ関数（最適化版：sin()の呼び出しを減らす）
+        const hash = (ix, iy, iz) => {
+            const n = ix * 73856093.0 + iy * 19349663.0 + iz * 83492791.0 + seed * 1103515245.0;
+            // 簡易版：1つのsin()のみ使用（パフォーマンス向上）
+            const sin1 = Math.sin(n) * 43758.5453;
+            return Math.abs((sin1 % 1.0));
+        };
+        
+        const iX = Math.floor(x);
+        const iY = Math.floor(y);
+        const iZ = Math.floor(z);
+        const fX = x - iX;
+        const fY = y - iY;
+        const fZ = z - iZ;
+        
+        // smoothstep補間
+        const u = fX * fX * (3.0 - 2.0 * fX);
+        const v = fY * fY * (3.0 - 2.0 * fY);
+        const w = fZ * fZ * (3.0 - 2.0 * fZ);
+        
+        // 8つのコーナーのハッシュ値を取得
+        const a = hash(iX, iY, iZ);
+        const b = hash(iX + 1, iY, iZ);
+        const c = hash(iX, iY + 1, iZ);
+        const d = hash(iX + 1, iY + 1, iZ);
+        const e = hash(iX, iY, iZ + 1);
+        const f = hash(iX + 1, iY, iZ + 1);
+        const g = hash(iX, iY + 1, iZ + 1);
+        const h = hash(iX + 1, iY + 1, iZ + 1);
+        
+        // 3D補間
+        const x1 = a + (b - a) * u;
+        const x2 = c + (d - c) * u;
+        const y1 = x1 + (x2 - x1) * v;
+        
+        const x3 = e + (f - e) * u;
+        const x4 = g + (h - g) * u;
+        const y2 = x3 + (x4 - x3) * v;
+        
+        return y1 + (y2 - y1) * w;
+    }
+    
+    /**
+     * map関数（Processingと同じ）
+     * @param {number} value - 入力値
+     * @param {number} start1 - 入力範囲の開始
+     * @param {number} stop1 - 入力範囲の終了
+     * @param {number} start2 - 出力範囲の開始
+     * @param {number} stop2 - 出力範囲の終了
+     * @returns {number} マッピングされた値
+     */
+    _map(value, start1, stop1, start2, stop2) {
+        return start2 + (stop2 - start2) * ((value - start1) / (stop1 - start1));
+    }
+    
+    /**
      * 初期パーティクルデータを設定
      */
     initializeParticleData() {
@@ -268,31 +337,88 @@ export class GPUParticleSystem {
         const positionData = new Float32Array(dataSize);
         const colorData = new Float32Array(dataSize);
         
-        // 球面上に初期配置
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const index = (y * this.width + x) * 4;
-                
-                // 緯度・経度を計算
-                const latitude = (y / (this.height - 1) - 0.5) * Math.PI;
-                const longitude = (x / (this.width - 1)) * Math.PI * 2;
-                
-                // 球面上の位置
-                const posX = this.baseRadius * Math.cos(latitude) * Math.cos(longitude);
-                const posY = this.baseRadius * Math.sin(latitude);
-                const posZ = this.baseRadius * Math.cos(latitude) * Math.sin(longitude);
-                
-                // 位置データ（x, y, z, baseRadius）
-                positionData[index] = posX;
-                positionData[index + 1] = posY;
-                positionData[index + 2] = posZ;
-                positionData[index + 3] = this.baseRadius;
-                
-                // 色データ（初期は青）
-                colorData[index] = 0.0;     // r
-                colorData[index + 1] = 0.5; // g
-                colorData[index + 2] = 1.0; // b
-                colorData[index + 3] = 1.0; // a
+        if (this.placementType === 'terrain') {
+            // 地形配置（Scene04用）
+            const noiseScale = this.initOptions.terrainNoiseScale ?? 0.0001;
+            const noiseSeed = this.initOptions.terrainNoiseSeed ?? (Math.random() * 10000.0);
+            const terrainScale = this.initOptions.terrainScale ?? 5.0;
+            const zRange = this.initOptions.terrainZRange ?? { min: -100, max: 100 };
+            const noiseOffsetData = new Float32Array(dataSize);
+            
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const index = (y * this.width + x) * 4;
+                    
+                    // 地形の中心を画面の中心（0, 0, 0）に合わせる
+                    const px = (x - this.width / 2) * terrainScale;
+                    const py = (y - this.height / 2) * terrainScale;
+                    
+                    // ノイズオフセットデータ（更新時用、各パーティクルで異なる値）
+                    const noiseOffsetX = Math.random() * 10000.0;
+                    const noiseOffsetY = Math.random() * 10000.0;
+                    const noiseOffsetZ = Math.random() * 10000.0;
+                    
+                    // 初期化時のZ値をノイズで計算
+                    const noiseX = x * noiseScale * 200.0;
+                    const noiseY = y * noiseScale * 200.0;
+                    const pz = this._map(this._terrainNoise(noiseX, noiseY, 0, noiseSeed), 0, 1, zRange.min, zRange.max);
+                    
+                    // 位置データ（基準位置のZをwに保存）
+                    positionData[index] = px;
+                    positionData[index + 1] = py;
+                    positionData[index + 2] = pz;
+                    positionData[index + 3] = pz;  // 基準位置のZ
+                    
+                    // 色データ（初期色、明るくする）
+                    colorData[index] = 0.8;
+                    colorData[index + 1] = 0.8;
+                    colorData[index + 2] = 0.8;
+                    colorData[index + 3] = 1.0;
+                    
+                    // ノイズオフセットデータを保存
+                    noiseOffsetData[index] = noiseOffsetX;
+                    noiseOffsetData[index + 1] = noiseOffsetY;
+                    noiseOffsetData[index + 2] = noiseOffsetZ;
+                    noiseOffsetData[index + 3] = 0.0;
+                }
+            }
+            
+            // ノイズオフセットテクスチャを作成
+            this.noiseOffsetTexture = new THREE.DataTexture(
+                noiseOffsetData,
+                this.width,
+                this.height,
+                THREE.RGBAFormat,
+                THREE.FloatType
+            );
+            this.noiseOffsetTexture.needsUpdate = true;
+        } else {
+            // 球面上に初期配置（デフォルト）
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const index = (y * this.width + x) * 4;
+                    
+                    // 緯度・経度を計算
+                    const latitude = (y / (this.height - 1) - 0.5) * Math.PI;
+                    const longitude = (x / (this.width - 1)) * Math.PI * 2;
+                    
+                    // 球面上の位置
+                    const posX = this.baseRadius * Math.cos(latitude) * Math.cos(longitude);
+                    const posY = this.baseRadius * Math.sin(latitude);
+                    const posZ = this.baseRadius * Math.cos(latitude) * Math.sin(longitude);
+                    
+                    // 位置データ（x, y, z, baseRadius）
+                    positionData[index] = posX;
+                    positionData[index + 1] = posY;
+                    positionData[index + 2] = posZ;
+                    positionData[index + 3] = this.baseRadius;
+                    
+                    // 色データ（初期は青）
+                    colorData[index] = 0.0;     // r
+                    colorData[index + 1] = 0.5; // g
+                    colorData[index + 2] = 1.0; // b
+                    colorData[index + 3] = 1.0; // a
+                }
             }
         }
         
@@ -373,37 +499,59 @@ export class GPUParticleSystem {
         }
         
         // 位置更新用シェーダー
+        const positionUniforms = {
+            positionTexture: { value: null },
+            colorTexture: { value: null },
+            time: { value: 0.0 },
+            deltaTime: { value: 0.0 },
+            noiseScale: { value: 0.01 },  // ノイズスケール（scene09用）
+            noiseStrength: { value: 50.0 },  // ノイズ強度（scene09用）
+            baseRadius: { value: 400.0 },
+            width: { value: this.width },
+            height: { value: this.height },
+            boxSize: { value: 200.0 },  // scene09で使用
+            forcePoint: { value: new THREE.Vector3(0, 0, 0) },  // scene09で使用
+            forceStrength: { value: 0.0 },  // scene09で使用
+            forceRadius: { value: 60.0 }  // scene09で使用
+        };
+        
+        // scene04用のuniformを追加（圧力計算用）
+        if (this.shaderPath === 'scene04') {
+            positionUniforms.scl = { value: 5.0 };  // 地形のスケール
+            positionUniforms.noiseOffsetTexture = { value: null };  // ノイズオフセットテクスチャ
+            positionUniforms.terrainOffset = { value: new THREE.Vector3(0, 0, 0) };  // 地形のオフセット
+            positionUniforms.punchSphereCount = { value: 0 };  // 圧力sphereの数
+            positionUniforms.punchSphereCenters = { value: new Float32Array(30) };  // 10個 * 3次元
+            positionUniforms.punchSphereStrengths = { value: new Float32Array(10) };
+            positionUniforms.punchSphereRadii = { value: new Float32Array(10) };
+            positionUniforms.punchSphereReturnProbs = { value: new Float32Array(10) };
+        }
+        
         this.positionUpdateMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                positionTexture: { value: null },
-                colorTexture: { value: null },
-                time: { value: 0.0 },
-                deltaTime: { value: 0.0 },
-                noiseScale: { value: 0.01 },  // ノイズスケール（scene09用）
-                noiseStrength: { value: 50.0 },  // ノイズ強度（scene09用）
-                baseRadius: { value: 400.0 },
-                width: { value: this.width },
-                height: { value: this.height },
-                boxSize: { value: 200.0 },  // scene09で使用
-                forcePoint: { value: new THREE.Vector3(0, 0, 0) },  // scene09で使用
-                forceStrength: { value: 0.0 },  // scene09で使用
-                forceRadius: { value: 60.0 }  // scene09で使用
-            },
+            uniforms: positionUniforms,
             vertexShader: this.shaders.positionUpdate.vertex,
             fragmentShader: this.shaders.positionUpdate.fragment
         });
         
         // 色更新用シェーダー
+        const colorUniforms = {
+            positionTexture: { value: null },
+            colorTexture: { value: null },  // colorUpdate.fragで使用するため追加
+            baseRadius: { value: 400.0 },
+            deltaTime: { value: 0.0 },
+            width: { value: this.width },
+            height: { value: this.height },
+            time: { value: 0.0 }
+        };
+        
+        // scene04用のuniformを追加（Zオフセット範囲）
+        if (this.shaderPath === 'scene04') {
+            colorUniforms.minZOffset = { value: -500.0 };
+            colorUniforms.maxZOffset = { value: 500.0 };
+        }
+        
         this.colorUpdateMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                positionTexture: { value: null },
-                colorTexture: { value: null },  // colorUpdate.fragで使用するため追加
-                baseRadius: { value: 400.0 },
-                deltaTime: { value: 0.0 },
-                width: { value: this.width },
-                height: { value: this.height },
-                time: { value: 0.0 }
-            },
+            uniforms: colorUniforms,
             vertexShader: this.shaders.colorUpdate.vertex,
             fragmentShader: this.shaders.colorUpdate.fragment
         });
@@ -517,12 +665,100 @@ export class GPUParticleSystem {
             if (this.positionUpdateMaterial.uniforms.baseRadius) {
                 this.positionUpdateMaterial.uniforms.baseRadius.value = uniforms.baseRadius || 400.0;
             }
+            
+            // scene04用のuniform設定
+            if (this.shaderPath === 'scene04') {
+                // scl（地形のスケール）
+                if (this.positionUpdateMaterial.uniforms.scl && uniforms.scl !== undefined) {
+                    this.positionUpdateMaterial.uniforms.scl.value = uniforms.scl;
+                }
+                // noiseOffsetTexture（ノイズオフセットテクスチャ）
+                if (this.positionUpdateMaterial.uniforms.noiseOffsetTexture && uniforms.noiseOffsetTexture) {
+                    this.positionUpdateMaterial.uniforms.noiseOffsetTexture.value = uniforms.noiseOffsetTexture;
+                }
+                // terrainOffset（地形のオフセット）
+                if (this.positionUpdateMaterial.uniforms.terrainOffset && uniforms.terrainOffset) {
+                    this.positionUpdateMaterial.uniforms.terrainOffset.value.copy(uniforms.terrainOffset);
+                }
+                
+                // 圧力計算（PunchSphere）のuniform設定
+                if (uniforms.punchSpheres && Array.isArray(uniforms.punchSpheres)) {
+                    const maxSpheres = 10;
+                    const activeSpheres = uniforms.punchSpheres.filter(ps => {
+                        const strength = ps.getStrength ? ps.getStrength() : (ps.strength || 0);
+                        return strength > 0.01;
+                    }).slice(0, maxSpheres);
+                    
+                    // uniformが存在しない場合は初期化
+                    if (!this.positionUpdateMaterial.uniforms.punchSphereCount) {
+                        this.positionUpdateMaterial.uniforms.punchSphereCount = { value: 0 };
+                    }
+                    if (!this.positionUpdateMaterial.uniforms.punchSphereCenters) {
+                        this.positionUpdateMaterial.uniforms.punchSphereCenters = { 
+                            value: new Float32Array(maxSpheres * 3)
+                        };
+                    }
+                    if (!this.positionUpdateMaterial.uniforms.punchSphereStrengths) {
+                        this.positionUpdateMaterial.uniforms.punchSphereStrengths = { value: new Float32Array(maxSpheres) };
+                    }
+                    if (!this.positionUpdateMaterial.uniforms.punchSphereRadii) {
+                        this.positionUpdateMaterial.uniforms.punchSphereRadii = { value: new Float32Array(maxSpheres) };
+                    }
+                    if (!this.positionUpdateMaterial.uniforms.punchSphereReturnProbs) {
+                        this.positionUpdateMaterial.uniforms.punchSphereReturnProbs = { value: new Float32Array(maxSpheres) };
+                    }
+                    
+                    // uniformに値を設定
+                    this.positionUpdateMaterial.uniforms.punchSphereCount.value = activeSpheres.length;
+                    
+                    const centers = this.positionUpdateMaterial.uniforms.punchSphereCenters.value;
+                    const strengths = this.positionUpdateMaterial.uniforms.punchSphereStrengths.value;
+                    const radii = this.positionUpdateMaterial.uniforms.punchSphereRadii.value;
+                    const returnProbs = this.positionUpdateMaterial.uniforms.punchSphereReturnProbs.value;
+                    
+                    for (let i = 0; i < maxSpheres; i++) {
+                        if (i < activeSpheres.length) {
+                            const ps = activeSpheres[i];
+                            const pos = ps.getPosition ? ps.getPosition() : (ps.position || { x: 0, y: 0, z: 0 });
+                            centers[i * 3] = pos.x || 0;
+                            centers[i * 3 + 1] = pos.y || 0;
+                            centers[i * 3 + 2] = pos.z || 0;
+                            strengths[i] = ps.getStrength ? ps.getStrength() : (ps.strength || 0);
+                            radii[i] = ps.getRadius ? ps.getRadius() : (ps.radius || 0);
+                            returnProbs[i] = ps.getReturnProbability ? ps.getReturnProbability() : (ps.returnProbability || 0);
+                        } else {
+                            centers[i * 3] = 0;
+                            centers[i * 3 + 1] = 0;
+                            centers[i * 3 + 2] = 0;
+                            strengths[i] = 0;
+                            radii[i] = 0;
+                            returnProbs[i] = 0;
+                        }
+                    }
+                    
+                    // uniformの更新を確実にする
+                    this.positionUpdateMaterial.uniforms.punchSphereCenters.needsUpdate = true;
+                    this.positionUpdateMaterial.uniforms.punchSphereStrengths.needsUpdate = true;
+                    this.positionUpdateMaterial.uniforms.punchSphereRadii.needsUpdate = true;
+                    this.positionUpdateMaterial.uniforms.punchSphereReturnProbs.needsUpdate = true;
+                }
+            }
         }
         
         // 色更新用シェーダーにuniformを設定
         if (this.colorUpdateMaterial && this.colorUpdateMaterial.uniforms) {
             if (this.colorUpdateMaterial.uniforms.baseRadius) {
                 this.colorUpdateMaterial.uniforms.baseRadius.value = uniforms.baseRadius || 400.0;
+            }
+            
+            // scene04用のuniform設定（Zオフセット範囲）
+            if (this.shaderPath === 'scene04') {
+                if (this.colorUpdateMaterial.uniforms.minZOffset) {
+                    this.colorUpdateMaterial.uniforms.minZOffset.value = uniforms.minZOffset !== undefined ? uniforms.minZOffset : -500.0;
+                }
+                if (this.colorUpdateMaterial.uniforms.maxZOffset) {
+                    this.colorUpdateMaterial.uniforms.maxZOffset.value = uniforms.maxZOffset !== undefined ? uniforms.maxZOffset : 500.0;
+                }
             }
         }
         
@@ -649,6 +885,10 @@ export class GPUParticleSystem {
         if (this.colorUpdateMaterial) this.colorUpdateMaterial.dispose();
         if (this.particleMaterial) this.particleMaterial.dispose();
         if (this.particleGeometry) this.particleGeometry.dispose();
+        if (this.noiseOffsetTexture) {
+            this.noiseOffsetTexture.dispose();
+            this.noiseOffsetTexture = null;
+        }
         if (this.positionUpdateMesh) {
             this.positionUpdateMesh.geometry.dispose();
             if (this.updateScene) {

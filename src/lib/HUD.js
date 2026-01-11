@@ -4,13 +4,19 @@
  * Three.js用に簡易版を実装
  */
 
+import * as THREE from 'three';
+
 export class HUD {
     constructor() {
+        this.showHUD = true;  // HUD表示フラグ
         this.hudColor = '#ffffff';
         this.hudColorDim = 'rgba(255, 255, 255, 0.8)';
         this.fontSize = 20;  // 少し小さく
         this.fontWeight = 300;  // 細いフォントウェイト
         this.fontFamily = '"Inter", "Roboto", "Helvetica Neue", "Helvetica", "Arial", sans-serif';  // 細いフォント
+        
+        // 拍子設定（将来的に3拍子などにも対応可能）
+        this.beatsPerBar = 4;  // デフォルトは4拍子
         
         // TIME表示用の基準時刻
         this.startTime = performance.now();
@@ -72,14 +78,23 @@ export class HUD {
     /**
      * HUDを描画
      */
-    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0) {
+    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null) {
+        // HUDが非表示の場合は何もしない
+        if (!this.showHUD) {
+            return;
+        }
+        
+        // 目盛りのスケール（カメラに合わせる）
+        this.hudScales = hudScales;
+        
         // 色反転エフェクトが有効な場合はHUDの色を反転（白→黒）
+        // mavrx4準拠：中心線/円が濃すぎないように dim は alpha 0.3
         if (backgroundWhite) {
             this.hudColor = '#000000';
-            this.hudColorDim = 'rgba(0, 0, 0, 0.3)';  // 1.0 → 0.5に下げる（透明度を上げる = より透明にする）
+            this.hudColorDim = 'rgba(0, 0, 0, 0.3)';
         } else {
             this.hudColor = '#ffffff';
-            this.hudColorDim = 'rgba(255, 255, 255, 0.3)';  // 1.0 → 0.5に下げる（透明度を上げる = より透明にする）
+            this.hudColorDim = 'rgba(255, 255, 255, 0.3)';
         }
         
         // サイズを更新
@@ -96,16 +111,402 @@ export class HUD {
         this.ctx.translate(this.squareX, this.squareY);
         
         // HUDの描画（正方形領域内）
+        // 3Dグリッド（床+縦）＋ルーラー（g/Gでトグル）
+        if (hudGrid && hudGrid.enabled && hudGrid.camera && hudGrid.box) {
+            this.draw3DGridAndRulers(hudGrid.camera, hudGrid.box);
+        }
+
+        // ===== 追加HUD: 上部の「白バー + 赤インジケータ」=====
+        // "常に動く"共通値で駆動（timeベースのスキャン）
+        this.drawTopIndicatorBar(time, currentBar, rotationY, debugText, actualTick);
+
+        // ===== 追加HUD: 下部のモードバー（軍事UIっぽい）=====
+        this.drawBottomModeBar(time, phase, currentBar, trackEffects, actualTick);
+
         this.drawCornerMarkers();
         this.drawCenterCrosshair();
         this.drawCenterVerticalLine();
         this.drawScaleRuler();
-        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase);
+        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName);
         this.drawStatusBar(rotationX, rotationY, distance, noiseLevel, oscStatus, particleCount);
         
         // 航空機風HUD要素を追加
         this.drawAltitudeTape(cameraPosition);
         this.drawFlightParameters(frameRate, distance, rotationX, rotationY);
+        
+        this.ctx.restore();
+    }
+
+    /**
+     * 上部のインジケータバー（白バー + 赤い四角）
+     * - rotationY（ラジアン）を heading(0..360) に変換して位置へ反映
+     * - Scene依存しない共通値として使える
+     */
+    drawTopIndicatorBar(time = 0, currentBar = 0, rotationY = 0, debugText = '', actualTick = 0) {
+        const w = this.squareSize;
+        const marginX = w * 0.12;
+        const y = w * 0.06;
+        const barW = w - marginX * 2;
+        const x0 = marginX;
+        const x1 = x0 + barW;
+
+        // フェーズマーカーの定義（小節数, フェーズ番号, フェーズ名）
+        // 1小節目 = スタート地点なので無視
+        const phaseMarkers = [
+            { bar: 9, phase: 1, name: "Inciting Incident（異変）" },
+            { bar: 13, phase: 2, name: "Debate（揺らぎ）" },
+            { bar: 20, phase: 3, name: "Break into Two（世界が変わる）" },
+            { bar: 21, phase: 4, name: "Fun & Games（探索・展開）" },
+            { bar: 52, phase: 5, name: "Midpoint（反転点）" },
+            { bar: 53, phase: 6, name: "Bad Guys Close In（破綻）" },
+            { bar: 72, phase: 7, name: "All Is Lost（崩壊）" },
+            { bar: 79, phase: 8, name: "Finale（再構築）" },
+            { bar: 93, phase: 9, name: "Final Image（余韻）" }
+        ];
+
+        // 赤インジケータの進行度（0..1）
+        // - actual_tick が来てるなら、それを「96小節ぶん」で正規化して使う
+        // - 無ければ従来通り time ベースで動かす（フォールバック）
+        // 1小節 = 96 ticks * beatsPerBar (例: 4拍子なら 96 * 4 = 384 ticks)
+        const ticksPerBar = 96 * this.beatsPerBar;
+        const maxTicks = 96 * ticksPerBar; // 96小節分
+        const hasTick = Number.isFinite(actualTick) && actualTick >= 0;
+        const scan = hasTick
+            ? (((actualTick % maxTicks) + maxTicks) % maxTicks) / maxTicks
+            : ((time * 0.035 + currentBar * 0.013) % 1);
+        const px = x0 + barW * scan;
+
+        // heading 0..360（ラベル用：共通値）
+        const heading = ((rotationY * 180) / Math.PI + 360) % 360;
+
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.85;
+        this.ctx.strokeStyle = this.hudColor;
+        this.ctx.lineWidth = 2;
+
+        // main bar
+        this.ctx.beginPath();
+        this.ctx.moveTo(x0, y);
+        this.ctx.lineTo(x1, y);
+        this.ctx.stroke();
+
+        // end caps
+        this.ctx.beginPath();
+        this.ctx.moveTo(x0, y - 8);
+        this.ctx.lineTo(x0, y + 8);
+        this.ctx.moveTo(x1, y - 8);
+        this.ctx.lineTo(x1, y + 8);
+        this.ctx.stroke();
+
+        // フェーズマーカーを描画（インジケーター以外は白）
+        this.ctx.globalAlpha = 0.7;
+        this.ctx.strokeStyle = this.hudColor; // 白に変更
+        this.ctx.lineWidth = 2;
+        this.ctx.font = '11px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillStyle = this.hudColor; // 白に変更
+
+        phaseMarkers.forEach((marker) => {
+            // 小節数をtickに変換
+            const markerTick = marker.bar * ticksPerBar;
+            // バーの長さで按分して位置を計算
+            const markerRatio = markerTick / maxTicks;
+            const markerX = x0 + barW * markerRatio;
+
+            // フェーズマーカーの縦線を描画（通常のtickより長め）
+            this.ctx.beginPath();
+            this.ctx.moveTo(markerX, y - 12);
+            this.ctx.lineTo(markerX, y + 12);
+            this.ctx.stroke();
+
+            // 縦線と横線の交わる部分に小さめの円を描画
+            this.ctx.globalAlpha = 0.9;
+            this.ctx.beginPath();
+            this.ctx.arc(markerX, y, 3, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            // フェーズ番号を表示（小さめのテキスト）
+            this.ctx.globalAlpha = 0.8;
+            this.ctx.fillText(`${marker.phase}`, markerX, y + 16);
+        });
+
+        // ticks（従来の12分割の目盛り）
+        this.ctx.globalAlpha = 0.55;
+        this.ctx.strokeStyle = this.hudColor;
+        this.ctx.lineWidth = 1;
+        for (let i = 1; i < 12; i++) {
+            const xx = x0 + (barW * i) / 12;
+            const len = (i % 3 === 0) ? 8 : 4;
+            this.ctx.beginPath();
+            this.ctx.moveTo(xx, y - len);
+            this.ctx.lineTo(xx, y + len);
+            this.ctx.stroke();
+        }
+
+        // red indicator (square)
+        const s = 10;
+        this.ctx.globalAlpha = 0.95;
+        this.ctx.fillStyle = '#ff3333';
+        this.ctx.fillRect(px - s / 2, y - s / 2, s, s);
+
+        // label
+        this.ctx.globalAlpha = 0.8;
+        this.ctx.fillStyle = this.hudColor;
+        this.ctx.font = '16px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'bottom';
+        // ラベル
+        // - tick入力がある時はPROG（展開進行度）として表示
+        const label = hasTick
+            ? `PROG ${(scan * 100).toFixed(0)}  TICK ${Math.floor(actualTick)}  HDG ${Math.round(heading)}`
+            : `SCAN ${(scan * 100).toFixed(0)}  HDG ${Math.round(heading)}`;
+        this.ctx.fillText(label, x0, y - 14);
+
+        // デバッグ表示（シーンから渡す）
+        if (debugText) {
+            this.ctx.globalAlpha = 0.75;
+            this.ctx.fillStyle = this.hudColor;
+            this.ctx.font = '14px monospace';
+            this.ctx.textAlign = 'right';
+            this.ctx.textBaseline = 'bottom';
+            this.ctx.fillText(String(debugText), x1, y - 14);
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 下部のモードバー（FLIR / TARGET / NAV / IR）
+     * - phase をベースにアクティブを切替（共通入力）
+     * - time でスキャン/点滅を加える
+     */
+    drawBottomModeBar(time = 0, phase = 0, currentBar = 0, trackEffects = null, actualTick = 0) {
+        const w = this.squareSize;
+        const y = w * 0.93;
+        const barW = w * 0.78;
+        const x0 = (w - barW) * 0.5;
+        const h = 26;
+        const pad = 10;
+        const labels = ['FLIR', 'TARGET', 'NAV', 'IR'];
+        const btnW = (barW - pad * (labels.length - 1)) / labels.length;
+
+        // common: phase 기반（0..9）
+        const mode = (Number.isFinite(phase) ? Math.floor(phase) : 0) % labels.length;
+
+        // scan bar above buttons (white line + red square)
+        const maxTicks = 96 * 4 * 96;
+        const hasTick = Number.isFinite(actualTick) && actualTick >= 0;
+        const scan = hasTick
+            ? (((actualTick % maxTicks) + maxTicks) % maxTicks) / maxTicks
+            : ((time * 0.06 + currentBar * 0.02) % 1);
+        const sx = x0 + barW * scan;
+        const sy = y - h - 10;
+
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.70;
+        this.ctx.strokeStyle = this.hudColor;
+        this.ctx.lineWidth = 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x0, sy);
+        this.ctx.lineTo(x0 + barW, sy);
+        this.ctx.stroke();
+        this.ctx.fillStyle = '#ff3333';
+        this.ctx.globalAlpha = 0.95;
+        this.ctx.fillRect(sx - 5, sy - 5, 10, 10);
+
+        // buttons
+        this.ctx.font = '16px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        for (let i = 0; i < labels.length; i++) {
+            const bx = x0 + i * (btnW + pad);
+            const isOn = i === mode;
+
+            // frame
+            this.ctx.globalAlpha = (isOn ? 0.90 : 0.35);
+            this.ctx.strokeStyle = this.hudColor;
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(bx, y - h, btnW, h);
+
+            // fill (active -> subtle red tint)
+            if (isOn) {
+                this.ctx.globalAlpha = 0.20;
+                this.ctx.fillStyle = '#ff3333';
+                this.ctx.fillRect(bx, y - h, btnW, h);
+            }
+
+            // label
+            this.ctx.globalAlpha = (isOn ? 0.95 : 0.70);
+            this.ctx.fillStyle = this.hudColor;
+            this.ctx.fillText(labels[i], bx + btnW / 2, y - h / 2);
+        }
+
+        // tiny status (track toggles) - common enough
+        const t2 = trackEffects?.[2] ? 'INV' : '--';
+        const t3 = trackEffects?.[3] ? 'CHR' : '--';
+        const t4 = trackEffects?.[4] ? 'GLT' : '--';
+        this.ctx.globalAlpha = 0.55;
+        this.ctx.fillStyle = this.hudColor;
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'bottom';
+        this.ctx.fillText(`${t2} ${t3} ${t4}`, x0, y - h - 16);
+
+        this.ctx.restore();
+    }
+
+    // NOTE: 左上/右上の小さい情報欄は「見えない＆被る」ため削除（ユーザー要望）
+
+    /**
+     * 3D Boxグリッド＋ルーラー（HUD上に投影して描く）
+     * @param {THREE.Camera} camera
+     * @param {{center:{x:number,y:number,z:number}, size:{x:number,y:number,z:number}, divX?:number, divY?:number, divZ?:number, labelMax?:number}} box
+     */
+    draw3DGridAndRulers(camera, box) {
+        const { center, size } = box;
+        if (!center || !size) return;
+
+        const divX = Math.max(2, Number(box.divX ?? 10));
+        const divY = Math.max(2, Number(box.divY ?? 8));
+        const divZ = Math.max(2, Number(box.divZ ?? 8));
+        const labelMax = Number(box.labelMax ?? 64);
+
+        const cx = center.x, cy = center.y, cz = center.z;
+        const sx = size.x, sy = size.y, sz = size.z;
+
+        const minX = cx - sx * 0.5, maxX = cx + sx * 0.5;
+        const minY = cy - sy * 0.5, maxY = cy + sy * 0.5;
+        const minZ = cz - sz * 0.5, maxZ = cz + sz * 0.5;
+
+        const project = (x, y, z) => {
+            const v = new THREE.Vector3(x, y, z);
+            v.project(camera);
+            // クリップ外は捨てる
+            if (!isFinite(v.x) || !isFinite(v.y) || !isFinite(v.z)) return null;
+            if (v.z < -1 || v.z > 1) return null;
+            const px = (v.x * 0.5 + 0.5) * this.squareSize;
+            const py = (-v.y * 0.5 + 0.5) * this.squareSize;
+            return { x: px, y: py };
+        };
+
+        const drawSeg = (a, b, alpha = 0.35, width = 1) => {
+            if (!a || !b) return;
+            this.ctx.save();
+            this.ctx.globalAlpha = alpha;
+            this.ctx.strokeStyle = this.hudColor;
+            this.ctx.lineWidth = width;
+            this.ctx.beginPath();
+            this.ctx.moveTo(a.x, a.y);
+            this.ctx.lineTo(b.x, b.y);
+            this.ctx.stroke();
+            this.ctx.restore();
+        };
+
+        const lerp = (a, b, t) => a + (b - a) * t;
+
+        // === 床グリッド（Y=minY） ===
+        for (let i = 0; i <= divX; i++) {
+            const t = i / divX;
+            const x = lerp(minX, maxX, t);
+            const a = project(x, minY, minZ);
+            const b = project(x, minY, maxZ);
+            drawSeg(a, b, 0.28, 1);
+        }
+        for (let k = 0; k <= divZ; k++) {
+            const t = k / divZ;
+            const z = lerp(minZ, maxZ, t);
+            const a = project(minX, minY, z);
+            const b = project(maxX, minY, z);
+            drawSeg(a, b, 0.28, 1);
+        }
+
+        // === 縦グリッド（手前面：Z=minZ, X-Y） ===
+        for (let i = 0; i <= divX; i++) {
+            const t = i / divX;
+            const x = lerp(minX, maxX, t);
+            const a = project(x, minY, minZ);
+            const b = project(x, maxY, minZ);
+            drawSeg(a, b, 0.20, 1);
+        }
+        for (let j = 0; j <= divY; j++) {
+            const t = j / divY;
+            const y = lerp(minY, maxY, t);
+            const a = project(minX, y, minZ);
+            const b = project(maxX, y, minZ);
+            drawSeg(a, b, 0.20, 1);
+        }
+
+        // === 縦グリッド（右面：X=maxX, Y-Z） ===
+        for (let k = 0; k <= divZ; k++) {
+            const t = k / divZ;
+            const z = lerp(minZ, maxZ, t);
+            const a = project(maxX, minY, z);
+            const b = project(maxX, maxY, z);
+            drawSeg(a, b, 0.18, 1);
+        }
+        for (let j = 0; j <= divY; j++) {
+            const t = j / divY;
+            const y = lerp(minY, maxY, t);
+            const a = project(maxX, y, minZ);
+            const b = project(maxX, y, maxZ);
+            drawSeg(a, b, 0.18, 1);
+        }
+
+        // === ルーラー（目盛り＋数値） ===
+        this.ctx.save();
+        this.ctx.fillStyle = this.hudColor;
+        this.ctx.font = '12px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+
+        // X軸（手前下：Y=minY, Z=minZ）
+        for (let i = 0; i <= divX; i++) {
+            const t = i / divX;
+            const x = lerp(minX, maxX, t);
+            const p = project(x, minY, minZ);
+            if (!p) continue;
+            // tick
+            this.ctx.globalAlpha = 0.9;
+            this.ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+            // label（間引く）
+            if (i % 2 === 0) {
+                const v = Math.round(t * labelMax);
+                this.ctx.fillText(String(v), p.x, p.y + 6);
+            }
+        }
+
+        // Y軸（右手前：X=maxX, Z=minZ）
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'middle';
+        for (let j = 0; j <= divY; j++) {
+            const t = j / divY;
+            const y = lerp(minY, maxY, t);
+            const p = project(maxX, y, minZ);
+            if (!p) continue;
+            this.ctx.globalAlpha = 0.9;
+            this.ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+            if (j % 2 === 0) {
+                const v = Math.round(t * labelMax);
+                this.ctx.fillText(String(v), p.x + 6, p.y);
+            }
+        }
+
+        // Z軸（右下：X=maxX, Y=minY）
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'top';
+        for (let k = 0; k <= divZ; k++) {
+            const t = k / divZ;
+            const z = lerp(minZ, maxZ, t);
+            const p = project(maxX, minY, z);
+            if (!p) continue;
+            this.ctx.globalAlpha = 0.75;
+            this.ctx.fillRect(p.x - 1, p.y - 1, 2, 2);
+            if (k % 2 === 0) {
+                const v = Math.round(t * labelMax);
+                this.ctx.fillText(String(v), p.x, p.y + 6);
+            }
+        }
         
         this.ctx.restore();
     }
@@ -231,8 +632,37 @@ export class HUD {
         this.ctx.lineTo(endX, y);
         this.ctx.stroke();
         
-        // 目盛り
+        // 目盛り（ズームに応じてリアルタイムにスケールを変える）
+        const distToTarget = (this.hudScales && typeof this.hudScales.distToTarget === 'number') ? this.hudScales.distToTarget : 1.0;
+        const fovDeg = (this.hudScales && typeof this.hudScales.fovDeg === 'number') ? this.hudScales.fovDeg : 60.0;
+        const fovRad = (fovDeg * Math.PI) / 180.0;
+        
         const divisions = 10;
+        
+        // 画面の「高さ」に相当するワールド長（中心付近）
+        const worldHeight = 2.0 * distToTarget * Math.tan(fovRad * 0.5);
+        const worldPerPixel = worldHeight / Math.max(1, this.squareSize);
+        const rulerWorldLength = worldPerPixel * rulerLength;
+        
+        // いい感じの目盛り最大値（1-2-5系）
+        const niceNumber = (x) => {
+            const ax = Math.abs(x);
+            if (ax < 1e-9) return 0;
+            const exp = Math.floor(Math.log10(ax));
+            const f = ax / Math.pow(10, exp);
+            let nf = 1;
+            if (f < 1.5) nf = 1;
+            else if (f < 3) nf = 2;
+            else if (f < 7) nf = 5;
+            else nf = 10;
+            return nf * Math.pow(10, exp);
+        };
+        
+        const scaleMax = niceNumber(rulerWorldLength);
+        const labelDecimals = scaleMax < 10 ? 2 : (scaleMax < 100 ? 1 : 0);
+        const scaleMin = 0;
+        const valueRange = Math.max(1e-9, scaleMax - scaleMin);
+
         for (let i = 0; i <= divisions; i++) {
             const x = startX + (rulerLength / divisions) * i;
             const tickSize = (i % 5 === 0) ? 10 : 5;
@@ -244,7 +674,8 @@ export class HUD {
             
             // 数値を表示（5の倍数のみ）
             if (i % 5 === 0) {
-                this.ctx.fillText((i * 10).toString(), x, y + 8);
+                const v = scaleMin + valueRange * (i / divisions);
+                this.ctx.fillText(v.toFixed(labelDecimals), x, y + 8);
             }
         }
         
@@ -256,7 +687,7 @@ export class HUD {
     /**
      * 情報パネルを描画
      */
-    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0) {
+    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null) {
         const margin = this.squareSize * 0.15;
         let x = margin + 20;
         let y = margin + 40;
@@ -291,11 +722,20 @@ export class HUD {
         this.ctx.fillText(`FPS: ${frameRate.toFixed(1)}`, x, y);
         y += lineHeight;
         
-        this.ctx.fillText(`CAM: #${currentCameraIndex}`, x, y);
+        const cameraDisplay = cameraModeName 
+            ? `CAM: #${currentCameraIndex + 1} (${cameraModeName})`
+            : `CAM: #${currentCameraIndex + 1}`;
+        this.ctx.fillText(cameraDisplay, x, y);
         y += lineHeight;
         
         this.ctx.fillText(`POS: (${cameraPosition.x.toFixed(0)}, ${cameraPosition.y.toFixed(0)}, ${cameraPosition.z.toFixed(0)})`, x, y);
         y += lineHeight;
+        
+        // BAR（小節）を表示
+        if (currentBar > 0) {
+            this.ctx.fillText(`BAR: ${currentBar}`, x, y);
+            y += lineHeight;
+        }
         
         this.ctx.fillText(`OBJECTS: ${particleCount || 0}`, x, y);
         y += lineHeight;
@@ -532,7 +972,32 @@ export class HUD {
         this.ctx.lineTo(scaleX, scaleY + scaleHeight);
         this.ctx.stroke();
         
-        // 目盛り
+        // 目盛り（ズームに応じてリアルタイムに変える：カメラYを中心に±レンジ表示）
+        const cameraY = (this.hudScales && typeof this.hudScales.cameraY === 'number') ? this.hudScales.cameraY : (cameraPosition?.y ?? 0);
+        const distToTarget = (this.hudScales && typeof this.hudScales.distToTarget === 'number') ? this.hudScales.distToTarget : 1.0;
+        const fovDeg = (this.hudScales && typeof this.hudScales.fovDeg === 'number') ? this.hudScales.fovDeg : 60.0;
+        const fovRad = (fovDeg * Math.PI) / 180.0;
+        const worldHeight = 2.0 * distToTarget * Math.tan(fovRad * 0.5);
+        
+        const niceNumber = (x) => {
+            const ax = Math.abs(x);
+            if (ax < 1e-9) return 0;
+            const exp = Math.floor(Math.log10(ax));
+            const f = ax / Math.pow(10, exp);
+            let nf = 1;
+            if (f < 1.5) nf = 1;
+            else if (f < 3) nf = 2;
+            else if (f < 7) nf = 5;
+            else nf = 10;
+            return nf * Math.pow(10, exp);
+        };
+        
+        const altSpan = niceNumber(worldHeight);
+        const altMin = cameraY - altSpan * 0.5;
+        const altMax = cameraY + altSpan * 0.5;
+        const altRange = Math.max(1e-9, altMax - altMin);
+        const altDecimals = altSpan < 10 ? 2 : (altSpan < 100 ? 1 : 0);
+        
         const divisions = 10;
         const divisionHeight = scaleHeight / divisions;
         
@@ -548,7 +1013,8 @@ export class HUD {
             // 数値を表示（5の倍数のみ）
             if (i % 5 === 0) {
                 this.ctx.textBaseline = 'middle';
-                this.ctx.fillText((i * 10).toString(), scaleX - tickSize - 5, y);
+                const v = altMin + altRange * (i / divisions);
+                this.ctx.fillText(v.toFixed(altDecimals), scaleX - tickSize - 5, y);
                 this.ctx.textBaseline = 'top';
             }
         }
@@ -772,4 +1238,3 @@ export class HUD {
         this.militaryInfoLines = parts.slice(0, 3);
     }
 }
-

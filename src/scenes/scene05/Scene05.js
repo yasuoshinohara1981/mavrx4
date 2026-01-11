@@ -349,20 +349,24 @@ export class Scene05 extends SceneBase {
     onUpdate(deltaTime) {
         const time = Date.now() / 1000.0;
         
-        // 各トラックの波形を更新
-        for (let i = 0; i < this.numTracks; i++) {
-            this.trackWaveforms[i].update(
-                time,
-                this.baseNoiseScale,
-                this.noteNoiseScale,
-                this.sustainDecayRate,
-                this.idleAmplitude,
-                this.minFrequencyScale,
-                this.maxFrequencyScale,
-                this.attackTime,
-                this.releaseTime,
-                this.collisionCircles
-            );
+        // 各トラックの波形を更新（setup()が完了している場合のみ）
+        if (this.trackWaveforms && this.trackWaveforms.length >= this.numTracks) {
+            for (let i = 0; i < this.numTracks; i++) {
+                if (this.trackWaveforms[i]) {
+                    this.trackWaveforms[i].update(
+                        time,
+                        this.baseNoiseScale,
+                        this.noteNoiseScale,
+                        this.sustainDecayRate,
+                        this.idleAmplitude,
+                        this.minFrequencyScale,
+                        this.maxFrequencyScale,
+                        this.attackTime,
+                        this.releaseTime,
+                        this.collisionCircles
+                    );
+                }
+            }
         }
         
         // 衝突エフェクトを更新
@@ -511,9 +515,11 @@ export class Scene05 extends SceneBase {
         if (!this.drawCtx) return;
         
         // 各トラックの波形を描画（アクティブなトラックのみ）
-        for (let i = 0; i < this.numTracks; i++) {
-            if (this.trackWaveforms[i].isActive()) {
-                this.trackWaveforms[i].draw(this.drawCtx, this.backgroundWhite);
+        if (this.trackWaveforms && this.trackWaveforms.length >= this.numTracks) {
+            for (let i = 0; i < this.numTracks; i++) {
+                if (this.trackWaveforms[i] && this.trackWaveforms[i].isActive()) {
+                    this.trackWaveforms[i].draw(this.drawCtx, this.backgroundWhite);
+                }
             }
         }
     }
@@ -640,7 +646,8 @@ export class Scene05 extends SceneBase {
                 
                 // 対応するトラックの波形にノートを追加
                 const trackIndex = trackNumber - 1;
-                if (trackIndex >= 0 && trackIndex < this.numTracks) {
+                if (trackIndex >= 0 && trackIndex < this.numTracks && 
+                    this.trackWaveforms && this.trackWaveforms[trackIndex]) {
                     this.trackWaveforms[trackIndex].triggerNote(noteNumber, velocity, durationMs);
                     
                     // パーティクルを積極的に動かす：追加の力を加える
@@ -665,8 +672,12 @@ export class Scene05 extends SceneBase {
         super.reset();
         
         // 全トラックの波形データをクリア
-        for (let i = 0; i < this.numTracks; i++) {
-            this.trackWaveforms[i].reset();
+        if (this.trackWaveforms && this.trackWaveforms.length >= this.numTracks) {
+            for (let i = 0; i < this.numTracks; i++) {
+                if (this.trackWaveforms[i]) {
+                    this.trackWaveforms[i].reset();
+                }
+            }
         }
         
         // 衝突エフェクトをクリア
@@ -712,8 +723,12 @@ export class Scene05 extends SceneBase {
         console.log('Scene05.dispose: クリーンアップ開始');
         
         // 全トラックの波形データをクリア
-        for (let i = 0; i < this.numTracks; i++) {
-            this.trackWaveforms[i].reset();
+        if (this.trackWaveforms && this.trackWaveforms.length >= this.numTracks) {
+            for (let i = 0; i < this.numTracks; i++) {
+                if (this.trackWaveforms[i]) {
+                    this.trackWaveforms[i].reset();
+                }
+            }
         }
         this.trackWaveforms = [];
         

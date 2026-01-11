@@ -15,7 +15,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 export class Scene06 extends SceneBase {
     constructor(renderer, camera) {
         super(renderer, camera);
-        this.title = 'mathym | 06-XPL';
+        this.title = 'mathym | 07-XPL';
         
         // パーティクル設定
         this.numParticles = 120000;
@@ -26,6 +26,7 @@ export class Scene06 extends SceneBase {
         this.particleSizes = []; // 各パーティクルのサイズ（widthX, widthZ, height）
         this.particleMasses = []; // 各パーティクルの質量
         this.instancedManager = null; // GPUインスタンシング管理クラス
+        this.particleNeedsUpdate = []; // 各パーティクルが更新が必要かどうか（パフォーマンス最適化）
         
         // 建物のサイズパラメータ
         this.BUILDING_WIDTH_MIN = 2.5;
@@ -571,6 +572,9 @@ export class Scene06 extends SceneBase {
         const initialRotation = new THREE.Euler(0, 0, 0, 'XYZ');
         this.particleRotations.push(initialRotation);
         
+        // 更新フラグを初期化（初期状態では更新が必要）
+        this.particleNeedsUpdate.push(true);
+        
         // 初期位置とスケールを設定（回転なし）
         const scale = new THREE.Vector3(widthX, height, widthZ);
         this.instancedManager.setMatrixAt(
@@ -654,6 +658,21 @@ export class Scene06 extends SceneBase {
             return; // まだ初期化されていない場合はスキップ
         }
         
+        // 爆発の影響範囲を事前計算（距離の2乗を使用してパフォーマンス向上）
+        const explosionRanges = [];
+        for (const explosion of this.explosions) {
+            if (!explosion.isActive() && explosion.getAge() >= explosion.getLifetime()) continue;
+            const explosionCenter = explosion.getCenter();
+            const explosionRadius = explosion.getRadius();
+            explosionRanges.push({
+                center: explosionCenter,
+                radiusSquared: (explosionRadius * 1.5) * (explosionRadius * 1.5), // 距離の2乗を事前計算
+                explosion: explosion
+            });
+        }
+        
+        let updatedCount = 0; // 更新されたパーティクル数（デバッグ用）
+        
         for (let i = 0; i < this.particles.length; i++) {
             const particle = this.particles[i];
             const angularVel = this.particleAngularVelocities[i];
@@ -671,45 +690,55 @@ export class Scene06 extends SceneBase {
             
             // 動いていないパーティクルはスキップ（ただし、爆発の影響範囲内の場合は更新）
             let isInExplosionRange = false;
-            if (!isMoving) {
-                for (const explosion of this.explosions) {
-                    if (!explosion.isActive() && explosion.getAge() >= explosion.getLifetime()) continue;
-                    const explosionCenter = explosion.getCenter();
-                    const toParticle = new THREE.Vector3().subVectors(particlePos, explosionCenter);
-                    const distance = toParticle.length();
-                    const explosionRadius = explosion.getRadius();
-                    if (distance < explosionRadius * 1.5) {
+            if (!isMoving && explosionRanges.length > 0) {
+                // 距離の2乗を使用してパフォーマンス向上（sqrtを避ける）
+                for (const range of explosionRanges) {
+                    const dx = particlePos.x - range.center.x;
+                    const dy = particlePos.y - range.center.y;
+                    const dz = particlePos.z - range.center.z;
+                    const distanceSquared = dx * dx + dy * dy + dz * dz;
+                    if (distanceSquared < range.radiusSquared) {
                         isInExplosionRange = true;
                         break;
                     }
                 }
                 if (!isInExplosionRange) {
                     // 動いていないかつ爆発の影響範囲外のパーティクルはスキップ
+                    this.particleNeedsUpdate[i] = false;
                     continue;
                 }
             }
+            
+            // 更新が必要なパーティクル
+            this.particleNeedsUpdate[i] = true;
+            updatedCount++;
             
             // 重力を適用（質量に応じて重いほど強く）
             const massGravityMultiplier = THREE.MathUtils.mapLinear(particleMass, 1.5, 200.0, 1.0, 1.5); // 重いほど1.5倍まで
             const gravity = this.gravity.clone().multiplyScalar(massGravityMultiplier);
             particle.addForce(gravity);
             
-            // 全ての爆発の力を適用
+            // 全ての爆発の力を適用（距離の2乗を使用してパフォーマンス向上）
             for (const explosion of this.explosions) {
                 if (!explosion.isActive() && explosion.getAge() >= explosion.getLifetime()) continue;
                 
                 const explosionCenter = explosion.getCenter();
-                const toParticle = new THREE.Vector3().subVectors(particlePos, explosionCenter);
-                const distance = toParticle.length();
+                // Vector3の生成を避けて直接計算（パフォーマンス向上）
+                const dx = particlePos.x - explosionCenter.x;
+                const dy = particlePos.y - explosionCenter.y;
+                const dz = particlePos.z - explosionCenter.z;
+                const distanceSquared = dx * dx + dy * dy + dz * dz; // 距離の2乗
                 const explosionRadius = explosion.getRadius();
+                const explosionRadiusSquared = explosionRadius * explosionRadius; // 半径の2乗
                 const explosionAge = explosion.getAge();
                 const explosionLifetime = explosion.getLifetime();
                 
                 // 爆発の進行度（0.0〜1.0）
                 const explosionProgress = explosionAge / explosionLifetime;
                 
-                // 球体の中にいる場合、消えるまでは押し出される
-                if (distance < explosionRadius && distance > 0.1) {
+                // 球体の中にいる場合、消えるまでは押し出される（距離の2乗で判定）
+                if (distanceSquared < explosionRadiusSquared && distanceSquared > 0.01) {
+                    const distance = Math.sqrt(distanceSquared); // 実際の距離が必要な時だけ計算
                     // 距離に応じた力の強さ
                     const normalizedDist = distance / explosionRadius;
                     let baseForceStrength = 50.0 * (1.0 - normalizedDist) * (1.0 - normalizedDist);
@@ -732,20 +761,23 @@ export class Scene06 extends SceneBase {
                     
                     // 球体の内側にいる場合、力を強化
                     const innerForceStrength = baseForceStrength * 10.0;
-                    const forceDir = toParticle.clone().normalize().multiplyScalar(innerForceStrength);
+                    // Vector3の生成を避けて直接計算（パフォーマンス向上）
+                    const invDistance = 1.0 / distance;
+                    const forceDir = new THREE.Vector3(dx * invDistance, dy * invDistance, dz * invDistance).multiplyScalar(innerForceStrength);
                     particle.addForce(forceDir);
                     
                     // 角速度を追加（横回転を優先、縦回転は強い力の時だけ）
                     const angularPower = innerForceStrength * 0.01; // 力に応じた角速度
-                    const normalizedDir = toParticle.clone().normalize();
+                    const normalizedDir = new THREE.Vector3(dx * invDistance, dy * invDistance, dz * invDistance);
                     // 横回転（X軸とZ軸）を優先 - ビルが倒れるように
                     angularVel.x += normalizedDir.z * angularPower * 1.2; // X軸回転を強化
                     angularVel.z += -normalizedDir.x * angularPower * 1.2; // Z軸回転を強化
                     // 縦回転（Y軸）は強い力の時だけ少し入れる（力が大きいほど少し増やす）
                     const yAxisRotationFactor = Math.min(innerForceStrength / 100.0, 0.3); // 最大0.3倍まで
                     angularVel.y += (Math.random() - 0.5) * angularPower * 0.1 * yAxisRotationFactor; // 縦回転を大幅に減らす
-                } else if (distance < explosionRadius * 1.5 && distance > 0.1) {
+                } else if (distanceSquared < explosionRadiusSquared * 2.25 && distanceSquared > 0.01) {
                     // 外側は通常の力（弱め）
+                    const distance = Math.sqrt(distanceSquared); // 実際の距離が必要な時だけ計算
                     const normalizedDist = distance / (explosionRadius * 1.5);
                     let baseForceStrength = 30.0 * (1.0 - normalizedDist) * (1.0 - normalizedDist);
                     
@@ -763,12 +795,14 @@ export class Scene06 extends SceneBase {
                     const massForceMultiplier = THREE.MathUtils.mapLinear(particleMass, 1.0, 100.0, 1.0, 0.5);
                     baseForceStrength *= massForceMultiplier;
                     
-                    const forceDir = toParticle.clone().normalize().multiplyScalar(baseForceStrength);
+                    // Vector3の生成を避けて直接計算（パフォーマンス向上）
+                    const invDistance = 1.0 / distance;
+                    const forceDir = new THREE.Vector3(dx * invDistance, dy * invDistance, dz * invDistance).multiplyScalar(baseForceStrength);
                     particle.addForce(forceDir);
                     
                     // 角速度を追加（弱め、横回転を優先）
                     const angularPower = baseForceStrength * 0.005;
-                    const normalizedDir = toParticle.clone().normalize();
+                    const normalizedDir = new THREE.Vector3(dx * invDistance, dy * invDistance, dz * invDistance);
                     // 横回転（X軸とZ軸）を優先
                     angularVel.x += normalizedDir.z * angularPower * 1.2; // X軸回転を強化
                     angularVel.z += -normalizedDir.x * angularPower * 1.2; // Z軸回転を強化
@@ -826,8 +860,10 @@ export class Scene06 extends SceneBase {
             this.instancedManager.setMatrixAt(i, particlePos, rotation, scale);
         }
         
-        // インスタンスマトリックスを更新
-        this.instancedManager.markNeedsUpdate();
+        // インスタンスマトリックスを更新（更新が必要なパーティクルがある場合のみ）
+        if (updatedCount > 0) {
+            this.instancedManager.markNeedsUpdate();
+        }
         
         // カメラの位置を更新（SceneBase.update()で既にカメラパーティクルは更新済み）
         this.updateCamera();
@@ -956,7 +992,9 @@ export class Scene06 extends SceneBase {
                     this.oscStatus,
                     this.particleCount,
                     this.trackEffects,  // エフェクト状態を渡す
-                    this.phase  // phase値を渡す
+                    this.phase,  // phase値を渡す
+                    this.title || null,  // sceneName
+                    this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
                 );
             } else {
                 this.hud.clear();
@@ -1054,16 +1092,25 @@ export class Scene06 extends SceneBase {
         const textX = end2X + 10;  // 水平線の終端から少し右に
         let textY = end2Y - 60;  // 水平線の上に
         
-        // 影響範囲内のパーティクル数を計算
+        // 影響範囲内のパーティクル数を計算（距離の2乗を使用してパフォーマンス向上）
         let affectedParticles = 0;
-        for (let i = 0; i < this.particles.length; i++) {
+        const explosionCenter3D = explosion.getCenter(); // 3D座標（2D座標変換用のexplosionCenterとは別）
+        const explosionRadiusSquared = (explosionRadius * 1.5) * (explosionRadius * 1.5); // 距離の2乗を事前計算
+        // サンプリングして概算（全パーティクルをチェックしない）
+        const sampleSize = Math.min(1000, this.particles.length); // 最大1000個をサンプリング
+        const step = Math.max(1, Math.floor(this.particles.length / sampleSize));
+        for (let i = 0; i < this.particles.length; i += step) {
             const particlePos = this.particles[i].getPosition();
-            const toParticle = new THREE.Vector3().subVectors(particlePos, explosion.getCenter());
-            const distance = toParticle.length();
-                if (distance < explosionRadius * 1.5) {
+            const dx = particlePos.x - explosionCenter3D.x;
+            const dy = particlePos.y - explosionCenter3D.y;
+            const dz = particlePos.z - explosionCenter3D.z;
+            const distanceSquared = dx * dx + dy * dy + dz * dz;
+            if (distanceSquared < explosionRadiusSquared) {
                 affectedParticles++;
             }
         }
+        // サンプリング結果を全体に拡張
+        affectedParticles = Math.floor(affectedParticles * (this.particles.length / sampleSize));
         
         ctx.fillText('EXPLOSION DATA', textX, textY);
         textY += lineHeight;
@@ -1151,6 +1198,9 @@ export class Scene06 extends SceneBase {
             this.particleAngularVelocities[i].set(0, 0, 0);
             this.particleRotations[i].set(0, 0, 0, 'XYZ');
             
+            // 更新フラグをリセット
+            this.particleNeedsUpdate[i] = true;
+            
             // インスタンスのマトリックスを更新（スケールも含める）
             const scale = new THREE.Vector3(particleSize.x, particleSize.y, particleSize.z);
             this.instancedManager.setMatrixAt(i, particle.getPosition(), this.particleRotations[i], scale);
@@ -1212,6 +1262,12 @@ export class Scene06 extends SceneBase {
             await this.initGlitchShader();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
+            // エラーが発生してもcomposerは作成しておく（グリッチシェーダー用）
+            if (!this.composer) {
+                this.composer = new EffectComposer(this.renderer);
+                const renderPass = new RenderPass(this.scene, this.camera);
+                this.composer.addPass(renderPass);
+            }
         }
     }
     
@@ -1248,7 +1304,12 @@ export class Scene06 extends SceneBase {
                 fragmentShader: fragmentShader
             };
             
-            // ShaderPassを追加
+            // ShaderPassを追加（composerが存在することを再確認）
+            if (!this.composer) {
+                console.warn('グリッチシェーダー: composerが存在しません');
+                return;
+            }
+            
             this.glitchPass = new ShaderPass(glitchShader);
             this.glitchPass.enabled = false;  // デフォルトでは無効
             this.composer.addPass(this.glitchPass);
@@ -1427,6 +1488,7 @@ export class Scene06 extends SceneBase {
         this.particleRotations = [];
         this.particleSizes = [];
         this.particleMasses = [];
+        this.particleNeedsUpdate = [];
         
         // 爆発を破棄
         this.explosions.forEach(explosion => {

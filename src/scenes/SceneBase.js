@@ -35,6 +35,7 @@ export class SceneBase {
         this.lastFrameTime = null;  // FPS計算用
         this.oscStatus = 'Unknown';  // OSC接続状態
         this.phase = 0;  // OSCの/phase/メッセージで受け取る値
+        this.actualTick = 0;  // OSCの/actual_tick/メッセージで受け取る値（96小節で1ループ）
         this.particleCount = 0;  // パーティクル数
         this.time = 0.0;  // 時間変数（サブクラスで設定）
         
@@ -615,7 +616,13 @@ export class SceneBase {
                     this.oscStatus,
                     this.particleCount,
                     this.trackEffects,  // エフェクト状態を渡す
-                    this.phase  // phase値を渡す
+                    this.phase,  // phase値を渡す
+                    null,  // hudScales（サブクラスで設定可能）
+                    null,  // hudGrid（サブクラスで設定可能）
+                    0,  // currentBar（サブクラスで設定可能）
+                    '',  // debugText（サブクラスで設定可能）
+                    this.actualTick,  // actualTick（OSCから受け取る値）
+                    null  // cameraModeName（サブクラスで設定可能）
                 );
             } else {
                 // HUDが非表示の時はCanvasをクリア
@@ -655,6 +662,19 @@ export class SceneBase {
                 if (!isNaN(phaseValue)) {
                     this.phase = Math.floor(phaseValue);  // integerとして保存
                     console.log(`[SceneBase] Phase updated: ${this.phase} (from ${message.address}, args: ${JSON.stringify(args)})`);
+                }
+            }
+            return;  // 処理済み
+        }
+        
+        // /actual_tick/メッセージを処理（/actual_tick/ または /actual_tick の両方に対応）
+        if (message.address === '/actual_tick/' || message.address === '/actual_tick' || message.address === '/tick/' || message.address === '/tick') {
+            const args = message.args || [];
+            if (args.length > 0) {
+                const tickValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+                if (!isNaN(tickValue)) {
+                    this.actualTick = Math.floor(tickValue);  // integerとして保存
+                    console.log(`[SceneBase] ActualTick updated: ${this.actualTick} (from ${message.address}, args: ${JSON.stringify(args)})`);
                 }
             }
             return;  // 処理済み
@@ -1069,11 +1089,22 @@ export class SceneBase {
     takeScreenshot(is16_9) {
         // 既にスクリーンショット処理中の場合はスキップ
         if (this.pendingScreenshot || this.screenshotExecuting) {
+            console.log('⚠️ スクリーンショット処理中です');
             return;
         }
         
         if (!this.renderer || !this.renderer.domElement) {
+            console.error('❌ レンダラーが初期化されていません');
             return;
+        }
+        
+        // スクリーンショット用Canvasを初期化（まだ初期化されていない場合）
+        if (!this.screenshotCanvas || !this.screenshotCtx) {
+            this.initScreenshotCanvas();
+            if (!this.screenshotCanvas || !this.screenshotCtx) {
+                console.error('❌ スクリーンショット用Canvasの初期化に失敗しました');
+                return;
+            }
         }
         
         // スクリーンショットファイル名を生成
@@ -1161,7 +1192,8 @@ export class SceneBase {
         this.showScreenshotText = true;
         this.pendingScreenshot = true;
         this.pendingScreenshotFilename = filename;
-        this.screenshotTextEndTime = Date.now() + 1000; // 1秒後
+        this.screenshotTextEndTime = Date.now() + 3000; // 3秒後（余裕を持たせる）
+        console.log('📸 スクリーンショット予約:', filename, 'is16_9:', is16_9);
     }
     
     /**
@@ -1222,11 +1254,28 @@ export class SceneBase {
         // スクリーンショットを実行（テキスト表示後に）
         // 注意: executePendingScreenshot()は1回だけ実行されるように、フラグをチェック
         if (this.pendingScreenshot && !this.screenshotExecuting) {
+            console.log('📸 スクリーンショット実行準備完了', {
+                pendingScreenshot: this.pendingScreenshot,
+                showScreenshotText: this.showScreenshotText,
+                screenshotExecuting: this.screenshotExecuting,
+                filename: this.pendingScreenshotFilename
+            });
             // 次のフレームで実行するように遅延（テキストが確実に描画されるように）
+            // 2フレーム待ってから実行（テキストが確実に描画されるように）
             requestAnimationFrame(() => {
-                if (this.pendingScreenshot && this.showScreenshotText && !this.screenshotExecuting) {
-                    this.executePendingScreenshot();
-                }
+                requestAnimationFrame(() => {
+                    if (this.pendingScreenshot && this.showScreenshotText && !this.screenshotExecuting) {
+                        console.log('📸 executePendingScreenshot呼び出し');
+                        this.executePendingScreenshot();
+                    } else {
+                        console.log('⚠️ スクリーンショット実行条件を満たしていません', {
+                            pendingScreenshot: this.pendingScreenshot,
+                            showScreenshotText: this.showScreenshotText,
+                            screenshotExecuting: this.screenshotExecuting,
+                            filename: this.pendingScreenshotFilename
+                        });
+                    }
+                });
             });
         }
     }
@@ -1320,6 +1369,7 @@ export class SceneBase {
                 };
                 
                 // サーバーに送信
+                console.log('📸 サーバーに送信開始:', filename);
                 fetch('http://localhost:3001/api/screenshot', {
                     method: 'POST',
                     headers: {
@@ -1327,9 +1377,13 @@ export class SceneBase {
                     },
                     body: JSON.stringify(requestData)
                 })
-                .then(response => response.json())
+                .then(response => {
+                    console.log('📸 サーバー応答受信:', response.status, response.statusText);
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
+                        console.log('✅ スクリーンショット保存成功:', data.path);
                         debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
                     } else {
                         console.error('❌ スクリーンショット保存エラー:', data.error);
@@ -1341,6 +1395,7 @@ export class SceneBase {
                 })
                 .catch(error => {
                     console.error('❌ スクリーンショット送信エラー:', error.message);
+                    console.error('❌ エラー詳細:', error);
                     // エラー時もフラグをリセット
                     this.pendingScreenshot = false;
                     this.pendingScreenshotFilename = '';

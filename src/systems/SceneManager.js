@@ -49,6 +49,8 @@ export class SceneManager {
         
         // デフォルトシーンを設定（非同期）
         if (this.scenes.length > 0) {
+            // デフォルトシーンにインデックスを設定
+            this.scenes[0].sceneIndex = 0;
             this.scenes[0].setup().catch(err => {
                 console.error('シーンのセットアップエラー:', err);
             });
@@ -97,6 +99,9 @@ export class SceneManager {
         const newScene = this.scenes[this.currentSceneIndex];
         
         if (newScene) {
+            // シーンにインデックスを設定（HUD表示用）
+            newScene.sceneIndex = index;
+            
             // HUDの状態をグローバル状態に合わせる（シーン切り替え時）
             newScene.showHUD = this.globalShowHUD;
             
@@ -127,9 +132,9 @@ export class SceneManager {
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
                             // シーン4の場合は、初期色を再計算
-                            if (index === 3 && newScene.updateInitialColors) {
-                                newScene.updateInitialColors();
-                            }
+                            // if (index === 3 && newScene.updateInitialColors) {
+                            //     newScene.updateInitialColors();
+                            // }
                             // シーン10の場合は、初期色を再計算
                             if (index === 9 && newScene.updateInitialColors) {
                                 newScene.updateInitialColors();

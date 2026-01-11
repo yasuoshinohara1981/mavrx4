@@ -194,28 +194,14 @@ function handleKeyDown(e) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= 9) {
             e.preventDefault();
-            // Ctrl+1でScene11に切り替え（Scene11はインデックス10）
-            if (num === 1) {
-                sceneManager.switchScene(10);
-            } else if (num === 6) {
-                // Ctrl+6でScene06に切り替え（Scene06はインデックス5）
-                sceneManager.switchScene(5);
-            } else if (num === 7) {
-                // Ctrl+7でScene07に切り替え（Scene07はインデックス6）
-                sceneManager.switchScene(6);
-            } else if (num === 8) {
-                // Ctrl+8でScene08に切り替え（Scene08はインデックス7）
-                sceneManager.switchScene(7);
-            } else if (num === 9) {
-                // Ctrl+9でScene09に切り替え（Scene09はインデックス8）
-                sceneManager.switchScene(8);
-            } else {
-                sceneManager.switchScene(num - 1);
-            }
+            // Ctrl+数字キーで対応するシーンに切り替え（インデックスは0から始まる）
+            // Scene01=0, Scene02=1, Scene03=2, Scene04=3, Scene05=4, Scene06=5, Scene07=6, Scene08=7, Scene09=8
+            sceneManager.switchScene(num - 1);
             return;
         } else if (e.key === '0') {
             e.preventDefault();
-            sceneManager.switchScene(9);  // '0' → Scene10
+            // Ctrl+0でScene10に切り替え（Scene10はインデックス9）
+            sceneManager.switchScene(9);
             return;
         }
         // Ctrl押下中は他の処理をスキップ（数字キーがエフェクトとして処理されないように）

@@ -9,6 +9,18 @@ import { SceneManager } from './systems/SceneManager.js';
 import { SharedResourceManager } from './lib/SharedResourceManager.js';
 
 // ============================================
+// 設定
+// ============================================
+
+// 開発モード/ライブモードの設定
+// true: 開発モード（デフォルトシーンのみ読み込み）
+// false: ライブモード（全てのシーンをプリロード）
+const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
+
+// デフォルトシーンのインデックス（0 = Scene01, 1 = Scene02, ...）
+const DEFAULT_SCENE_INDEX = 0;  // Scene01をデフォルトに設定
+
+// ============================================
 // 初期化
 // ============================================
 
@@ -105,7 +117,17 @@ async function initSharedResourceManager() {
 // ============================================
 
 function initSceneManager() {
-    sceneManager = new SceneManager(renderer, camera, sharedResourceManager);
+    sceneManager = new SceneManager(renderer, camera, sharedResourceManager, {
+        isDevelopmentMode: IS_DEVELOPMENT_MODE,
+        defaultSceneIndex: DEFAULT_SCENE_INDEX
+    });
+    
+    // モード表示
+    if (IS_DEVELOPMENT_MODE) {
+        console.log(`[main] 開発モード: デフォルトシーン（Scene ${DEFAULT_SCENE_INDEX + 1}）のみ読み込み`);
+    } else {
+        console.log('[main] ライブモード: 全てのシーンをプリロード');
+    }
     
     // シーン切り替え時のコールバック
     sceneManager.onSceneChange = (sceneName) => {
@@ -334,6 +356,29 @@ function handleKeyUp(e) {
         // Pキーでパーティクル表示の切り替え
         currentScene.SHOW_PARTICLES = !currentScene.SHOW_PARTICLES;
         console.log('SHOW_PARTICLES:', currentScene.SHOW_PARTICLES);
+    }
+    
+    // g/Gキーで3Dグリッドとルーラーの表示/非表示を切り替え
+    if (e.key === 'g' || e.key === 'G') {
+        e.preventDefault();
+        if (currentScene.gridRuler3D) {
+            // 既に初期化されている場合は表示/非表示を切り替え
+            currentScene.showGridRuler3D = !currentScene.showGridRuler3D;
+            currentScene.gridRuler3D.setVisible(currentScene.showGridRuler3D);
+            console.log('GridRuler3D:', currentScene.showGridRuler3D ? 'ON' : 'OFF');
+        } else {
+            // 初期化されていない場合はデフォルトパラメータで初期化
+            currentScene.showGridRuler3D = true;
+            currentScene.initGridRuler3D({
+                center: { x: 0, y: 0, z: 0 },
+                size: { x: 1000, y: 1000, z: 1000 },
+                floorY: -500,
+                floorSize: 2000,
+                floorDivisions: 40,
+                labelMax: 64
+            });
+            console.log('GridRuler3D: 初期化して表示しました');
+        }
     }
     
     // c/Cキーでカメラデバッグ表示の切り替え（Scene04専用）

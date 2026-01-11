@@ -774,7 +774,9 @@ export class Scene03 extends SceneBase {
                         this.oscStatus,
                         this.particleCount,
                         this.trackEffects,  // エフェクト状態を渡す
-                        this.phase  // phase値を渡す
+                        this.phase,  // phase値を渡す
+                        this.title || null,  // sceneName
+                        this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
                     );
                 } else {
                     this.hud.clear();

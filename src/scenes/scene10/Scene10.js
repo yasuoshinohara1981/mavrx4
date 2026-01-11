@@ -200,8 +200,16 @@ export class Scene10 extends SceneBase {
         this.manifoldGroup = new THREE.Group();
         this.scene.add(this.manifoldGroup);
         
-        // 地面にシンプルな格子メッシュを追加
-        this.createGroundGrid();
+        // 3Dグリッドとルーラーを初期化（共通クラスを使用）
+        this.showGridRuler3D = true;  // デフォルトで表示
+        this.initGridRuler3D({
+            center: { x: 0, y: 0, z: 0 },
+            size: { x: this.w, y: 1000, z: this.h },
+            floorY: -500,
+            floorSize: 2000,
+            floorDivisions: 40,
+            labelMax: 64
+        });
         
         // 線描画システムを作成
         this.createLineSystem();
@@ -956,7 +964,9 @@ export class Scene10 extends SceneBase {
                     this.oscStatus,
                     this.particleCount,
                     this.trackEffects,  // エフェクト状態を渡す
-                    this.phase  // phase値を渡す
+                    this.phase,  // phase値を渡す
+                    this.title || null,  // sceneName
+                    this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
                 );
             } else {
                 this.hud.clear();
@@ -1008,21 +1018,6 @@ export class Scene10 extends SceneBase {
         ctx.fillText(this.currentText, padding, centerY);
     }
     
-    /**
-     * 地面にシンプルな格子メッシュを作成
-     */
-    createGroundGrid() {
-        // グリッドのサイズと分割数（シンプルに）
-        const size = 2000;  // グリッドのサイズ
-        const divisions = 20;  // 分割数（細かくない）
-        
-        // グリッドヘルパーを作成
-        const gridHelper = new THREE.GridHelper(size, divisions, 0x888888, 0x444444);
-        gridHelper.position.y = -500;  // 地面の位置（カラビ・ヤウ多様体の下）
-        this.scene.add(gridHelper);
-        
-        this.groundGrid = gridHelper;
-    }
     
     /**
      * 線描画システムを作成
@@ -1734,14 +1729,6 @@ export class Scene10 extends SceneBase {
             this.hud.ctx.clearRect(0, 0, this.hud.canvas.width, this.hud.canvas.height);
         }
         
-        // 地面のグリッドを削除
-        if (this.groundGrid) {
-            this.scene.remove(this.groundGrid);
-            if (this.groundGrid.geometry) this.groundGrid.geometry.dispose();
-            if (this.groundGrid.material) this.groundGrid.material.dispose();
-            this.groundGrid = null;
-        }
-        
         // 線描画システムを破棄
         if (this.lineSystem) {
             this.lineSystem.children.forEach(line => {
@@ -1809,14 +1796,6 @@ export class Scene10 extends SceneBase {
                 this.gpuParticleSystem.dispose();
             }
             this.gpuParticleSystem = null;
-        }
-        
-        // 地面のグリッドを削除
-        if (this.groundGrid) {
-            this.scene.remove(this.groundGrid);
-            if (this.groundGrid.geometry) this.groundGrid.geometry.dispose();
-            if (this.groundGrid.material) this.groundGrid.material.dispose();
-            this.groundGrid = null;
         }
         
         // 線描画システムを破棄

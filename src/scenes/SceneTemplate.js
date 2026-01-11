@@ -7,9 +7,13 @@ import { SceneBase } from './SceneBase.js';
 import * as THREE from 'three';
 
 export class SceneTemplate extends SceneBase {
-    constructor(renderer, camera) {
+    constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'Scene Template';  // シーンのタイトルを設定
+        
+        // 共有リソースマネージャー
+        this.sharedResourceManager = sharedResourceManager;
+        this.useSharedResources = !!sharedResourceManager;
         
         // ============================================
         // ここにシーン固有のプロパティを定義
@@ -18,6 +22,8 @@ export class SceneTemplate extends SceneBase {
         // this.particles = [];
         // this.time = 0.0;
         // this.parameter1 = 100.0;
+        // this.SHOW_PARTICLES = true;
+        // this.SHOW_LINES = true;
         
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -47,6 +53,16 @@ export class SceneTemplate extends SceneBase {
         // - 3Dオブジェクトの作成
         // - シェーダーの読み込み
         // - 背景グラデーションの初期化
+        // - 3Dグリッドとルーラーの初期化（必要に応じて）
+        //   this.showGridRuler3D = true;
+        //   this.initGridRuler3D({
+        //       center: { x: 0, y: 0, z: 0 },
+        //       size: { x: 1000, y: 1000, z: 1000 },
+        //       floorY: -500,
+        //       floorSize: 2000,
+        //       floorDivisions: 40,
+        //       labelMax: 64
+        //   });
     }
     
     /**

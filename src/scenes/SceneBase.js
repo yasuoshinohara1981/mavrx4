@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { CameraParticle } from '../lib/CameraParticle.js';
 import { HUD } from '../lib/HUD.js';
 import { ColorInversion } from '../lib/ColorInversion.js';
+import { GridRuler3D } from '../lib/GridRuler3D.js';
 import { debugLog } from '../lib/DebugLogger.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -72,6 +73,10 @@ export class SceneBase {
         // 座標軸ヘルパー（AxesHelper）
         this.axesHelper = null;
         this.SHOW_AXES = false;  // デバッグ用：座標軸を表示するか
+        
+        // 3Dグリッドとルーラー
+        this.gridRuler3D = null;
+        this.showGridRuler3D = false;  // g/Gキーでトグル
         
         // スクリーンショット用テキスト
         this.screenshotText = '';
@@ -470,6 +475,11 @@ export class SceneBase {
         
         // サブクラスの更新処理
         this.onUpdate(deltaTime);
+        
+        // 3Dグリッドとルーラーの更新（カメラ向きの更新）
+        if (this.gridRuler3D && this.showGridRuler3D) {
+            this.gridRuler3D.update(this.camera);
+        }
     }
     
     /**
@@ -951,6 +961,12 @@ export class SceneBase {
         if (this.colorInversion && this.colorInversion.dispose) {
             this.colorInversion.dispose();
             this.colorInversion = null;
+        }
+        
+        // 3Dグリッドとルーラーを破棄
+        if (this.gridRuler3D) {
+            this.gridRuler3D.dispose();
+            this.gridRuler3D = null;
         }
         
         // カメラデバッグ用Canvasを削除
@@ -1460,6 +1476,44 @@ export class SceneBase {
             }
             debugLog('init', `Axes helper: ${this.SHOW_AXES ? 'ON' : 'OFF'}`);
         }
+    }
+    
+    /**
+     * 3Dグリッドとルーラーを初期化
+     * @param {Object} params - グリッドのパラメータ
+     * @param {Object} params.center - 中心座標 {x, y, z}
+     * @param {Object} params.size - サイズ {x, y, z}
+     * @param {number} params.divX - X軸の分割数（デフォルト: 12）
+     * @param {number} params.divY - Y軸の分割数（デフォルト: 10）
+     * @param {number} params.divZ - Z軸の分割数（デフォルト: 8）
+     * @param {number} params.labelMax - ラベルの最大値（デフォルト: 64）
+     * @param {number} params.floorY - 床のY座標（デフォルト: minY - 0.002）
+     * @param {number} params.color - 色（デフォルト: 0xffffff）
+     * @param {number} params.opacity - 透明度（デフォルト: 0.65）
+     */
+    initGridRuler3D(params) {
+        if (!params || !params.center || !params.size) {
+            console.warn('[SceneBase] initGridRuler3D: パラメータが不正です');
+            return;
+        }
+        
+        // 既存のグリッドを破棄
+        if (this.gridRuler3D) {
+            this.gridRuler3D.dispose();
+            this.gridRuler3D = null;
+        }
+        
+        // 新しいグリッドを作成
+        this.gridRuler3D = new GridRuler3D();
+        this.gridRuler3D.init(params);
+        this.gridRuler3D.setVisible(this.showGridRuler3D);
+        
+        // シーンに追加
+        if (this.scene) {
+            this.scene.add(this.gridRuler3D.group);
+        }
+        
+        console.log('[SceneBase] 3Dグリッドとルーラーを初期化しました');
     }
     
     /**

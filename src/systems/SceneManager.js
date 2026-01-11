@@ -14,16 +14,21 @@ import { Scene07 } from '../scenes/scene07/Scene07.js';
 import { Scene08 } from '../scenes/scene08/Scene08.js';
 import { Scene09 } from '../scenes/scene09/Scene09.js';
 import { Scene10 } from '../scenes/scene10/Scene10.js';
-import { Scene11 } from '../scenes/scene11/Scene11.js';
 
 export class SceneManager {
-    constructor(renderer, camera, sharedResourceManager = null) {
+    constructor(renderer, camera, sharedResourceManager = null, options = {}) {
         this.renderer = renderer;
         this.camera = camera;
         this.sharedResourceManager = sharedResourceManager;
         this.scenes = [];
         this.currentSceneIndex = 0;
         this.onSceneChange = null;
+        
+        // 開発モード/ライブモードの設定
+        this.isDevelopmentMode = options.isDevelopmentMode || false;
+        
+        // デフォルトシーンのインデックス（ハードコーディング、Scene01 = 0）
+        this.defaultSceneIndex = options.defaultSceneIndex !== undefined ? options.defaultSceneIndex : 0;
         
         // HUDの状態をグローバルに保持（シーン切り替えに関係なく保持）
         this.globalShowHUD = true;
@@ -32,39 +37,117 @@ export class SceneManager {
         this.initScenes();
     }
     
+    /**
+     * シーンを作成する（遅延ロード用）
+     */
+    createScene(index) {
+        if (this.scenes[index]) {
+            // 既に作成されている場合は何もしない
+            return this.scenes[index];
+        }
+        
+        let scene = null;
+        switch (index) {
+            case 0:
+                scene = new Scene01(this.renderer, this.camera, this.sharedResourceManager);
+                break;
+            case 1:
+                scene = new Scene02(this.renderer, this.camera);
+                break;
+            case 2:
+                scene = new Scene03(this.renderer, this.camera, this.sharedResourceManager);
+                break;
+            case 3:
+                scene = new Scene04(this.renderer, this.camera, this.sharedResourceManager);
+                break;
+            case 4:
+                scene = new Scene05(this.renderer, this.camera);
+                break;
+            case 5:
+                scene = new Scene06(this.renderer, this.camera);
+                break;
+            case 6:
+                scene = new Scene07(this.renderer, this.camera);
+                break;
+            case 7:
+                scene = new Scene08(this.renderer, this.camera);
+                break;
+            case 8:
+                scene = new Scene09(this.renderer, this.camera, this.sharedResourceManager);
+                break;
+            case 9:
+                scene = new Scene10(this.renderer, this.camera, this.sharedResourceManager);
+                break;
+            default:
+                console.warn(`無効なシーンインデックス: ${index}`);
+                return null;
+        }
+        
+        if (scene) {
+            this.scenes[index] = scene;
+            console.log(`[SceneManager] シーン ${index + 1} を遅延ロードしました`);
+        }
+        
+        return scene;
+    }
+    
     initScenes() {
-        // シーンを追加（Processingと同じ順序）
-        // シーン1と3は共有リソースマネージャーを使用
-        this.scenes.push(new Scene01(this.renderer, this.camera, this.sharedResourceManager));
-        this.scenes.push(new Scene02(this.renderer, this.camera));
-        this.scenes.push(new Scene03(this.renderer, this.camera, this.sharedResourceManager));
-        this.scenes.push(new Scene04(this.renderer, this.camera, this.sharedResourceManager));
-        this.scenes.push(new Scene05(this.renderer, this.camera));
-        this.scenes.push(new Scene06(this.renderer, this.camera));
-        this.scenes.push(new Scene07(this.renderer, this.camera));
-        this.scenes.push(new Scene08(this.renderer, this.camera));
-        this.scenes.push(new Scene09(this.renderer, this.camera, this.sharedResourceManager));
-        this.scenes.push(new Scene10(this.renderer, this.camera, this.sharedResourceManager));
-        this.scenes.push(new Scene11(this.renderer, this.camera, this.sharedResourceManager));
+        if (this.isDevelopmentMode) {
+            // 開発モード: デフォルトシーンのみ読み込み
+            console.log(`[SceneManager] 開発モード: デフォルトシーン（Scene ${this.defaultSceneIndex + 1}）のみ読み込み`);
+            this.createScene(this.defaultSceneIndex);
+            this.currentSceneIndex = this.defaultSceneIndex;
+        } else {
+            // ライブモード: 全てのシーンをプリロード
+            console.log('[SceneManager] ライブモード: 全てのシーンをプリロード');
+            // シーンを追加（Processingと同じ順序）
+            // シーン1と3は共有リソースマネージャーを使用
+            this.scenes.push(new Scene01(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene02(this.renderer, this.camera));
+            this.scenes.push(new Scene03(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene04(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene05(this.renderer, this.camera));
+            this.scenes.push(new Scene06(this.renderer, this.camera));
+            this.scenes.push(new Scene07(this.renderer, this.camera));
+            this.scenes.push(new Scene08(this.renderer, this.camera));
+            this.scenes.push(new Scene09(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene10(this.renderer, this.camera, this.sharedResourceManager));
+            
+            // デフォルトシーンに設定
+            this.currentSceneIndex = this.defaultSceneIndex;
+        }
         
         // デフォルトシーンを設定（非同期）
-        if (this.scenes.length > 0) {
+        if (this.scenes[this.currentSceneIndex]) {
             // デフォルトシーンにインデックスを設定
-            this.scenes[0].sceneIndex = 0;
-            this.scenes[0].setup().catch(err => {
+            this.scenes[this.currentSceneIndex].sceneIndex = this.currentSceneIndex;
+            this.scenes[this.currentSceneIndex].setup().catch(err => {
                 console.error('シーンのセットアップエラー:', err);
             });
         }
     }
     
     switchScene(index) {
-        if (index < 0 || index >= this.scenes.length) {
+        // 開発モードの場合、まだ作成されていないシーンは遅延ロード
+        if (!this.scenes[index]) {
+            if (this.isDevelopmentMode) {
+                console.log(`[SceneManager] 開発モード: シーン ${index + 1} を遅延ロードします`);
+                this.createScene(index);
+            } else {
+                // ライブモードでシーンが存在しない場合はエラー
+                console.warn(`シーンインデックス ${index} は無効です`);
+                return;
+            }
+        }
+        
+        // インデックスの範囲チェック（遅延ロード後）
+        if (index < 0 || !this.scenes[index]) {
             console.warn(`シーンインデックス ${index} は無効です`);
             return;
         }
         
         // 同じシーンへの切り替えは無視
-        if (index === this.currentSceneIndex) {
+        if (index === this.currentSceneIndex && this.scenes[index]) {
             console.log(`既にシーン ${index + 1} がアクティブです`);
             return;
         }

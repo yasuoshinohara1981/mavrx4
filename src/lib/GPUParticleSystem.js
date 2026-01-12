@@ -830,9 +830,6 @@ export class GPUParticleSystem {
      * @returns {Promise<THREE.Group>} ラインシステムのグループ
      */
     createLineSystem(options = {}) {
-        // TODO: パフォーマンス問題のため一時的に無効化
-        console.log('[GPUParticleSystem] ラインシステム作成は無効化されています');
-        return Promise.resolve(null);
         const {
             linewidth = 5,
             additionalUniforms = {},

@@ -247,13 +247,9 @@ export class Scene01 extends SceneBase {
             });
         }
         
-        // DEBUG: 線描画の更新を無効化（パフォーマンステスト用）
         // 線描画の更新（SHOW_LINESがtrueの場合のみ）
-        // if (this.SHOW_LINES && this.lineSystem && this.gpuParticleSystem) {
-        //     this.updateLineSystem();
-        // }
-        if (false && this.SHOW_LINES && this.lineSystem && this.gpuParticleSystem) {
-            this.updateLineSystem();
+        if (this.SHOW_LINES && this.lineSystem && this.gpuParticleSystem) {
+            this.gpuParticleSystem.updateLineSystem();
         }
         
         // ミサイルの更新

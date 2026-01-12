@@ -5,7 +5,6 @@
 
 import { SceneBase } from '../SceneBase.js';
 import { GPUParticleSystem } from '../../lib/GPUParticleSystem.js';
-import { BackgroundGradient } from '../../lib/BackgroundGradient.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -183,9 +182,6 @@ export class Scene03 extends SceneBase {
         this.directionalLight2 = new THREE.DirectionalLight(0xffa500, 0.8);
         this.directionalLight2.position.set(0.3, -0.8, -0.5);
         this.scene.add(this.directionalLight2);
-        
-        // 背景グラデーションを初期化
-        this.backgroundGradient = new BackgroundGradient(this.scene, this.renderer);
         
         // 線描画システムを初期化
         this.createLineSystem();
@@ -553,11 +549,6 @@ export class Scene03 extends SceneBase {
         
         // レーザースキャンエフェクトの更新
         this.updateLaserScan(deltaTime);
-        
-        // 背景グラデーションの更新（サスティン終了チェック）
-        if (this.backgroundGradient) {
-            this.backgroundGradient.update();
-        }
     }
     
     /**
@@ -728,11 +719,7 @@ export class Scene03 extends SceneBase {
      */
     render() {
         // 背景色を設定
-        if (this.backgroundGradient && this.backgroundGradient.intensity > 0.0) {
-            this.renderer.setClearColor(0x000000);
-        } else {
-            this.renderer.setClearColor(0x000000);  // 常に黒背景（色反転で白になる）
-        }
+        this.renderer.setClearColor(0x000000);  // 常に黒背景（色反転で白になる）
         
         // 色反転エフェクトが有効な場合はSceneBaseのrenderメソッドを使用（画面全体を反転）
         if (this.colorInversion && this.colorInversion.isEnabled()) {
@@ -1304,12 +1291,6 @@ export class Scene03 extends SceneBase {
             });
             this.scene.remove(this.lineSystem);
             this.lineSystem = null;
-        }
-        
-        // 背景グラデーションを破棄
-        if (this.backgroundGradient && this.backgroundGradient.dispose) {
-            this.backgroundGradient.dispose();
-            this.backgroundGradient = null;
         }
         
         // すべてのライトを削除

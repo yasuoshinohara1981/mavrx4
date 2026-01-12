@@ -8,7 +8,6 @@ import { LFO } from '../../lib/LFO.js';
 import { GPUParticleSystem } from '../../lib/GPUParticleSystem.js';
 import { Scene01_Missile } from './Scene01_Missile.js';
 import { Scene01_Scope } from './Scene01_Scope.js';
-import { BackgroundGradient } from '../../lib/BackgroundGradient.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -150,9 +149,6 @@ export class Scene01 extends SceneBase {
         this.directionalLight2 = new THREE.DirectionalLight(0xffa500, 0.8);
         this.directionalLight2.position.set(0.3, -0.8, -0.5);
         this.scene.add(this.directionalLight2);
-        
-        // 背景グラデーションを初期化
-        this.backgroundGradient = new BackgroundGradient(this.scene, this.renderer);
         
         // 色反転エフェクトはSceneBaseで共通化されているため、ここでは初期化しない
         // this.colorInversion = new ColorInversion(this.renderer, this.scene, this.camera);
@@ -386,11 +382,6 @@ export class Scene01 extends SceneBase {
         
         // 色収差エフェクトとグリッチエフェクトの更新はSceneBaseで処理される
         
-        // 背景グラデーションの更新（サスティン終了チェック）
-        if (this.backgroundGradient) {
-            this.backgroundGradient.update();
-        }
-        
         // 色反転エフェクトの更新（SceneBaseで共通化されているため、ここでは処理しない）
         // if (this.colorInversion) {
         //     this.colorInversion.update();
@@ -401,13 +392,8 @@ export class Scene01 extends SceneBase {
      * 描画処理（オーバーライド）
      */
     render() {
-        // 背景色を設定（グラデーションが有効な場合は黒、無効な場合は通常通り）
-        if (this.backgroundGradient && this.backgroundGradient.intensity > 0.0) {
-            // グラデーションが有効な場合は背景を黒にして、グラデーションメッシュが見えるようにする
-            this.renderer.setClearColor(0x000000);
-        } else {
-            this.renderer.setClearColor(0x000000);  // 常に黒背景（色反転で白になる）
-        }
+        // 背景色を設定
+        this.renderer.setClearColor(0x000000);  // 常に黒背景（色反転で白になる）
         
         // SceneBaseのrenderメソッドを使用（色反転、glitch、chromaticAberrationを含む）
         super.render();
@@ -896,12 +882,6 @@ export class Scene01 extends SceneBase {
             }
             this.scopeCanvas = null;
             this.scopeCtx = null;
-        }
-        
-        // 背景グラデーションを破棄
-        if (this.backgroundGradient && this.backgroundGradient.dispose) {
-            this.backgroundGradient.dispose();
-            this.backgroundGradient = null;
         }
         
         // すべてのライトを削除（ambientLightも含む）

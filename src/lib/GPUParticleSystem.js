@@ -266,7 +266,7 @@ export class GPUParticleSystem {
     }
     
     /**
-     * 簡易パーリンノイズ関数（Scene04用、最適化版）
+     * 簡易パーリンノイズ関数（地形配置用、最適化版）
      * @param {number} x - X座標
      * @param {number} y - Y座標
      * @param {number} z - Z座標（デフォルト: 0）
@@ -498,34 +498,18 @@ export class GPUParticleSystem {
             return;
         }
         
-        // 位置更新用シェーダー
+        // 位置更新用シェーダー（基本uniformのみ）
         const positionUniforms = {
             positionTexture: { value: null },
             colorTexture: { value: null },
             time: { value: 0.0 },
             deltaTime: { value: 0.0 },
-            noiseScale: { value: 0.01 },  // ノイズスケール（scene09用）
-            noiseStrength: { value: 50.0 },  // ノイズ強度（scene09用）
+            noiseScale: { value: 0.01 },
+            noiseStrength: { value: 50.0 },
             baseRadius: { value: 400.0 },
             width: { value: this.width },
-            height: { value: this.height },
-            boxSize: { value: 200.0 },  // scene09で使用
-            forcePoint: { value: new THREE.Vector3(0, 0, 0) },  // scene09で使用
-            forceStrength: { value: 0.0 },  // scene09で使用
-            forceRadius: { value: 60.0 }  // scene09で使用
+            height: { value: this.height }
         };
-        
-        // scene04用のuniformを追加（圧力計算用）
-        if (this.shaderPath === 'scene04') {
-            positionUniforms.scl = { value: 5.0 };  // 地形のスケール
-            positionUniforms.noiseOffsetTexture = { value: null };  // ノイズオフセットテクスチャ
-            positionUniforms.terrainOffset = { value: new THREE.Vector3(0, 0, 0) };  // 地形のオフセット
-            positionUniforms.punchSphereCount = { value: 0 };  // 圧力sphereの数
-            positionUniforms.punchSphereCenters = { value: new Float32Array(30) };  // 10個 * 3次元
-            positionUniforms.punchSphereStrengths = { value: new Float32Array(10) };
-            positionUniforms.punchSphereRadii = { value: new Float32Array(10) };
-            positionUniforms.punchSphereReturnProbs = { value: new Float32Array(10) };
-        }
         
         this.positionUpdateMaterial = new THREE.ShaderMaterial({
             uniforms: positionUniforms,
@@ -533,7 +517,7 @@ export class GPUParticleSystem {
             fragmentShader: this.shaders.positionUpdate.fragment
         });
         
-        // 色更新用シェーダー
+        // 色更新用シェーダー（基本uniformのみ）
         const colorUniforms = {
             positionTexture: { value: null },
             colorTexture: { value: null },  // colorUpdate.fragで使用するため追加
@@ -543,12 +527,6 @@ export class GPUParticleSystem {
             height: { value: this.height },
             time: { value: 0.0 }
         };
-        
-        // scene04用のuniformを追加（Zオフセット範囲）
-        if (this.shaderPath === 'scene04') {
-            colorUniforms.minZOffset = { value: -500.0 };
-            colorUniforms.maxZOffset = { value: 500.0 };
-        }
         
         this.colorUpdateMaterial = new THREE.ShaderMaterial({
             uniforms: colorUniforms,
@@ -585,18 +563,9 @@ export class GPUParticleSystem {
                 uvs[index * 2] = u;
                 uvs[index * 2 + 1] = v;
                 
-                // パーティクルサイズを1.0～3.0の範囲でランダムに設定（シーン09専用の処理）
-                // シーン09ではサイズと質量を連動させるため、ランダムなサイズを設定
-                if (this.shaderPath === 'scene09') {
-                    // ハッシュ関数でランダムなサイズを生成（particleSizeを基準に1.0～3.0の範囲）
-                    const hash = (x * 73856093) ^ (y * 19349663);
-                    const normalizedHash = ((hash & 0x7fffffff) / 0x7fffffff);  // 0.0～1.0
-                    // particleSizeを基準に、1.0～3.0の範囲でスケール
-                    const sizeMultiplier = 1.0 + normalizedHash * 2.0;  // 1.0～3.0
-                    sizes[index] = this.particleSize * sizeMultiplier;  // particleSizeを基準にスケール
-                } else {
-                    sizes[index] = this.particleSize;  // 他のシーンでは固定サイズ
-                }
+                // パーティクルサイズを設定（デフォルトは固定サイズ）
+                // シーン固有のサイズ設定が必要な場合は、シーン側で処理する
+                sizes[index] = this.particleSize;
             }
         }
         
@@ -666,81 +635,22 @@ export class GPUParticleSystem {
                 this.positionUpdateMaterial.uniforms.baseRadius.value = uniforms.baseRadius || 400.0;
             }
             
-            // scene04用のuniform設定
-            if (this.shaderPath === 'scene04') {
-                // scl（地形のスケール）
-                if (this.positionUpdateMaterial.uniforms.scl && uniforms.scl !== undefined) {
-                    this.positionUpdateMaterial.uniforms.scl.value = uniforms.scl;
+            // 汎用的なuniform設定（uniformsオブジェクトに含まれるすべてのuniformを設定）
+            // シーン固有のuniformは、シーン側でaddPositionUniform()を使って追加する
+            for (const key in uniforms) {
+                if (key === 'punchSpheres') {
+                    // punchSpheresは特別な処理が必要なので、シーン側で処理する
+                    continue;
                 }
-                // noiseOffsetTexture（ノイズオフセットテクスチャ）
-                if (this.positionUpdateMaterial.uniforms.noiseOffsetTexture && uniforms.noiseOffsetTexture) {
-                    this.positionUpdateMaterial.uniforms.noiseOffsetTexture.value = uniforms.noiseOffsetTexture;
-                }
-                // terrainOffset（地形のオフセット）
-                if (this.positionUpdateMaterial.uniforms.terrainOffset && uniforms.terrainOffset) {
-                    this.positionUpdateMaterial.uniforms.terrainOffset.value.copy(uniforms.terrainOffset);
-                }
-                
-                // 圧力計算（PunchSphere）のuniform設定
-                if (uniforms.punchSpheres && Array.isArray(uniforms.punchSpheres)) {
-                    const maxSpheres = 10;
-                    const activeSpheres = uniforms.punchSpheres.filter(ps => {
-                        const strength = ps.getStrength ? ps.getStrength() : (ps.strength || 0);
-                        return strength > 0.01;
-                    }).slice(0, maxSpheres);
-                    
-                    // uniformが存在しない場合は初期化
-                    if (!this.positionUpdateMaterial.uniforms.punchSphereCount) {
-                        this.positionUpdateMaterial.uniforms.punchSphereCount = { value: 0 };
+                if (this.positionUpdateMaterial.uniforms[key]) {
+                    const value = uniforms[key];
+                    if (value instanceof THREE.Vector3) {
+                        this.positionUpdateMaterial.uniforms[key].value.copy(value);
+                    } else if (value instanceof THREE.Texture) {
+                        this.positionUpdateMaterial.uniforms[key].value = value;
+                    } else {
+                        this.positionUpdateMaterial.uniforms[key].value = value;
                     }
-                    if (!this.positionUpdateMaterial.uniforms.punchSphereCenters) {
-                        this.positionUpdateMaterial.uniforms.punchSphereCenters = { 
-                            value: new Float32Array(maxSpheres * 3)
-                        };
-                    }
-                    if (!this.positionUpdateMaterial.uniforms.punchSphereStrengths) {
-                        this.positionUpdateMaterial.uniforms.punchSphereStrengths = { value: new Float32Array(maxSpheres) };
-                    }
-                    if (!this.positionUpdateMaterial.uniforms.punchSphereRadii) {
-                        this.positionUpdateMaterial.uniforms.punchSphereRadii = { value: new Float32Array(maxSpheres) };
-                    }
-                    if (!this.positionUpdateMaterial.uniforms.punchSphereReturnProbs) {
-                        this.positionUpdateMaterial.uniforms.punchSphereReturnProbs = { value: new Float32Array(maxSpheres) };
-                    }
-                    
-                    // uniformに値を設定
-                    this.positionUpdateMaterial.uniforms.punchSphereCount.value = activeSpheres.length;
-                    
-                    const centers = this.positionUpdateMaterial.uniforms.punchSphereCenters.value;
-                    const strengths = this.positionUpdateMaterial.uniforms.punchSphereStrengths.value;
-                    const radii = this.positionUpdateMaterial.uniforms.punchSphereRadii.value;
-                    const returnProbs = this.positionUpdateMaterial.uniforms.punchSphereReturnProbs.value;
-                    
-                    for (let i = 0; i < maxSpheres; i++) {
-                        if (i < activeSpheres.length) {
-                            const ps = activeSpheres[i];
-                            const pos = ps.getPosition ? ps.getPosition() : (ps.position || { x: 0, y: 0, z: 0 });
-                            centers[i * 3] = pos.x || 0;
-                            centers[i * 3 + 1] = pos.y || 0;
-                            centers[i * 3 + 2] = pos.z || 0;
-                            strengths[i] = ps.getStrength ? ps.getStrength() : (ps.strength || 0);
-                            radii[i] = ps.getRadius ? ps.getRadius() : (ps.radius || 0);
-                            returnProbs[i] = ps.getReturnProbability ? ps.getReturnProbability() : (ps.returnProbability || 0);
-                        } else {
-                            centers[i * 3] = 0;
-                            centers[i * 3 + 1] = 0;
-                            centers[i * 3 + 2] = 0;
-                            strengths[i] = 0;
-                            radii[i] = 0;
-                            returnProbs[i] = 0;
-                        }
-                    }
-                    
-                    // uniformの更新を確実にする
-                    this.positionUpdateMaterial.uniforms.punchSphereCenters.needsUpdate = true;
-                    this.positionUpdateMaterial.uniforms.punchSphereStrengths.needsUpdate = true;
-                    this.positionUpdateMaterial.uniforms.punchSphereRadii.needsUpdate = true;
-                    this.positionUpdateMaterial.uniforms.punchSphereReturnProbs.needsUpdate = true;
                 }
             }
         }
@@ -751,13 +661,18 @@ export class GPUParticleSystem {
                 this.colorUpdateMaterial.uniforms.baseRadius.value = uniforms.baseRadius || 400.0;
             }
             
-            // scene04用のuniform設定（Zオフセット範囲）
-            if (this.shaderPath === 'scene04') {
-                if (this.colorUpdateMaterial.uniforms.minZOffset) {
-                    this.colorUpdateMaterial.uniforms.minZOffset.value = uniforms.minZOffset !== undefined ? uniforms.minZOffset : -500.0;
-                }
-                if (this.colorUpdateMaterial.uniforms.maxZOffset) {
-                    this.colorUpdateMaterial.uniforms.maxZOffset.value = uniforms.maxZOffset !== undefined ? uniforms.maxZOffset : 500.0;
+            // 汎用的なuniform設定（uniformsオブジェクトに含まれるすべてのuniformを設定）
+            // シーン固有のuniformは、シーン側でaddColorUniform()を使って追加する
+            for (const key in uniforms) {
+                if (this.colorUpdateMaterial.uniforms[key]) {
+                    const value = uniforms[key];
+                    if (value instanceof THREE.Vector3) {
+                        this.colorUpdateMaterial.uniforms[key].value.copy(value);
+                    } else if (value instanceof THREE.Texture) {
+                        this.colorUpdateMaterial.uniforms[key].value = value;
+                    } else {
+                        this.colorUpdateMaterial.uniforms[key].value = value;
+                    }
                 }
             }
         }
@@ -871,6 +786,35 @@ export class GPUParticleSystem {
      */
     getPositionUpdateMaterial() {
         return this.positionUpdateMaterial;
+    }
+    
+    /**
+     * 色更新用シェーダーマテリアルを取得（シーン固有のuniform設定用）
+     */
+    getColorUpdateMaterial() {
+        return this.colorUpdateMaterial;
+    }
+    
+    /**
+     * 位置更新用シェーダーにuniformを追加（シーン固有のuniform設定用）
+     * @param {string} name - uniform名
+     * @param {*} value - uniform値
+     */
+    addPositionUniform(name, value) {
+        if (this.positionUpdateMaterial && this.positionUpdateMaterial.uniforms) {
+            this.positionUpdateMaterial.uniforms[name] = { value: value };
+        }
+    }
+    
+    /**
+     * 色更新用シェーダーにuniformを追加（シーン固有のuniform設定用）
+     * @param {string} name - uniform名
+     * @param {*} value - uniform値
+     */
+    addColorUniform(name, value) {
+        if (this.colorUpdateMaterial && this.colorUpdateMaterial.uniforms) {
+            this.colorUpdateMaterial.uniforms[name] = { value: value };
+        }
     }
     
     /**

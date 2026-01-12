@@ -153,6 +153,27 @@ export class Scene04 extends SceneBase {
         // パーティクル数を設定
         this.setParticleCount(particleCount);
         
+        // Scene04専用のuniformを追加（GPUParticleSystemからシーン固有の処理を分離）
+        const positionUpdateMaterial = this.gpuParticleSystem.getPositionUpdateMaterial();
+        if (positionUpdateMaterial && positionUpdateMaterial.uniforms) {
+            // 位置更新用シェーダーにuniformを追加
+            this.gpuParticleSystem.addPositionUniform('scl', 5.0);  // 地形のスケール
+            this.gpuParticleSystem.addPositionUniform('noiseOffsetTexture', null);  // ノイズオフセットテクスチャ
+            this.gpuParticleSystem.addPositionUniform('terrainOffset', new THREE.Vector3(0, 0, 0));  // 地形のオフセット
+            this.gpuParticleSystem.addPositionUniform('punchSphereCount', 0);  // 圧力sphereの数
+            this.gpuParticleSystem.addPositionUniform('punchSphereCenters', new Float32Array(30));  // 10個 * 3次元
+            this.gpuParticleSystem.addPositionUniform('punchSphereStrengths', new Float32Array(10));
+            this.gpuParticleSystem.addPositionUniform('punchSphereRadii', new Float32Array(10));
+            this.gpuParticleSystem.addPositionUniform('punchSphereReturnProbs', new Float32Array(10));
+        }
+        
+        const colorUpdateMaterial = this.gpuParticleSystem.getColorUpdateMaterial();
+        if (colorUpdateMaterial && colorUpdateMaterial.uniforms) {
+            // 色更新用シェーダーにuniformを追加
+            this.gpuParticleSystem.addColorUniform('minZOffset', -500.0);
+            this.gpuParticleSystem.addColorUniform('maxZOffset', 500.0);
+        }
+        
         // グループを作成
         this.sphereGroup = new THREE.Group();
         this.scene.add(this.sphereGroup);
@@ -239,6 +260,73 @@ export class Scene04 extends SceneBase {
                 }
             }
         }
+    }
+    
+    /**
+     * Scene04専用：punchSpheresのuniform設定（GPUParticleSystemから分離）
+     */
+    updatePunchSphereUniforms() {
+        if (!this.gpuParticleSystem || !this.punchSpheres) return;
+        
+        const positionUpdateMaterial = this.gpuParticleSystem.getPositionUpdateMaterial();
+        if (!positionUpdateMaterial || !positionUpdateMaterial.uniforms) return;
+        
+        const maxSpheres = 10;
+        const activeSpheres = this.punchSpheres.filter(ps => {
+            const strength = ps.getStrength ? ps.getStrength() : (ps.strength || 0);
+            return strength > 0.01;
+        }).slice(0, maxSpheres);
+        
+        // uniformが存在しない場合は初期化
+        if (!positionUpdateMaterial.uniforms.punchSphereCount) {
+            this.gpuParticleSystem.addPositionUniform('punchSphereCount', 0);
+        }
+        if (!positionUpdateMaterial.uniforms.punchSphereCenters) {
+            this.gpuParticleSystem.addPositionUniform('punchSphereCenters', new Float32Array(maxSpheres * 3));
+        }
+        if (!positionUpdateMaterial.uniforms.punchSphereStrengths) {
+            this.gpuParticleSystem.addPositionUniform('punchSphereStrengths', new Float32Array(maxSpheres));
+        }
+        if (!positionUpdateMaterial.uniforms.punchSphereRadii) {
+            this.gpuParticleSystem.addPositionUniform('punchSphereRadii', new Float32Array(maxSpheres));
+        }
+        if (!positionUpdateMaterial.uniforms.punchSphereReturnProbs) {
+            this.gpuParticleSystem.addPositionUniform('punchSphereReturnProbs', new Float32Array(maxSpheres));
+        }
+        
+        // uniformに値を設定
+        positionUpdateMaterial.uniforms.punchSphereCount.value = activeSpheres.length;
+        
+        const centers = positionUpdateMaterial.uniforms.punchSphereCenters.value;
+        const strengths = positionUpdateMaterial.uniforms.punchSphereStrengths.value;
+        const radii = positionUpdateMaterial.uniforms.punchSphereRadii.value;
+        const returnProbs = positionUpdateMaterial.uniforms.punchSphereReturnProbs.value;
+        
+        for (let i = 0; i < maxSpheres; i++) {
+            if (i < activeSpheres.length) {
+                const ps = activeSpheres[i];
+                const pos = ps.getPosition ? ps.getPosition() : (ps.position || { x: 0, y: 0, z: 0 });
+                centers[i * 3] = pos.x || 0;
+                centers[i * 3 + 1] = pos.y || 0;
+                centers[i * 3 + 2] = pos.z || 0;
+                strengths[i] = ps.getStrength ? ps.getStrength() : (ps.strength || 0);
+                radii[i] = ps.getRadius ? ps.getRadius() : (ps.radius || 0);
+                returnProbs[i] = ps.getReturnProbability ? ps.getReturnProbability() : (ps.returnProbability || 0);
+            } else {
+                centers[i * 3] = 0;
+                centers[i * 3 + 1] = 0;
+                centers[i * 3 + 2] = 0;
+                strengths[i] = 0;
+                radii[i] = 0;
+                returnProbs[i] = 0;
+            }
+        }
+        
+        // uniformの更新を確実にする
+        positionUpdateMaterial.uniforms.punchSphereCenters.needsUpdate = true;
+        positionUpdateMaterial.uniforms.punchSphereStrengths.needsUpdate = true;
+        positionUpdateMaterial.uniforms.punchSphereRadii.needsUpdate = true;
+        positionUpdateMaterial.uniforms.punchSphereReturnProbs.needsUpdate = true;
     }
     
     /**
@@ -335,7 +423,10 @@ export class Scene04 extends SceneBase {
         
         // GPUパーティクルシステムの更新
         if (this.gpuParticleSystem) {
-            // GPUParticleSystemの更新（圧力計算も含む）
+            // Scene04専用：punchSpheresのuniform設定（シーン側で処理）
+            this.updatePunchSphereUniforms();
+            
+            // GPUParticleSystemの更新（汎用的なuniform設定）
             this.gpuParticleSystem.update({
                 time: this.time,
                 noiseScale: this.noiseScale,
@@ -345,7 +436,6 @@ export class Scene04 extends SceneBase {
                 scl: this.scl,
                 noiseOffsetTexture: this.noiseOffsetTexture,
                 terrainOffset: new THREE.Vector3(0, 0, 0),
-                punchSpheres: this.punchSpheres,  // 圧力計算用（GPUParticleSystem側でuniform設定）
                 // 色更新用シェーダーのuniform（Zオフセット範囲）
                 minZOffset: -500.0,
                 maxZOffset: 500.0

@@ -112,6 +112,14 @@ export class Scene10 extends SceneBase {
             // 共有リソースから取得（既に初期化済み）
             this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene10');
             debugLog('scene10', '共有リソースからGPUパーティクルシステムを取得');
+            
+            // Scene10固有：初期位置データを設定（SharedResourceManagerから分離）
+            // 共有リソースを使う場合でも、初期位置データはシーン側で設定する
+            console.log('[Scene10] 初期位置データを計算中...');
+            const calcStartTime = performance.now();
+            this.initializeParticleData();
+            const calcEndTime = performance.now();
+            console.log(`[Scene10] 初期位置データ計算完了 (${(calcEndTime - calcStartTime).toFixed(2)}ms)`);
         } else {
             // 通常通り新規作成
             this.gpuParticleSystem = new GPUParticleSystem(

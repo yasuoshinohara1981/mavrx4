@@ -106,6 +106,7 @@ export class Scene04 extends SceneBase {
             // 共有リソースから取得（既に初期化済み）
             this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene04');
             console.log('[Scene04] 共有リソースからGPUパーティクルシステムを取得');
+            // terrainNoiseSeedはSharedResourceManagerのinit()時に生成済み
         } else {
             // 通常通り新規作成
             this.gpuParticleSystem = new GPUParticleSystem(

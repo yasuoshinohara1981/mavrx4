@@ -194,8 +194,15 @@ export class Scene04 extends SceneBase {
         this.scopeCtx.textBaseline = 'top';
         document.body.appendChild(this.scopeCanvas);
         
-        // 線描画システムを作成（非同期で実行される）
-        this.createLineSystem();
+        // 線描画システムを作成（GPUParticleSystem側で作成、非同期で実行される）
+        if (this.SHOW_LINES && this.gpuParticleSystem) {
+            this.gpuParticleSystem.createLineSystem({
+                linewidth: 1,
+                scene: this.scene
+            }).then(lineSystem => {
+                this.lineSystem = lineSystem;
+            });
+        }
         
         // 初期色を計算（GPUParticleSystemの初期化は既に完了している）
         this.updateInitialColors();
@@ -490,140 +497,17 @@ export class Scene04 extends SceneBase {
         });
     }
     
-    /**
-     * 線描画システムを作成
-     */
-    createLineSystem() {
-        if (!this.SHOW_LINES) return;
-        
-        // シェーダーを読み込む（非同期）
-        const shaderBasePath = `/shaders/scene04/`;
-        Promise.all([
-            fetch(`${shaderBasePath}lineRender.vert`).then(r => r.text()),
-            fetch(`${shaderBasePath}lineRender.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
-            this.createLineSystemWithShaders(vertexShader, fragmentShader);
-        }).catch(err => {
-            console.error('線描画シェーダーの読み込みに失敗:', err);
-        });
-    }
-    
-    /**
-     * シェーダーを使って線描画システムを作成
-     */
-    createLineSystemWithShaders(vertexShader, fragmentShader) {
-        const lineGeometries = [];
-        const lineMaterials = [];
-        
-        // 縦線：各行ごとに、左右の列を結ぶ線
-        for (let y = 0; y < this.rows - 1; y++) {
-            const vertexCount = this.cols * 2;
-            const rowIndices = new Float32Array(vertexCount);
-            const colIndices = new Float32Array(vertexCount);
-            
-            for (let x = 0; x < this.cols; x++) {
-                const index = x * 2;
-                rowIndices[index] = y;
-                colIndices[index] = x;
-                rowIndices[index + 1] = y + 1;
-                colIndices[index + 1] = x;
-            }
-            
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(vertexCount * 3);
-            const colors = new Float32Array(vertexCount * 3);
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geometry.setAttribute('rowIndex', new THREE.BufferAttribute(rowIndices, 1));
-            geometry.setAttribute('colIndex', new THREE.BufferAttribute(colIndices, 1));
-            
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    positionTexture: { value: null },
-                    colorTexture: { value: null },
-                    width: { value: this.cols },
-                    height: { value: this.rows }
-                },
-                vertexShader: vertexShader,
-                fragmentShader: fragmentShader,
-                transparent: true,
-                vertexColors: true,
-                linewidth: 1
-            });
-            
-            lineGeometries.push(geometry);
-            lineMaterials.push(material);
-        }
-        
-        // 横線：各列ごとに、上下の行を結ぶ線
-        for (let x = 0; x < this.cols - 1; x++) {
-            const vertexCount = this.rows * 2;
-            const rowIndices = new Float32Array(vertexCount);
-            const colIndices = new Float32Array(vertexCount);
-            
-            for (let y = 0; y < this.rows; y++) {
-                const index = y * 2;
-                rowIndices[index] = y;
-                colIndices[index] = x;
-                rowIndices[index + 1] = y;
-                colIndices[index + 1] = x + 1;
-            }
-            
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(vertexCount * 3);
-            const colors = new Float32Array(vertexCount * 3);
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geometry.setAttribute('rowIndex', new THREE.BufferAttribute(rowIndices, 1));
-            geometry.setAttribute('colIndex', new THREE.BufferAttribute(colIndices, 1));
-            
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    positionTexture: { value: null },
-                    colorTexture: { value: null },
-                    width: { value: this.cols },
-                    height: { value: this.rows }
-                },
-                vertexShader: vertexShader,
-                fragmentShader: fragmentShader,
-                transparent: true,
-                vertexColors: true,
-                linewidth: 1
-            });
-            
-            lineGeometries.push(geometry);
-            lineMaterials.push(material);
-        }
-        
-        // すべての線を1つのグループとして管理
-        this.lineSystem = new THREE.Group();
-        for (let i = 0; i < lineGeometries.length; i++) {
-            const line = new THREE.LineSegments(lineGeometries[i], lineMaterials[i]);
-            this.lineSystem.add(line);
-        }
-        
-        this.scene.add(this.lineSystem);
-    }
     
     /**
      * 線描画システムを更新
      */
+    /**
+     * 線描画システムを更新（GPUParticleSystem側で更新）
+     */
     updateLineSystem() {
-        if (!this.lineSystem || !this.gpuParticleSystem) return;
-        
-        const positionTexture = this.gpuParticleSystem.getPositionTexture();
-        const colorTexture = this.gpuParticleSystem.getColorTexture ? 
-            this.gpuParticleSystem.getColorTexture() : null;
-        
-        if (!positionTexture || !colorTexture) return;
-        
-        // 各線のマテリアルにテクスチャを設定
-        this.lineSystem.children.forEach(line => {
-            if (line.material && line.material.uniforms) {
-                line.material.uniforms.positionTexture.value = positionTexture;
-                line.material.uniforms.colorTexture.value = colorTexture;
-            }
-        });
+        if (this.gpuParticleSystem) {
+            this.gpuParticleSystem.updateLineSystem();
+        }
     }
     
     /**

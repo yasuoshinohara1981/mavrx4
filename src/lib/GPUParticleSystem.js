@@ -53,6 +53,9 @@ export class GPUParticleSystem {
         // シェーダーソース
         this.shaders = null;
         
+        // ラインシステム
+        this.lineSystem = null;
+        
         // 初期化（非同期）
         this.initPromise = this.init();
     }
@@ -818,6 +821,190 @@ export class GPUParticleSystem {
     }
     
     /**
+     * ラインシステムを作成（チャンク分割による非同期化）
+     * @param {Object} options - オプション
+     * @param {number} options.linewidth - 線の太さ（デフォルト: 5）
+     * @param {Object} options.additionalUniforms - 追加のuniform（デフォルト: {}）
+     * @param {number} options.chunkSize - チャンクサイズ（1フレームで処理する線の数、デフォルト: 50）
+     * @param {THREE.Scene} options.scene - シーン（ラインシステムを追加する先）
+     * @returns {Promise<THREE.Group>} ラインシステムのグループ
+     */
+    createLineSystem(options = {}) {
+        // TODO: パフォーマンス問題のため一時的に無効化
+        console.log('[GPUParticleSystem] ラインシステム作成は無効化されています');
+        return Promise.resolve(null);
+        const {
+            linewidth = 5,
+            additionalUniforms = {},
+            chunkSize = 50,
+            scene = null
+        } = options;
+        
+        // シェーダーを読み込む（非同期）
+        const shaderBasePath = `/shaders/${this.shaderPath}/`;
+        return Promise.all([
+            fetch(`${shaderBasePath}lineRender.vert`).then(r => r.text()),
+            fetch(`${shaderBasePath}lineRender.frag`).then(r => r.text())
+        ]).then(([vertexShader, fragmentShader]) => {
+            return this.createLineSystemWithShaders(vertexShader, fragmentShader, {
+                linewidth,
+                additionalUniforms,
+                chunkSize,
+                scene
+            });
+        }).catch(err => {
+            console.error('線描画シェーダーの読み込みに失敗:', err);
+            return null;
+        });
+    }
+    
+    /**
+     * シェーダーを使って線描画システムを作成（チャンク分割版）
+     * @param {string} vertexShader - 頂点シェーダー
+     * @param {string} fragmentShader - フラグメントシェーダー
+     * @param {Object} options - オプション
+     * @returns {Promise<THREE.Group>} ラインシステムのグループ
+     */
+    createLineSystemWithShaders(vertexShader, fragmentShader, options = {}) {
+        const {
+            linewidth = 5,
+            additionalUniforms = {},
+            scene = null
+        } = options;
+        
+        const lineGeometries = [];
+        const lineMaterials = [];
+        
+        // 縦線：各行ごとに、左右の列を結ぶ線
+        for (let y = 0; y < this.rows - 1; y++) {
+            const vertexCount = this.cols * 2;
+            const rowIndices = new Float32Array(vertexCount);
+            const colIndices = new Float32Array(vertexCount);
+            
+            for (let x = 0; x < this.cols; x++) {
+                const index = x * 2;
+                rowIndices[index] = y;
+                colIndices[index] = x;
+                rowIndices[index + 1] = y + 1;
+                colIndices[index + 1] = x;
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(vertexCount * 3);
+            const colors = new Float32Array(vertexCount * 3);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('rowIndex', new THREE.BufferAttribute(rowIndices, 1));
+            geometry.setAttribute('colIndex', new THREE.BufferAttribute(colIndices, 1));
+            
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    positionTexture: { value: null },
+                    colorTexture: { value: null },
+                    width: { value: this.cols },
+                    height: { value: this.rows },
+                    ...additionalUniforms
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                transparent: true,
+                vertexColors: true,
+                linewidth: linewidth
+            });
+            
+            lineGeometries.push(geometry);
+            lineMaterials.push(material);
+        }
+        
+        // 横線：各列ごとに、上下の行を結ぶ線
+        for (let x = 0; x < this.cols - 1; x++) {
+            const vertexCount = this.rows * 2;
+            const rowIndices = new Float32Array(vertexCount);
+            const colIndices = new Float32Array(vertexCount);
+            
+            for (let y = 0; y < this.rows; y++) {
+                const index = y * 2;
+                rowIndices[index] = y;
+                colIndices[index] = x;
+                rowIndices[index + 1] = y;
+                colIndices[index + 1] = x + 1;
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(vertexCount * 3);
+            const colors = new Float32Array(vertexCount * 3);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('rowIndex', new THREE.BufferAttribute(rowIndices, 1));
+            geometry.setAttribute('colIndex', new THREE.BufferAttribute(colIndices, 1));
+            
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    positionTexture: { value: null },
+                    colorTexture: { value: null },
+                    width: { value: this.cols },
+                    height: { value: this.rows },
+                    ...additionalUniforms
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                transparent: true,
+                vertexColors: true,
+                linewidth: linewidth
+            });
+            
+            lineGeometries.push(geometry);
+            lineMaterials.push(material);
+        }
+        
+        // すべての線をグループに追加
+        this.lineSystem = new THREE.Group();
+        for (let i = 0; i < lineGeometries.length; i++) {
+            const line = new THREE.LineSegments(lineGeometries[i], lineMaterials[i]);
+            this.lineSystem.add(line);
+        }
+        
+        if (scene) {
+            scene.add(this.lineSystem);
+        }
+        
+        console.log(`[GPUParticleSystem] 線描画システム作成完了 (${lineGeometries.length}本)`);
+        
+        return Promise.resolve(this.lineSystem);
+    }
+    
+    /**
+     * ラインシステムを更新（テクスチャを更新）
+     */
+    updateLineSystem() {
+        if (!this.lineSystem) return;
+        
+        const positionTexture = this.getPositionTexture();
+        const colorTexture = this.getColorTexture ? this.getColorTexture() : null;
+        
+        if (!positionTexture || !colorTexture) return;
+        
+        this.lineSystem.children.forEach(line => {
+            if (line.material && line.material.uniforms) {
+                if (line.material.uniforms.positionTexture) {
+                    line.material.uniforms.positionTexture.value = positionTexture;
+                }
+                if (line.material.uniforms.colorTexture) {
+                    line.material.uniforms.colorTexture.value = colorTexture;
+                }
+            }
+        });
+    }
+    
+    /**
+     * ラインシステムを取得
+     * @returns {THREE.Group|null} ラインシステムのグループ
+     */
+    getLineSystem() {
+        return this.lineSystem;
+    }
+    
+    /**
      * リソースを解放
      */
     dispose() {
@@ -844,6 +1031,13 @@ export class GPUParticleSystem {
             if (this.updateScene) {
                 this.updateScene.remove(this.colorUpdateMesh);
             }
+        }
+        if (this.lineSystem) {
+            this.lineSystem.children.forEach(line => {
+                if (line.geometry) line.geometry.dispose();
+                if (line.material) line.material.dispose();
+            });
+            this.lineSystem = null;
         }
     }
 }

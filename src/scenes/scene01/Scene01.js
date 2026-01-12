@@ -153,8 +153,15 @@ export class Scene01 extends SceneBase {
         // 色反転エフェクトはSceneBaseで共通化されているため、ここでは初期化しない
         // this.colorInversion = new ColorInversion(this.renderer, this.scene, this.camera);
         
-        // 線描画システムを初期化
-        this.createLineSystem();
+        // 線描画システムを初期化（GPUParticleSystem側で作成）
+        if (this.SHOW_LINES && this.gpuParticleSystem) {
+            this.gpuParticleSystem.createLineSystem({
+                linewidth: 5,
+                scene: this.scene
+            }).then(lineSystem => {
+                this.lineSystem = lineSystem;
+            });
+        }
         
         // 色収差エフェクトとグリッチエフェクトはSceneBaseで初期化される
         
@@ -181,131 +188,6 @@ export class Scene01 extends SceneBase {
         document.body.appendChild(this.scopeCanvas);
     }
     
-    /**
-     * 線描画システムを作成
-     */
-    createLineSystem() {
-        if (!this.SHOW_LINES) return;
-        
-        // シェーダーを読み込む（非同期）
-        const shaderBasePath = `/shaders/${'scene01'}/`;
-        Promise.all([
-            fetch(`${shaderBasePath}lineRender.vert`).then(r => r.text()),
-            fetch(`${shaderBasePath}lineRender.frag`).then(r => r.text())
-        ]).then(([vertexShader, fragmentShader]) => {
-            this.createLineSystemWithShaders(vertexShader, fragmentShader);
-        }).catch(err => {
-            console.error('線描画シェーダーの読み込みに失敗:', err);
-        });
-    }
-    
-    /**
-     * シェーダーを使って線描画システムを作成
-     */
-    createLineSystemWithShaders(vertexShader, fragmentShader) {
-        
-        // 縦線（各緯度ごとに、上下の緯度を結ぶ線）と横線（各経度ごとに、左右の経度を結ぶ線）を描画
-        const lineGeometries = [];
-        const lineMaterials = [];
-        
-        // 縦線：各緯度ごとに、上下の緯度を結ぶ線（Processingと同じ：TRIANGLE_STRIPで連続描画）
-        for (let y = 0; y < this.rows - 1; y++) {
-            // Processingと同じ：各経度ごとに上下2つの頂点を交互に配置
-            // 頂点数: cols * 2 (各経度ごとに上下2つの頂点)
-            const vertexCount = this.cols * 2;
-            const rowIndices = new Float32Array(vertexCount);
-            const colIndices = new Float32Array(vertexCount);
-            
-            for (let x = 0; x < this.cols; x++) {
-                const index = x * 2;
-                // 上側の頂点（現在の緯度）
-                rowIndices[index] = y;
-                colIndices[index] = x;
-                // 下側の頂点（次の緯度）
-                rowIndices[index + 1] = y + 1;
-                colIndices[index + 1] = x;
-            }
-            
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(vertexCount * 3);
-            const colors = new Float32Array(vertexCount * 3);
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geometry.setAttribute('rowIndex', new THREE.BufferAttribute(rowIndices, 1));
-            geometry.setAttribute('colIndex', new THREE.BufferAttribute(colIndices, 1));
-            
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    positionTexture: { value: null },
-                    colorTexture: { value: null },
-                    width: { value: this.cols },
-                    height: { value: this.rows }
-                },
-                vertexShader: vertexShader,
-                fragmentShader: fragmentShader,
-                transparent: true,
-                vertexColors: true,
-                linewidth: 5  // 線の太さ（大きく設定）
-            });
-            
-            lineGeometries.push(geometry);
-            lineMaterials.push(material);
-        }
-        
-        // 横線：各経度ごとに、左右の経度を結ぶ線（Processingと同じ：TRIANGLE_STRIPで連続描画）
-        for (let x = 0; x < this.cols - 1; x++) {
-            // Processingと同じ：各緯度ごとに左右2つの頂点を交互に配置
-            // 頂点数: rows * 2 (各緯度ごとに左右2つの頂点)
-            const vertexCount = this.rows * 2;
-            const rowIndices = new Float32Array(vertexCount);
-            const colIndices = new Float32Array(vertexCount);
-            
-            for (let y = 0; y < this.rows; y++) {
-                const index = y * 2;
-                // 左側の頂点（現在の経度）
-                rowIndices[index] = y;
-                colIndices[index] = x;
-                // 右側の頂点（次の経度）
-                rowIndices[index + 1] = y;
-                colIndices[index + 1] = x + 1;
-            }
-            
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(vertexCount * 3);
-            const colors = new Float32Array(vertexCount * 3);
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geometry.setAttribute('rowIndex', new THREE.BufferAttribute(rowIndices, 1));
-            geometry.setAttribute('colIndex', new THREE.BufferAttribute(colIndices, 1));
-            
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    positionTexture: { value: null },
-                    colorTexture: { value: null },
-                    width: { value: this.cols },
-                    height: { value: this.rows }
-                },
-                vertexShader: vertexShader,
-                fragmentShader: fragmentShader,
-                transparent: true,
-                vertexColors: true,
-                linewidth: 5  // 線の太さ（大きく設定）
-            });
-            
-            lineGeometries.push(geometry);
-            lineMaterials.push(material);
-        }
-        
-        // すべての線を1つのグループとして管理
-        this.lineSystem = new THREE.Group();
-        for (let i = 0; i < lineGeometries.length; i++) {
-            // LineSegmentsで描画（Processingと同じTRIANGLE_STRIPの代わりに）
-            const line = new THREE.LineSegments(lineGeometries[i], lineMaterials[i]);
-            this.lineSystem.add(line);
-        }
-        
-        this.scene.add(this.lineSystem);
-    }
     
     /**
      * カメラパーティクルの距離パラメータを設定
@@ -407,27 +289,12 @@ export class Scene01 extends SceneBase {
     }
     
     /**
-     * 線描画システムを更新
+     * 線描画システムを更新（GPUParticleSystem側で更新）
      */
     updateLineSystem() {
-        if (!this.lineSystem || !this.gpuParticleSystem) return;
-        
-        const positionTexture = this.gpuParticleSystem.getPositionTexture();
-        const colorTexture = this.gpuParticleSystem.getColorTexture ? 
-            this.gpuParticleSystem.getColorTexture() : null;
-        
-        if (!positionTexture || !colorTexture) return;
-        
-        // カメラ位置を取得
-        const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
-        
-        // 各線のマテリアルにテクスチャを設定
-        this.lineSystem.children.forEach(line => {
-            if (line.material && line.material.uniforms) {
-                line.material.uniforms.positionTexture.value = positionTexture;
-                line.material.uniforms.colorTexture.value = colorTexture;
-            }
-        });
+        if (this.gpuParticleSystem) {
+            this.gpuParticleSystem.updateLineSystem();
+        }
     }
     
     /**
@@ -678,11 +545,27 @@ export class Scene01 extends SceneBase {
                 this.scene.add(newParticleSystem);
             }
             // 線描画システムを再作成
-            this.createLineSystem();
+            // 線描画システムを再作成（GPUParticleSystem側で作成）
+            if (this.SHOW_LINES && this.gpuParticleSystem) {
+                this.gpuParticleSystem.createLineSystem({
+                    linewidth: 5,
+                    scene: this.scene
+                }).then(lineSystem => {
+                    this.lineSystem = lineSystem;
+                });
+            }
         });
         } else {
             // 共有リソースを使っている場合は、線描画システムのみ再作成（パーティクルシステムは上で処理済み）
-            this.createLineSystem();
+            // 線描画システムを再作成（GPUParticleSystem側で作成）
+            if (this.SHOW_LINES && this.gpuParticleSystem) {
+                this.gpuParticleSystem.createLineSystem({
+                    linewidth: 5,
+                    scene: this.scene
+                }).then(lineSystem => {
+                    this.lineSystem = lineSystem;
+                });
+            }
         }
         
         // ミサイルとスコープを削除

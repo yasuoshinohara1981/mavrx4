@@ -97,6 +97,12 @@ float smoothNoise4D(vec4 p) {
 }
 
 void main() {
+    // 現在の位置を取得
+    vec4 posData = texture2D(positionTexture, vUv);
+    vec3 currentPos = posData.xyz;
+    float currentBaseRadius = posData.w;
+    
+    // 球面配置（既存の処理）
     // グリッド座標を計算（緯度・経度を復元）
     // UV座標をピクセル座標に変換（0.5オフセットでピクセル中心を取得）
     float x = (vUv.x * width) - 0.5;

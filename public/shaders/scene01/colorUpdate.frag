@@ -14,10 +14,11 @@ void main() {
     // 現在の位置を取得
     vec4 posData = texture2D(positionTexture, vUv);
     vec3 currentPos = posData.xyz;
+    float storedBaseRadius = posData.w;
     
+    // 球面配置（既存の処理）
     // 色を計算（表面からの距離に基づく）
     float currentRadius = length(currentPos);
-    float storedBaseRadius = posData.w;
     float radiusOffset = currentRadius - storedBaseRadius;
     // Processingと同じ範囲を使用（-10.0〜10.0）
     // ただし、ノイズ強度が最大200.0なので、実際の範囲は-200.0〜200.0になる可能性がある

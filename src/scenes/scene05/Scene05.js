@@ -87,6 +87,11 @@ export class Scene05 extends SceneBase {
         this.bloomPass = null;
         this.bloomEnabled = true;  // デフォルトで有効
         
+        // 赤い十字と数字のマーカー
+        this.markerGroup = null;
+        this.markerCrosses = [];
+        this.markerLabels = [];
+        
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
@@ -103,16 +108,19 @@ export class Scene05 extends SceneBase {
         // 線で接続
         this.createConnections();
         
-        // カメラパーティクルの距離パラメータを再設定（親クラスで設定された後に上書き）
+        // カメラパーティクルの距離パラメータを再設定（8個それぞれ異なるアングル）
         if (this.cameraParticles) {
-            for (const cameraParticle of this.cameraParticles) {
-                this.setupCameraParticleDistance(cameraParticle);
+            for (let i = 0; i < this.cameraParticles.length; i++) {
+                this.setupCameraParticleDistance(this.cameraParticles[i], i);
             }
         }
         
         // 色収差エフェクトを初期化（非同期で実行、重い処理を後回し）
         // グリッチエフェクトとブルームエフェクトはinitChromaticAberration内で初期化される
         this.initChromaticAberration();
+        
+        // 赤い十字と数字のマーカーを初期化
+        this.initMarkers();
     }
     
     /**
@@ -193,7 +201,7 @@ export class Scene05 extends SceneBase {
                         if (data.success) {
                             console.log(`✅ 発光体テクスチャを保存しました: ${data.path}`);
                             resolve(true);
-                        } else {
+        } else {
                             console.warn('発光体テクスチャの保存に失敗:', data.error);
                             resolve(false);
                         }
@@ -393,40 +401,300 @@ export class Scene05 extends SceneBase {
     }
     
     /**
-     * カメラパーティクルの距離パラメータを設定（上から見下ろす感じで近めの距離、範囲を狭める）
+     * カメラパーティクルの距離パラメータを設定（8個それぞれ異なるアングル）
+     * @param {CameraParticle} cameraParticle - カメラパーティクル
+     * @param {number} index - カメラパーティクルのインデックス（0-7）
      */
-    setupCameraParticleDistance(cameraParticle) {
+    setupCameraParticleDistance(cameraParticle, index = 0) {
         // グリッド範囲を計算
         const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
         const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
         const gridSize = Math.max(gridWidth, gridDepth);
         
-        // 上から見下ろす感じで適度な距離に設定
-        const cameraDistance = gridSize * 0.4;
-        cameraParticle.minDistance = cameraDistance * 0.8; // 最小距離
-        cameraParticle.maxDistance = cameraDistance * 5.0; // 最大距離（1.3 → 5.0に大幅に拡大）
-        cameraParticle.maxDistanceReset = cameraDistance * 3.0; // リセット距離（1.2 → 3.0に拡大）
-        
-        // XZ平面の範囲（グリッドの範囲内または少し外側）
-        const cameraBoxSizeXZ = gridSize * 0.3;
-        
-        // Y座標（上から見下ろす高さ）
-        const cameraMinY = gridSize * 0.35;
-        const cameraMaxY = gridSize * 0.6;
-        
+        // 8個のカメラパーティクルそれぞれに異なる設定
+        switch (index) {
+            case 0: // 低い位置から横から見る
+                this.setupLowSideView(cameraParticle, gridSize);
+                break;
+            case 1: // 高い位置から上から見下ろす
+                this.setupHighTopView(cameraParticle, gridSize);
+                break;
+            case 2: // 中程度の高さから横から見る
+                this.setupMidSideView(cameraParticle, gridSize);
+                break;
+            case 3: // 低い位置から正面から見る
+                this.setupLowFrontView(cameraParticle, gridSize);
+                break;
+            case 4: // 高い位置から斜め上から見る
+                this.setupHighObliqueView(cameraParticle, gridSize);
+                break;
+            case 5: // 地面すれすれから見る
+                this.setupGroundLevelView(cameraParticle, gridSize);
+                break;
+            case 6: // 中程度の高さから斜めから見る
+                this.setupMidObliqueView(cameraParticle, gridSize);
+                break;
+            case 7: // 高い位置から横から見る
+                this.setupHighSideView(cameraParticle, gridSize);
+                break;
+            default:
+                this.setupLowSideView(cameraParticle, gridSize);
+                break;
+        }
+    }
+    
+    /**
+     * 低い位置から横から見る設定
+     */
+    setupLowSideView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.6;
+        cameraParticle.minDistance = cameraDistance * 0.7;
+        cameraParticle.maxDistance = cameraDistance * 2.5;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.5;
+        const cameraBoxSizeXZ = gridSize * 0.8;
+        const cameraMinY = gridSize * 0.05;
+        const cameraMaxY = gridSize * 0.25;
         cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
         cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
     }
     
     /**
-     * カメラの位置を更新
+     * 高い位置から上から見下ろす設定
+     */
+    setupHighTopView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.4;
+        cameraParticle.minDistance = cameraDistance * 0.8;
+        cameraParticle.maxDistance = cameraDistance * 3.0;
+        cameraParticle.maxDistanceReset = cameraDistance * 2.0;
+        const cameraBoxSizeXZ = gridSize * 0.3;
+        const cameraMinY = gridSize * 0.5;
+        const cameraMaxY = gridSize * 0.8;
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * 中程度の高さから横から見る設定
+     */
+    setupMidSideView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.7;
+        cameraParticle.minDistance = cameraDistance * 0.6;
+        cameraParticle.maxDistance = cameraDistance * 2.0;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.3;
+        const cameraBoxSizeXZ = gridSize * 0.9;
+        const cameraMinY = gridSize * 0.15;
+        const cameraMaxY = gridSize * 0.4;
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * 低い位置から正面から見る設定
+     */
+    setupLowFrontView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.65;
+        cameraParticle.minDistance = cameraDistance * 0.7;
+        cameraParticle.maxDistance = cameraDistance * 2.2;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.4;
+        // 正面から見るので、Z方向を狭く、X方向を広く
+        const cameraBoxSizeX = gridSize * 0.6;
+        const cameraBoxSizeZ = gridSize * 0.3; // 正面から見るので狭く
+        const cameraMinY = gridSize * 0.08;
+        const cameraMaxY = gridSize * 0.3;
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeX, cameraMinY, -cameraBoxSizeZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeX, cameraMaxY, cameraBoxSizeZ);
+    }
+    
+    /**
+     * 高い位置から斜め上から見る設定
+     */
+    setupHighObliqueView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.5;
+        cameraParticle.minDistance = cameraDistance * 0.8;
+        cameraParticle.maxDistance = cameraDistance * 2.8;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.8;
+        const cameraBoxSizeXZ = gridSize * 0.5;
+        const cameraMinY = gridSize * 0.4;
+        const cameraMaxY = gridSize * 0.7;
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * 地面すれすれから見る設定
+     */
+    setupGroundLevelView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.7;
+        cameraParticle.minDistance = cameraDistance * 0.6;
+        cameraParticle.maxDistance = cameraDistance * 2.3;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.4;
+        const cameraBoxSizeXZ = gridSize * 1.0; // 広めに
+        const cameraMinY = gridSize * 0.01; // 地面すれすれ
+        const cameraMaxY = gridSize * 0.15; // 低め
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * 中程度の高さから斜めから見る設定
+     */
+    setupMidObliqueView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.65;
+        cameraParticle.minDistance = cameraDistance * 0.7;
+        cameraParticle.maxDistance = cameraDistance * 2.4;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.5;
+        const cameraBoxSizeXZ = gridSize * 0.7;
+        const cameraMinY = gridSize * 0.2;
+        const cameraMaxY = gridSize * 0.45;
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * 高い位置から横から見る設定
+     */
+    setupHighSideView(cameraParticle, gridSize) {
+        const cameraDistance = gridSize * 0.55;
+        cameraParticle.minDistance = cameraDistance * 0.75;
+        cameraParticle.maxDistance = cameraDistance * 2.6;
+        cameraParticle.maxDistanceReset = cameraDistance * 1.7;
+        const cameraBoxSizeXZ = gridSize * 0.6;
+        const cameraMinY = gridSize * 0.35;
+        const cameraMaxY = gridSize * 0.65;
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * 赤い十字と数字のマーカーを初期化
+     */
+    initMarkers() {
+        // マーカーグループを作成
+        this.markerGroup = new THREE.Group();
+        this.markerGroup.name = 'Markers';
+        this.scene.add(this.markerGroup);
+        
+        // グリッド範囲を計算
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        const gridSize = Math.max(gridWidth, gridDepth);
+        
+        // マーカーのサイズ（グリッドサイズに応じて調整）
+        const crossSize = gridSize * 0.02; // グリッドサイズの2%
+        const markerY = this.groundY + 5.0; // 地面より少し上
+        
+        // マーカーの位置（グリッドの端と中心）
+        const markerPositions = [
+            { x: -gridWidth / 2, z: -gridDepth / 2, label: '0' },      // 左下
+            { x: gridWidth / 2, z: -gridDepth / 2, label: '1' },      // 右下
+            { x: -gridWidth / 2, z: gridDepth / 2, label: '2' },      // 左上
+            { x: gridWidth / 2, z: gridDepth / 2, label: '3' },       // 右上
+            { x: 0, z: 0, label: 'C' },                                 // 中心
+            { x: -gridWidth / 2, z: 0, label: 'L' },                  // 左中央
+            { x: gridWidth / 2, z: 0, label: 'R' },                   // 右中央
+            { x: 0, z: -gridDepth / 2, label: 'F' },                 // 前中央
+            { x: 0, z: gridDepth / 2, label: 'B' }                    // 後中央
+        ];
+        
+        // 赤い十字のマテリアル
+        const crossMaterial = new THREE.LineBasicMaterial({
+            color: 0xff3333,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: true,
+            depthWrite: false
+        });
+        
+        // 各マーカー位置に赤い十字と数字を追加
+        markerPositions.forEach((pos, index) => {
+            // 赤い十字を作成
+            const crossGeometry = new THREE.BufferGeometry();
+            const crossVerts = new Float32Array([
+                pos.x - crossSize, markerY, pos.z,  // X方向の線（左端）
+                pos.x + crossSize, markerY, pos.z, // X方向の線（右端）
+                pos.x, markerY, pos.z - crossSize,  // Z方向の線（手前）
+                pos.x, markerY, pos.z + crossSize  // Z方向の線（奥）
+            ]);
+            crossGeometry.setAttribute('position', new THREE.BufferAttribute(crossVerts, 3));
+            const crossLines = new THREE.LineSegments(crossGeometry, crossMaterial);
+            crossLines.name = `markerCross_${index}`;
+            this.markerGroup.add(crossLines);
+            this.markerCrosses.push(crossLines);
+            
+            // 数字のラベルを作成
+            const label = this.createLabelSprite(pos.label, new THREE.Vector3(pos.x, markerY + crossSize * 2, pos.z));
+            this.markerGroup.add(label);
+            this.markerLabels.push(label);
+        });
+        
+        console.log(`✅ ${markerPositions.length}個のマーカー（赤い十字と数字）を追加しました`);
+    }
+    
+    /**
+     * ラベルスプライトを作成（GridRuler3Dを参考）
+     */
+    createLabelSprite(text, position) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#00000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // 白いテキスト
+        ctx.font = '22px "Inter", "Roboto", "Helvetica Neue", "Helvetica", "Arial", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+        
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.needsUpdate = true;
+        const mat = new THREE.SpriteMaterial({
+            map: tex,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false,
+            depthWrite: false
+        });
+        const sprite = new THREE.Sprite(mat);
+        sprite.position.copy(position);
+        
+        // スケールをグリッドサイズに応じて調整
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        const gridSize = Math.max(gridWidth, gridDepth);
+        const labelScale = gridSize * 0.04;
+        sprite.scale.set(labelScale, labelScale * 0.5, 1);
+        sprite.renderOrder = 10;
+        sprite.frustumCulled = false;
+        
+        return sprite;
+    }
+    
+    /**
+     * カメラの位置を更新（低い位置から横から見る）
      */
     updateCamera() {
         if (this.cameraParticles[this.currentCameraIndex]) {
             const cameraPos = this.cameraParticles[this.currentCameraIndex].getPosition();
             this.camera.position.copy(cameraPos);
-            this.camera.lookAt(0, 0, 0);
+            
+            // グリッドの中心を見る（少し上方向を見る）
+            const lookAtY = this.groundY + this.gridSizeZ * this.gridSpacing * 0.1; // グリッドの少し上を見る
+            this.camera.lookAt(0, lookAtY, 0);
             this.camera.up.set(0, 1, 0);
+        }
+        
+        // マーカーのラベルをカメラに向ける（ビルボード）
+        if (this.markerLabels) {
+            this.markerLabels.forEach(label => {
+                if (label && this.camera) {
+                    label.quaternion.copy(this.camera.quaternion);
+                }
+            });
         }
     }
     
@@ -750,11 +1018,11 @@ export class Scene05 extends SceneBase {
         
         const forceCenter = new THREE.Vector3(centerX, heightY, centerZ);
         
-        // ベロシティから力の強さを計算（0-127 → 力の強さ）
-        let forceStrength = 100.0; // デフォルト（拳で持ち上げる強さ、3000.0 → 150000.0に50倍強化）
+        // ベロシティから力の強さを計算（0-127 → 力の強さ、さらに弱めに調整）
+        let forceStrength = 2000.0; // デフォルト（さらに弱めに調整）
         if (velocity !== null) {
             const velocityNormalized = velocity / 127.0; // 0.0-1.0
-            forceStrength = 100000.0 + velocityNormalized * 150000.0; // 100000-250000（2000-5000 → 100000-250000に50倍強化）
+            forceStrength = 2000.0 + velocityNormalized * 5000.0; // 2000-7000（さらに弱めに調整）
         }
         
         // 力の影響範囲（拳で持ち上げる範囲）
@@ -774,10 +1042,19 @@ export class Scene05 extends SceneBase {
                 const localForceStrength = forceStrength * (1.0 - normalizedDist) * (1.0 - normalizedDist);
                 
                 // 上方向への力（下から上に吹き飛ばす）
-                const upwardForce = new THREE.Vector3(0, localForceStrength, 0);
+                const upwardForce = localForceStrength;
                 
-                // 力を適用（上方向）
-                particle.addForce(upwardForce);
+                // 中心から外側への放射状の力（山なりにするため）
+                // XZ平面での方向ベクトルを計算
+                const horizontalDir = new THREE.Vector3(toParticle.x, 0, toParticle.z).normalize();
+                const outwardForceStrength = localForceStrength * 0.3; // 外側への力は上方向の30%
+                const outwardForce = horizontalDir.multiplyScalar(outwardForceStrength);
+                
+                // 力を合成（上方向 + 外側方向）
+                const totalForce = new THREE.Vector3(outwardForce.x, upwardForce, outwardForce.z);
+                
+                // 力を適用
+                particle.addForce(totalForce);
                 affectedCount++;
             }
         }
@@ -1232,6 +1509,24 @@ export class Scene05 extends SceneBase {
         }
         
         this.connections = [];
+        
+        // マーカーを破棄
+        if (this.markerGroup) {
+            this.scene.remove(this.markerGroup);
+            this.markerCrosses.forEach(cross => {
+                if (cross.geometry) cross.geometry.dispose();
+                if (cross.material) cross.material.dispose();
+            });
+            this.markerLabels.forEach(label => {
+                if (label.material) {
+                    if (label.material.map) label.material.map.dispose();
+                    label.material.dispose();
+                }
+            });
+            this.markerGroup = null;
+            this.markerCrosses = [];
+            this.markerLabels = [];
+        }
         
         // エフェクトパスを破棄
         if (this.chromaticAberrationPass) {

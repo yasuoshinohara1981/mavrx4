@@ -632,7 +632,8 @@ export class SceneBase {
                     0,  // currentBar（サブクラスで設定可能）
                     '',  // debugText（サブクラスで設定可能）
                     this.actualTick,  // actualTick（OSCから受け取る値）
-                    null  // cameraModeName（サブクラスで設定可能）
+                    null,  // cameraModeName（サブクラスで設定可能）
+                    this.sceneNumber  // sceneNumber（各シーンで設定）
                 );
             } else {
                 // HUDが非表示の時はCanvasをクリア

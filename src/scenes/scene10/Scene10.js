@@ -15,6 +15,7 @@ export class Scene10 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | SP-n(Hrrr)';
+        this.sceneNumber = 10;
         debugLog('scene10', 'コンストラクタ実行', this.title);
         
         // 共有リソースマネージャー
@@ -58,6 +59,8 @@ export class Scene10 extends SceneBase {
         
         // トラック4（グリッチエフェクト）をオフにする
         this.trackEffects[4] = false;
+        // トラック8（レーザースキャンエフェクト）をオフにする
+        this.trackEffects[8] = false;
         
         // 2Dテキストエフェクト用（トラック6）- Canvas 2Dで実装（軍事風情報表示）
         this.textEffectActive = false;

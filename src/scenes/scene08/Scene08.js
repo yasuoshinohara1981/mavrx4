@@ -15,6 +15,7 @@ export class Scene08 extends SceneBase {
     constructor(renderer, camera) {
         super(renderer, camera);
         this.title = 'mathym | t7:Romls (version 2.)';
+        this.sceneNumber = 8;
         
         // CPU版を使用（GPU版は削除）
         this.useGPU = false;

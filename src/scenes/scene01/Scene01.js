@@ -17,6 +17,7 @@ export class Scene01 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | wzswrs';
+        this.sceneNumber = 1;
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;

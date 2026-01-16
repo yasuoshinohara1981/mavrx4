@@ -1,11 +1,15 @@
 /**
- * Scene05: シンプルなGPUパーティクル
- * Scene01を参考にしたシンプルな実装
+ * Scene05: 格子状のSphereネットワーク
+ * GPUインスタンシングで格子状に配置されたSphereが線で繋がれ、力が加わるとニットのように広がる
  */
 
 import { SceneBase } from '../SceneBase.js';
-import { GPUParticleSystem } from '../../lib/GPUParticleSystem.js';
+import { Particle } from '../../lib/Particle.js';
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 export class Scene05 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -17,276 +21,780 @@ export class Scene05 extends SceneBase {
         this.sharedResourceManager = sharedResourceManager;
         this.useSharedResources = !!sharedResourceManager;
         
-        // 表示設定（デフォルトでパーティクルを表示）
-        this.SHOW_PARTICLES = true;
-        this.SHOW_LINES = false;
+        // グリッド設定
+        this.gridSizeX = 200; // グリッドのX方向の数
+        this.gridSizeZ = 200; // グリッドのZ方向の数
+        this.gridSpacing = 10.0; // グリッド間隔
+        this.sphereRadius = 1.0; // Sphereの半径
         
-        // グリッドパラメータ（150万パーティクル）
-        this.cols = 1500;
-        this.rows = 1000;
+        // スプリング拘束設定（ニットっぽくするため）
+        this.springStiffness = 0.15; // スプリングの剛性
+        this.springDamping = 0.05; // スプリングの減衰
+        this.restLength = this.gridSpacing; // スプリングの自然長（グリッド間隔と同じ）
         
-        // 球体パラメータ
-        this.baseRadius = 400.0;
+        // 復元力設定（元の位置に戻る力）
+        this.restoreStiffness = 0.01; // 復元力の剛性
+        this.restoreDamping = 0.005; // 復元力の減衰
         
-        // 円配置パラメータ
-        this.circleRadius = 400.0;
-        this.circleThickness = 20.0;
-        this.minLifetime = 20.0;
-        this.maxLifetime = 60.0;
+        // パーティクル設定
+        this.numParticles = this.gridSizeX * this.gridSizeZ; // グリッド数に合わせる
+        this.particles = [];
+        this.particleMasses = []; // 各パーティクルの質量
+        this.initialPositions = []; // 各パーティクルの初期位置（復元力用）
         
-        // ノイズパラメータ
-        this.noiseScale = 1.0;
-        this.noiseStrength = 50.0;  // 元に戻す
+        // ヒートマップ用の色設定（赤になりにくくする）
+        this.heatMapMinValue = 0.0; // 最小値（速度や高さ）
+        this.heatMapMaxValue = 100.0; // 最大値（8.0 → 100.0に大幅に上げて赤になりにくく）
+        
+        // 線で接続するための情報
+        this.connections = []; // 接続情報 [{from: index, to: index}, ...]
+        this.lineGeometry = null; // 線のジオメトリ
+        this.lineMesh = null; // 線のメッシュ
+        
+        // 時間変数
         this.time = 0.0;
-        this.timeIncrement = 0.001;  // 元に戻す
-        this.curlNoiseSpeed = 3.0;  // カールノイズのスピード倍率
-        this.baseCurlNoiseSpeed = 3.0;  // ベーススピード
-        this.track5SpeedMultiplier = 1.0;  // トラック5のスピード倍率
-        this.track5EndTime = 0;  // トラック5のサスティン終了時刻
         
-        // 時間経過管理
-        this.sketchStartTime = Date.now();
-        this.fadeInDuration = 30000.0;  // 30秒
+        // 地形ノイズ設定
+        this.terrainNoiseSpeed = 0.01; // ノイズの変化速度（ゆっくり）
+        this.terrainNoiseScale = 0.002; // ノイズのスケール（細かさ）
+        this.terrainNoiseAmplitude = 200.0; // ノイズの振幅（高さの変化幅）
+        this.terrainNoiseTime = 0.0; // ノイズ用の時間変数
         
-        // GPUパーティクルシステム
-        this.gpuParticleSystem = null;
+        // ポイントサイズノイズ設定
+        this.sizeNoiseScale = 0.01; // サイズノイズのスケール
+        this.sizeNoiseAmplitude = 0.5; // サイズノイズの振幅（基本サイズの倍率）
         
-        // 線描画用
-        this.lineSystem = null;
+        // 地面設定
+        this.groundY = 0.0;
         
-        // 背景グラデーション
-        this.backgroundGradientMesh = null;
+        // 重力設定
+        this.gravity = new THREE.Vector3(0, -3.5, 0); // 下向きの重力
+        
+        // 色収差エフェクト（トラック3用）
+        this.composer = null;
+        this.chromaticAberrationPass = null;
+        this.chromaticAberrationAmount = 0.0;  // 色収差の強度（0.0〜1.0）
+        this.chromaticAberrationEndTime = 0;  // エフェクト終了時刻（サスティン用）
+        this.chromaticAberrationKeyPressed = false;  // キーが押されているか
+        
+        // グリッチエフェクト（トラック4用）
+        this.glitchPass = null;
+        this.glitchAmount = 0.0;  // グリッチの強度（0.0〜1.0）
+        this.glitchEndTime = 0;  // エフェクト終了時刻（サスティン用）
+        this.glitchKeyPressed = false;  // キーが押されているか
+        
+        // ブルームエフェクト
+        this.bloomPass = null;
+        this.bloomEnabled = true;  // デフォルトで有効
         
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
     
-    /**
-     * セットアップ処理（シーン切り替え時に呼ばれる）
-     */
     async setup() {
-        // 親クラスのsetup()を呼ぶ（ColorInversionの初期化を含む）
         await super.setup();
         
-        // カメラパーティクルの距離パラメータを再設定
+        // ライトを設定
+        this.setupLights();
+        
+        // パーティクルを作成（格子状に配置、非同期）
+        await this.createParticles();
+        
+        // 線で接続
+        this.createConnections();
+        
+        // カメラパーティクルの距離パラメータを再設定（親クラスで設定された後に上書き）
         if (this.cameraParticles) {
             for (const cameraParticle of this.cameraParticles) {
                 this.setupCameraParticleDistance(cameraParticle);
             }
         }
         
-        // GPUパーティクルシステムを初期化
-        const particleCount = this.cols * this.rows;
-        
-        if (this.useSharedResources && this.sharedResourceManager) {
-            // 共有リソースから取得（既に初期化済み）
-            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene05');
-            console.log('[Scene05] 共有リソースからGPUパーティクルシステムを取得');
-            
-            // パーティクルシステムのローテーションXを90度に設定
-            const particleSystem = this.gpuParticleSystem.getParticleSystem();
-            if (particleSystem) {
-                particleSystem.rotation.x = Math.PI / 2.0;
-            }
-        } else {
-            // 通常通り新規作成
-            this.gpuParticleSystem = new GPUParticleSystem(
-                this.renderer,
-                particleCount,
-                this.cols,
-                this.rows,
-                this.baseRadius,
-                'scene05',  // scene05専用のシェーダーを使用
-                6.0,  // particleSize（大きく）
-                'circle',  // placementType: 円配置
-                {
-                    circleRadius: this.circleRadius,
-                    circleThickness: this.circleThickness,
-                    minLifetime: this.minLifetime,
-                    maxLifetime: this.maxLifetime
-                }
-            );
-            
-            // シェーダーの読み込み完了を待つ
-            await this.gpuParticleSystem.initPromise;
-        }
-        
-        // パーティクルシステムをシーンに追加
-        const particleSystem = this.gpuParticleSystem.getParticleSystem();
-        if (particleSystem) {
-            // パーティクルシステムのローテーションXを90度に設定（カメラ真正面から見て円になるように）
-            particleSystem.rotation.x = Math.PI / 2.0;
-            this.scene.add(particleSystem);
-        }
-        
-        // パーティクル数を設定
-        this.setParticleCount(particleCount);
-        
-        // LFOは使用しない
-        
-        // スケッチ開始時刻を記録
-        this.sketchStartTime = Date.now();
-        
-        // ライトを追加（scene01と同じ）
-        const ambientLight = new THREE.AmbientLight(0x3f1f1f, 0.5);
+        // 色収差エフェクトを初期化（非同期で実行、重い処理を後回し）
+        // グリッチエフェクトとブルームエフェクトはinitChromaticAberration内で初期化される
+        this.initChromaticAberration();
+    }
+    
+    /**
+     * ライトを設定
+     */
+    setupLights() {
+        // 環境光
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
         
-        this.directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
-        this.directionalLight1.position.set(-1, 0, 0);
-        this.scene.add(this.directionalLight1);
+        // ディレクショナルライト
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(0, 1000, 1000);
+        this.scene.add(directionalLight);
+    }
+    
+    
+    /**
+     * 発光体のPNG画像を生成
+     * @returns {HTMLCanvasElement} 発光体のCanvas
+     */
+    generateGlowTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
         
-        this.directionalLight2 = new THREE.DirectionalLight(0xffa500, 0.8);
-        this.directionalLight2.position.set(0.3, -0.8, -0.5);
-        this.scene.add(this.directionalLight2);
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const maxRadius = Math.min(centerX, centerY);
         
-        // 線描画システムを初期化
-        if (this.SHOW_LINES && this.gpuParticleSystem) {
-            this.gpuParticleSystem.createLineSystem({
-                linewidth: 5,
-                scene: this.scene
-            }).then(lineSystem => {
-                this.lineSystem = lineSystem;
-            });
-        }
+        // 放射状のグラデーション（中心が明るく、外側が透明）
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, maxRadius);
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)'); // 中心: 完全に白
+        gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.8)');
+        gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.4)');
+        gradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.1)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.0)'); // 外側: 完全に透明
         
-        // 背景グラデーションを初期化
-        await this.initBackgroundGradient();
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // 3Dグリッドとルーラーを初期化
-        this.showGridRuler3D = true;  // デフォルトで表示
-        this.initGridRuler3D({
-            center: { x: 0, y: 0, z: 0 },
-            size: { x: 2000, y: 1000, z: 2000 },
-            floorY: -500,
-            floorSize: 2000,
-            floorDivisions: 40,
-            labelMax: 64,
-            color: 0xffffff,  // 常に白
-            opacity: 0.65
+        return canvas;
+    }
+    
+    /**
+     * 発光体テクスチャをサーバーに保存
+     * @param {HTMLCanvasElement} canvas - 発光体のCanvas
+     */
+    async saveGlowTextureToServer(canvas) {
+        return new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (!blob) {
+                    console.warn('発光体テクスチャのBlob生成に失敗');
+                    resolve(false);
+                    return;
+                }
+                
+                // BlobをBase64に変換
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64data = reader.result;
+                    
+                    // サーバーに送信
+                    fetch('http://localhost:3001/api/save-texture', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            filename: 'glow.png',
+                            imageData: base64data,
+                            path: 'textures' // public/textures/に保存
+                        })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            console.log(`✅ 発光体テクスチャを保存しました: ${data.path}`);
+                            resolve(true);
+                        } else {
+                            console.warn('発光体テクスチャの保存に失敗:', data.error);
+                            resolve(false);
+                        }
+                    })
+                    .catch(error => {
+                        console.warn('発光体テクスチャの保存エラー:', error);
+                        resolve(false);
+                    });
+                };
+                reader.onerror = () => {
+                    console.warn('FileReaderエラー');
+                    resolve(false);
+                };
+                reader.readAsDataURL(blob);
+            }, 'image/png');
         });
     }
     
     /**
-     * 背景グラデーションを初期化
+     * パーティクルを作成（格子状にビルボードを配置）
      */
-    async initBackgroundGradient() {
+    async createParticles() {
+        // 発光体のテクスチャを読み込む（存在しない場合は生成）
+        let glowTexture;
+        const textureLoader = new THREE.TextureLoader();
+        
         try {
-            // シェーダーを読み込む
-            const shaderBasePath = `/shaders/scene05/`;
-            const [vertexShader, fragmentShader] = await Promise.all([
-                fetch(`${shaderBasePath}backgroundGradient.vert`).then(r => r.text()),
-                fetch(`${shaderBasePath}backgroundGradient.frag`).then(r => r.text())
-            ]);
+            // まず既存のテクスチャを読み込もうとする
+            glowTexture = await new Promise((resolve, reject) => {
+                textureLoader.load(
+                    '/textures/glow.png',
+                    (texture) => {
+                        texture.colorSpace = THREE.SRGBColorSpace;
+                        resolve(texture);
+                    },
+                    undefined,
+                    (error) => {
+                        reject(error);
+                    }
+                );
+            });
+            console.log('✅ 既存の発光体テクスチャを読み込みました');
+        } catch (error) {
+            // テクスチャが存在しない場合は生成
+            console.log('📝 発光体テクスチャを生成中...');
+            const canvas = this.generateGlowTexture();
             
-            // 背景用のSphereジオメトリを作成（大きめの半径で背景を覆う）
-            const geometry = new THREE.SphereGeometry(5000, 32, 32);
-            
-            // シェーダーマテリアルを作成
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    centerColor: { value: new THREE.Vector3(1.0, 1.0, 1.0) },  // 中心部：明るい白
-                    edgeColor: { value: new THREE.Vector3(0.3, 0.3, 0.3) },    // 外側：うっすら白
-                    intensity: { value: 0.15 }  // グラデーションの強度（うっすら）
-                },
-                vertexShader: vertexShader,
-                fragmentShader: fragmentShader,
-                side: THREE.BackSide  // 内側から見る
+            // サーバーに保存（非同期、エラーでも続行）
+            this.saveGlowTextureToServer(canvas).catch(err => {
+                console.warn('テクスチャの保存に失敗しましたが、続行します:', err);
             });
             
-            // メッシュを作成
-            this.backgroundGradientMesh = new THREE.Mesh(geometry, material);
-            this.scene.add(this.backgroundGradientMesh);
-            
-            console.log('[Scene05] 背景グラデーションを初期化しました');
-        } catch (err) {
-            console.error('[Scene05] 背景グラデーションの初期化に失敗:', err);
+            // Canvasからテクスチャを作成
+            glowTexture = new THREE.CanvasTexture(canvas);
+            glowTexture.colorSpace = THREE.SRGBColorSpace;
+            console.log('✅ 発光体テクスチャを生成しました');
+        }
+        
+        // THREE.Pointsを使用（より軽量）
+        const positions = new Float32Array(this.numParticles * 3);
+        const colors = new Float32Array(this.numParticles * 3);
+        const sizes = new Float32Array(this.numParticles);
+        
+        const pointsGeometry = new THREE.BufferGeometry();
+        pointsGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        pointsGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        pointsGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        
+        // PointsMaterialを使用（シンプルな円形ポイント）
+        const pointsMaterial = new THREE.PointsMaterial({
+            size: this.sphereRadius * 2.0,
+            vertexColors: true,
+            transparent: true,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            sizeAttenuation: true,
+            alphaTest: 0.1
+        });
+        
+        // Pointsメッシュを作成
+        this.pointsMesh = new THREE.Points(pointsGeometry, pointsMaterial);
+        this.scene.add(this.pointsMesh);
+        
+        // 後で更新するために保存
+        this.pointsPositions = positions;
+        this.pointsColors = colors;
+        this.pointsSizes = sizes;
+        
+        // グリッドの範囲を計算
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        
+        // 格子状にSphereを配置
+        let particleIndex = 0;
+        for (let z = 0; z < this.gridSizeZ; z++) {
+            for (let x = 0; x < this.gridSizeX; x++) {
+                // グリッド位置を計算（中心を原点に）
+                const gridX = -gridWidth / 2 + x * this.gridSpacing;
+                const gridZ = -gridDepth / 2 + z * this.gridSpacing;
+                const y = this.groundY + this.sphereRadius; // 地面の上
+                
+                // パーティクルを作成
+                const particle = new Particle(gridX, y, gridZ);
+                particle.maxSpeed = 100.0; // 速度の上限を大幅に上げる（20.0 → 1000.0）
+                particle.maxForce = 100.0; // 力の上限を大幅に上げる（10.0 → 100000.0）
+                particle.friction = 0.02;
+                particle.mass = 1.0;
+                this.particles.push(particle);
+                this.particleMasses.push(1.0);
+                
+                // 初期位置を保存（復元力用）
+                this.initialPositions.push(new THREE.Vector3(gridX, y, gridZ));
+                
+                // Pointsの位置とサイズを設定
+                const idx = particleIndex * 3;
+                this.pointsPositions[idx] = gridX;
+                this.pointsPositions[idx + 1] = y;
+                this.pointsPositions[idx + 2] = gridZ;
+                this.pointsSizes[particleIndex] = this.sphereRadius * 2.0;
+                
+                // 初期色（青）
+                this.pointsColors[idx] = 0.0;     // R
+                this.pointsColors[idx + 1] = 0.0; // G
+                this.pointsColors[idx + 2] = 1.0; // B
+                
+                particleIndex++;
+            }
+        }
+        
+        // Pointsの属性を更新
+        pointsGeometry.attributes.position.needsUpdate = true;
+        pointsGeometry.attributes.color.needsUpdate = true;
+        pointsGeometry.attributes.size.needsUpdate = true;
+        
+        this.setParticleCount(particleIndex);
+        console.log(`✅ ${particleIndex}個のPointsを格子状に配置しました`);
+    }
+    
+    /**
+     * 線で接続（隣接するSphere同士を線で繋ぐ）
+     */
+    createConnections() {
+        this.connections = [];
+        
+        // 各Sphereに対して、隣接するSphereを接続
+        for (let z = 0; z < this.gridSizeZ; z++) {
+            for (let x = 0; x < this.gridSizeX; x++) {
+                const index = z * this.gridSizeX + x;
+                
+                // 右隣（X+1）
+                if (x < this.gridSizeX - 1) {
+                    const rightIndex = z * this.gridSizeX + (x + 1);
+                    this.connections.push({ from: index, to: rightIndex });
+                }
+                
+                // 下隣（Z+1）
+                if (z < this.gridSizeZ - 1) {
+                    const bottomIndex = (z + 1) * this.gridSizeX + x;
+                    this.connections.push({ from: index, to: bottomIndex });
+                }
+                
+                // 右下対角線（X+1, Z+1）
+                if (x < this.gridSizeX - 1 && z < this.gridSizeZ - 1) {
+                    const diagonalIndex = (z + 1) * this.gridSizeX + (x + 1);
+                    this.connections.push({ from: index, to: diagonalIndex });
+                }
+                
+                // 左下対角線（X-1, Z+1）
+                if (x > 0 && z < this.gridSizeZ - 1) {
+                    const diagonalIndex = (z + 1) * this.gridSizeX + (x - 1);
+                    this.connections.push({ from: index, to: diagonalIndex });
+                }
+            }
+        }
+        
+        // 線のジオメトリを作成
+        const positions = new Float32Array(this.connections.length * 6); // 各接続に2点（from, to）
+        const lineColors = new Float32Array(this.connections.length * 6); // 各接続に2点の色（RGB）
+        this.lineGeometry = new THREE.BufferGeometry();
+        this.lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        this.lineGeometry.setAttribute('color', new THREE.BufferAttribute(lineColors, 3));
+        this.lineGeometry.setDrawRange(0, this.connections.length * 2);
+        
+        // 線のマテリアル（頂点カラーを使用）
+        const lineMaterial = new THREE.LineBasicMaterial({
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.6
+        });
+        
+        // 線のメッシュを作成
+        this.lineMesh = new THREE.LineSegments(this.lineGeometry, lineMaterial);
+        this.lineMesh.renderOrder = 0;
+        this.scene.add(this.lineMesh);
+        
+        console.log(`✅ ${this.connections.length}本の接続線を作成しました`);
+    }
+    
+    /**
+     * カメラパーティクルの距離パラメータを設定（上から見下ろす感じで近めの距離、範囲を狭める）
+     */
+    setupCameraParticleDistance(cameraParticle) {
+        // グリッド範囲を計算
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        const gridSize = Math.max(gridWidth, gridDepth);
+        
+        // 上から見下ろす感じで適度な距離に設定
+        const cameraDistance = gridSize * 0.4;
+        cameraParticle.minDistance = cameraDistance * 0.8; // 最小距離
+        cameraParticle.maxDistance = cameraDistance * 5.0; // 最大距離（1.3 → 5.0に大幅に拡大）
+        cameraParticle.maxDistanceReset = cameraDistance * 3.0; // リセット距離（1.2 → 3.0に拡大）
+        
+        // XZ平面の範囲（グリッドの範囲内または少し外側）
+        const cameraBoxSizeXZ = gridSize * 0.3;
+        
+        // Y座標（上から見下ろす高さ）
+        const cameraMinY = gridSize * 0.35;
+        const cameraMaxY = gridSize * 0.6;
+        
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSizeXZ, cameraMinY, -cameraBoxSizeXZ);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSizeXZ, cameraMaxY, cameraBoxSizeXZ);
+    }
+    
+    /**
+     * カメラの位置を更新
+     */
+    updateCamera() {
+        if (this.cameraParticles[this.currentCameraIndex]) {
+            const cameraPos = this.cameraParticles[this.currentCameraIndex].getPosition();
+            this.camera.position.copy(cameraPos);
+            this.camera.lookAt(0, 0, 0);
+            this.camera.up.set(0, 1, 0);
         }
     }
     
     /**
-     * カメラパーティクルの距離パラメータを設定
+     * ノイズ関数（シンプルなパーリンノイズ風）
+     * @param {number} x - X座標
+     * @param {number} y - Y座標
+     * @param {number} time - 時間
+     * @returns {number} ノイズ値（-1.0 から 1.0）
      */
-    setupCameraParticleDistance(cameraParticle) {
-        // Scene05用：カメラを適切な距離に設定
-        cameraParticle.minDistance = 400.0;
-        cameraParticle.maxDistance = 1500.0;
-        cameraParticle.maxDistanceReset = 1000.0;
+    noise(x, y, time) {
+        // シンプルなノイズ関数（Math.sinとMath.cosを組み合わせ）
+        const n = Math.sin(x * 12.9898 + y * 78.233 + time) * 43758.5453;
+        return (n - Math.floor(n)) * 2.0 - 1.0; // -1.0 から 1.0
+    }
+    
+    /**
+     * フラクタルノイズ（複数のオクターブを組み合わせ）
+     * @param {number} x - X座標
+     * @param {number} z - Z座標
+     * @param {number} time - 時間
+     * @returns {number} ノイズ値（-1.0 から 1.0）
+     */
+    fractalNoise(x, z, time) {
+        let value = 0.0;
+        let amplitude = 1.0;
+        let frequency = 1.0;
+        
+        // 複数のオクターブを組み合わせ
+        for (let i = 0; i < 4; i++) {
+            value += this.noise(x * frequency, z * frequency, time * 0.1) * amplitude;
+            amplitude *= 0.5;
+            frequency *= 2.0;
+        }
+        
+        return value / 2.0; // 正規化
     }
     
     /**
      * 更新処理
      */
     onUpdate(deltaTime) {
-        // 時間の更新
-        this.time += this.timeIncrement;
+        this.time += deltaTime;
         // SceneBaseのtimeも更新（HUD表示用）
         super.time = this.time;
         
-        // トラック5のサスティン終了をチェック
-        if (this.track5EndTime > 0 && Date.now() >= this.track5EndTime) {
-            // サスティン終了：スピードを元に戻す
-            this.track5SpeedMultiplier = 1.0;
-            this.curlNoiseSpeed = this.baseCurlNoiseSpeed;
-            this.track5EndTime = 0;
+        // パーティクルの更新（Points用）
+        if (!this.pointsMesh || this.particles.length === 0) {
+            return; // まだ初期化されていない場合はスキップ
         }
         
-        // GPUパーティクルの更新
-        if (this.SHOW_PARTICLES && this.gpuParticleSystem) {
-            // カールノイズのスピードを早くするため、timeに倍率を掛ける
-            this.gpuParticleSystem.update({
-                time: this.time * this.curlNoiseSpeed,
-                deltaTime: deltaTime,
-                noiseScale: this.noiseScale,
-                noiseStrength: this.noiseStrength,
-                baseRadius: this.baseRadius,
-                maxLifetime: this.maxLifetime,
-                circleRadius: this.circleRadius,
-                circleThickness: this.circleThickness
-            });
+        // スプリング拘束を適用（ニットっぽくするため、接続されているsphere同士の距離を維持）
+        for (const connection of this.connections) {
+            const particleA = this.particles[connection.from];
+            const particleB = this.particles[connection.to];
+            const posA = particleA.getPosition();
+            const posB = particleB.getPosition();
+            
+            // 現在の距離
+            const diff = new THREE.Vector3().subVectors(posB, posA);
+            const currentLength = diff.length();
+            
+            if (currentLength > 0.01) {
+                // 方向ベクトルを正規化（一度だけ）
+                const forceDir = diff.clone().normalize();
+                
+                // 理想的な距離からのずれ
+                const stretch = currentLength - this.restLength;
+                
+                // スプリング力（フックの法則）
+                const springForce = stretch * this.springStiffness;
+                
+                // 速度差による減衰
+                const velA = particleA.getVelocity();
+                const velB = particleB.getVelocity();
+                const velDiff = new THREE.Vector3().subVectors(velB, velA);
+                const dampingForce = velDiff.dot(forceDir) * this.springDamping;
+                
+                // 力を適用
+                const totalForce = springForce + dampingForce;
+                
+                // 粒子Aに力を加える（B方向）
+                particleA.addForce(forceDir.clone().multiplyScalar(totalForce));
+                // 粒子Bに力を加える（A方向、反対向き）
+                particleB.addForce(forceDir.multiplyScalar(-totalForce));
+            }
         }
         
-        // 線描画の更新
-        if (this.SHOW_LINES && this.lineSystem && this.gpuParticleSystem) {
-            this.gpuParticleSystem.updateLineSystem();
+        for (let i = 0; i < this.particles.length; i++) {
+            const particle = this.particles[i];
+            const particleMass = this.particleMasses[i];
+            const particlePos = particle.getPosition();
+            const initialPos = this.initialPositions[i];
+            
+            // 復元力（元の位置に戻ろうとする力）
+            const restoreDiff = new THREE.Vector3().subVectors(initialPos, particlePos);
+            const restoreDistance = restoreDiff.length();
+            
+            if (restoreDistance > 0.01) {
+                // 方向ベクトルを正規化（一度だけ）
+                const restoreDir = restoreDiff.clone().normalize();
+                
+                // 復元力（フックの法則）
+                const restoreForce = restoreDistance * this.restoreStiffness;
+                
+                // 速度による減衰
+                const vel = particle.getVelocity();
+                const velDot = vel.dot(restoreDir);
+                const restoreDamping = velDot * this.restoreDamping;
+                
+                // 復元力を適用
+                const totalRestoreForce = restoreForce + restoreDamping;
+                particle.addForce(restoreDir.multiplyScalar(totalRestoreForce));
+            }
+            
+            // 重力を適用
+            const gravity = this.gravity.clone();
+            particle.addForce(gravity);
+            
+            // パーティクルを更新
+            particle.update();
+            
+            // 地面との衝突判定
+            if (particlePos.y - this.sphereRadius <= this.groundY) {
+                // 地面に当たったら位置を修正
+                particlePos.y = this.groundY + this.sphereRadius;
+                particle.position.copy(particlePos);
+                
+                // 速度を減らす（反発と摩擦）
+                const vel = particle.getVelocity();
+                if (vel.y < 0) {
+                    vel.y *= -0.3; // 反発係数
+                }
+                // 摩擦を適用
+                const groundFriction = 0.98;
+                vel.x *= groundFriction;
+                vel.z *= groundFriction;
+                particle.velocity.copy(vel);
+            }
+            
+            // Pointsの位置を更新
+            const idx = i * 3;
+            this.pointsPositions[idx] = particlePos.x;
+            this.pointsPositions[idx + 1] = particlePos.y;
+            this.pointsPositions[idx + 2] = particlePos.z;
+            
+            // ノイズでポイントのサイズを変える（initialPosは復元力の処理で既に定義済み）
+            const sizeNoiseX = initialPos.x * this.sizeNoiseScale;
+            const sizeNoiseZ = initialPos.z * this.sizeNoiseScale;
+            const sizeNoiseValue = this.fractalNoise(sizeNoiseX, sizeNoiseZ, this.terrainNoiseTime);
+            const sizeMultiplier = 1.0 + sizeNoiseValue * this.sizeNoiseAmplitude;
+            this.pointsSizes[i] = this.sphereRadius * 2.0 * sizeMultiplier;
+            
+            // ヒートマップの色を計算（速度の大きさに基づく）
+            const vel = particle.getVelocity();
+            const speed = vel.length();
+            const normalizedSpeed = Math.min(Math.max((speed - this.heatMapMinValue) / (this.heatMapMaxValue - this.heatMapMinValue), 0), 1);
+            const color = this.getHeatMapColor(normalizedSpeed);
+            
+            // Pointsの色を設定（ヒートマップ）
+            this.pointsColors[idx] = color.r;
+            this.pointsColors[idx + 1] = color.g;
+            this.pointsColors[idx + 2] = color.b;
         }
         
-        // GridRuler3Dの更新（カメラに向ける）
-        if (this.gridRuler3D && this.camera) {
-            this.gridRuler3D.update(this.camera);
+        // Pointsの属性を更新
+        if (this.pointsMesh && this.pointsMesh.geometry) {
+            this.pointsMesh.geometry.attributes.position.needsUpdate = true;
+            this.pointsMesh.geometry.attributes.color.needsUpdate = true;
+            this.pointsMesh.geometry.attributes.size.needsUpdate = true;
         }
+        
+        // 線の位置と色を更新
+        this.updateConnections();
+        
+        // カメラパーティクルのバウンド処理（SceneBase.update()で既に更新済み）
+        if (this.cameraParticles && this.cameraParticles[this.currentCameraIndex]) {
+            const cameraParticle = this.cameraParticles[this.currentCameraIndex];
+            
+            // boxの端に当たったらバウンド（ランダムのときの力が残っていれば、速度が一定以上ある場合のみ）
+            const pos = cameraParticle.getPosition();
+            const vel = cameraParticle.getVelocity();
+            const boxMin = cameraParticle.boxMin;
+            const boxMax = cameraParticle.boxMax;
+            
+            // 速度が一定以上ある場合のみバウンド（ランダムのときの力が残っている）
+            const minVelocityForBounce = 0.1;
+            if (vel.length() > minVelocityForBounce && boxMin && boxMax) {
+                // X方向のバウンド
+                if (pos.x <= boxMin.x) {
+                    pos.x = boxMin.x;
+                    vel.x *= -1.0; // バウンド（-1.0）
+                    cameraParticle.position.copy(pos);
+                    cameraParticle.velocity.copy(vel);
+                } else if (pos.x >= boxMax.x) {
+                    pos.x = boxMax.x;
+                    vel.x *= -1.0; // バウンド（-1.0）
+                    cameraParticle.position.copy(pos);
+                    cameraParticle.velocity.copy(vel);
+                }
+                
+                // Y方向のバウンド
+                if (pos.y <= boxMin.y) {
+                    pos.y = boxMin.y;
+                    vel.y *= -1.0; // バウンド（-1.0）
+                    cameraParticle.position.copy(pos);
+                    cameraParticle.velocity.copy(vel);
+                } else if (pos.y >= boxMax.y) {
+                    pos.y = boxMax.y;
+                    vel.y *= -1.0; // バウンド（-1.0）
+                    cameraParticle.position.copy(pos);
+                    cameraParticle.velocity.copy(vel);
+                }
+                
+                // Z方向のバウンド
+                if (pos.z <= boxMin.z) {
+                    pos.z = boxMin.z;
+                    vel.z *= -1.0; // バウンド（-1.0）
+                    cameraParticle.position.copy(pos);
+                    cameraParticle.velocity.copy(vel);
+                } else if (pos.z >= boxMax.z) {
+                    pos.z = boxMax.z;
+                    vel.z *= -1.0; // バウンド（-1.0）
+                    cameraParticle.position.copy(pos);
+                    cameraParticle.velocity.copy(vel);
+                }
+            }
+        }
+        
+        // カメラを更新
+        this.updateCamera();
+        
+        // 色収差エフェクトの更新（サスティン終了チェック）
+        this.updateChromaticAberration();
+        
+        // グリッチエフェクトの更新（サスティン終了チェックと時間更新）
+        this.updateGlitch();
     }
     
     /**
-     * 描画処理（オーバーライド）
+     * ヒートマップの色を計算（0.0-1.0の値から色を生成、黒 → 白のグラデーション）
+     * @param {number} value - 0.0（低い値）から1.0（高い値）
+     * @returns {THREE.Color} ヒートマップの色
+     */
+    getHeatMapColor(value) {
+        // 黒 → 白 のグラデーション
+        const color = new THREE.Color();
+        
+        // valueが0.0の時は黒（0, 0, 0）、1.0の時は白（1, 1, 1）
+        color.r = value;
+        color.g = value;
+        color.b = value;
+        
+        return color;
+    }
+    
+    /**
+     * 線の位置と色を更新（Sphereの位置に追従、ヒートマップ色を適用）
+     */
+    updateConnections() {
+        if (!this.lineGeometry || !this.lineMesh) return;
+        
+        const positions = this.lineGeometry.attributes.position.array;
+        const colors = this.lineGeometry.attributes.color.array;
+        let offset = 0;
+        let colorOffset = 0;
+        
+        for (const connection of this.connections) {
+            const fromParticle = this.particles[connection.from];
+            const toParticle = this.particles[connection.to];
+            const fromPos = fromParticle.getPosition();
+            const toPos = toParticle.getPosition();
+            
+            // 速度の平均を計算（線の色に使用）
+            const fromVel = fromParticle.getVelocity();
+            const toVel = toParticle.getVelocity();
+            const avgSpeed = (fromVel.length() + toVel.length()) / 2.0;
+            const normalizedSpeed = Math.min(Math.max((avgSpeed - this.heatMapMinValue) / (this.heatMapMaxValue - this.heatMapMinValue), 0), 1);
+            const color = this.getHeatMapColor(normalizedSpeed);
+            
+            // from位置
+            positions[offset++] = fromPos.x;
+            positions[offset++] = fromPos.y;
+            positions[offset++] = fromPos.z;
+            
+            // from色
+            colors[colorOffset++] = color.r;
+            colors[colorOffset++] = color.g;
+            colors[colorOffset++] = color.b;
+            
+            // to位置
+            positions[offset++] = toPos.x;
+            positions[offset++] = toPos.y;
+            positions[offset++] = toPos.z;
+            
+            // to色
+            colors[colorOffset++] = color.r;
+            colors[colorOffset++] = color.g;
+            colors[colorOffset++] = color.b;
+        }
+        
+        this.lineGeometry.attributes.position.needsUpdate = true;
+        this.lineGeometry.attributes.color.needsUpdate = true;
+    }
+    
+    /**
+     * 力を加える（トラック5用、下から上に吹き飛ばす）
+     * @param {number} noteNumber - ノート番号（36が0、地上からの高さ）
+     * @param {number} velocity - ベロシティ（0-127、力の強さ）
+     * @param {number} durationMs - デュレーション（ms、力の長さ）
+     */
+    applyForce(noteNumber = null, velocity = null, durationMs = null) {
+        // 力の中心位置をランダムに設定（XZ平面）
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        const centerX = (Math.random() - 0.5) * gridWidth;
+        const centerZ = (Math.random() - 0.5) * gridDepth;
+        
+        // 力の中心位置は地面の下（拳が下から突き上げる感じ）
+        const heightY = this.groundY - 50.0; // 地面の下50ユニット（拳の位置）
+        
+        const forceCenter = new THREE.Vector3(centerX, heightY, centerZ);
+        
+        // ベロシティから力の強さを計算（0-127 → 力の強さ）
+        let forceStrength = 100.0; // デフォルト（拳で持ち上げる強さ、3000.0 → 150000.0に50倍強化）
+        if (velocity !== null) {
+            const velocityNormalized = velocity / 127.0; // 0.0-1.0
+            forceStrength = 100000.0 + velocityNormalized * 150000.0; // 100000-250000（2000-5000 → 100000-250000に50倍強化）
+        }
+        
+        // 力の影響範囲（拳で持ち上げる範囲）
+        const forceRadius = 400.0; // 元の範囲に戻す
+        
+        // 影響範囲内のSphereに力を加える（下から上に）
+        let affectedCount = 0;
+        for (let i = 0; i < this.particles.length; i++) {
+            const particle = this.particles[i];
+            const particlePos = particle.getPosition();
+            const toParticle = new THREE.Vector3().subVectors(particlePos, forceCenter);
+            const distance = toParticle.length();
+            
+            if (distance < forceRadius && distance > 0.1) {
+                // 距離に応じた力の強さ（中心に近いほど強い）
+                const normalizedDist = distance / forceRadius;
+                const localForceStrength = forceStrength * (1.0 - normalizedDist) * (1.0 - normalizedDist);
+                
+                // 上方向への力（下から上に吹き飛ばす）
+                const upwardForce = new THREE.Vector3(0, localForceStrength, 0);
+                
+                // 力を適用（上方向）
+                particle.addForce(upwardForce);
+                affectedCount++;
+            }
+        }
+        
+        console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
+        console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
+    }
+    
+    /**
+     * 描画処理
      */
     render() {
-        // 背景は常に黒
-        this.backgroundWhite = false;
-        
         // 背景色を設定
-        this.renderer.setClearColor(0x000000);
-        
-        // GridRuler3Dの色は常に白（赤い十字は赤のまま）
-        if (this.gridRuler3D && this.gridRuler3D._materials) {
-            const gridColor = 0xffffff;  // グリッド線は白
-            const redCrossColor = 0xff3333;  // 赤い十字の色（この色のマテリアルは更新しない）
-            this.gridRuler3D._materials.forEach(mat => {
-                if (mat && mat.color !== undefined) {
-                    // 赤い十字のマテリアル（色が0xff3333）は赤のまま、それ以外は白に更新
-                    const currentColor = mat.color.getHex();
-                    if (currentColor !== redCrossColor) {
-                        mat.color.setHex(gridColor);
-                    }
-                }
-            });
-            // ラベルの色も更新
-            if (this.gridRuler3D._labelSprites) {
-                this.gridRuler3D._labelSprites.forEach(sprite => {
-                    if (sprite && sprite.material && sprite.material.color !== undefined) {
-                        sprite.material.color.setHex(gridColor);
-                    }
-                });
-            }
+        if (this.backgroundWhite) {
+            this.renderer.setClearColor(0xffffff);
+        } else {
+            this.renderer.setClearColor(0x000000);
         }
         
         // 色反転エフェクトが有効な場合はColorInversionのcomposerを使用
@@ -314,7 +822,7 @@ export class Scene05 extends SceneBase {
             }
         }
         
-        // HUDを描画（非表示の時はCanvasをクリア）
+        // HUDを描画
         if (this.hud) {
             if (this.showHUD) {
                 const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
@@ -322,38 +830,37 @@ export class Scene05 extends SceneBase {
                 const frameRate = this.lastFrameTime ? 1.0 / ((now - this.lastFrameTime) / 1000.0) : 60.0;
                 this.lastFrameTime = now;
                 
-                // HUDは常に白
+                // 色反転エフェクトが有効な場合は、HUDの色も反転する
+                const isInverted = this.colorInversion && this.colorInversion.isEnabled();
+                
                 this.hud.display(
                     frameRate,
                     this.currentCameraIndex,
                     cameraPos,
-                    0, // activeSpheres（サブクラスで設定）
-                    this.time, // time（サブクラスで設定）
-                    this.cameraParticles[this.currentCameraIndex]?.getRotationX() || 0,
-                    this.cameraParticles[this.currentCameraIndex]?.getRotationY() || 0,
+                    this.numParticles,
+                    this.time,
+                    0,
+                    0,
                     cameraPos.length(),
-                    0, // noiseLevel（サブクラスで設定）
-                    false, // backgroundWhite（false=白、true=黒）
+                    0,
+                    isInverted, // backgroundWhite（色反転エフェクトが有効な場合はtrue）
                     this.oscStatus,
                     this.particleCount,
                     this.trackEffects,  // エフェクト状態を渡す
                     this.phase,  // phase値を渡す
-                    null,  // hudScales（サブクラスで設定可能）
-                    null,  // hudGrid（サブクラスで設定可能）
-                    0,  // currentBar（サブクラスで設定可能）
-                    '',  // debugText（サブクラスで設定可能）
-                    this.actualTick,  // actualTick（OSCから受け取る値）
-                    null,  // cameraModeName（サブクラスで設定可能）
-                    this.sceneNumber  // sceneNumber（各シーンで設定）
+                    this.title || null,  // sceneName
+                    this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
                 );
             } else {
-                // HUDが非表示の時はCanvasをクリア
                 this.hud.clear();
             }
         }
         
         // スクリーンショットテキストを描画
         this.drawScreenshotText();
+        
+        // カメラデバッグを描画（テキスト）
+        this.drawCameraDebug();
     }
     
     /**
@@ -362,26 +869,31 @@ export class Scene05 extends SceneBase {
     handleTrackNumber(trackNumber, message) {
         const args = message.args || [];
         
-        // トラック1: カメラをランダムに切り替え（SceneBaseで処理済み）
-        // トラック2-4: エフェクト（SceneBaseで処理済み）
-        
-        // トラック5: ノイズの動きを早める
-        if (trackNumber === 5) {
-            const velocity = args[1] || 127.0;  // ベロシティ（0-127）
-            const durationMs = args[2] || 0.0;  // デュレーション（ms）
-            
-            // ベロシティに応じてスピード倍率を計算（0-127 → 1.0-5.0）
-            this.track5SpeedMultiplier = 1.0 + (velocity / 127.0) * 4.0;  // 1.0〜5.0
-            
-            // カールノイズのスピードを更新
-            this.curlNoiseSpeed = this.baseCurlNoiseSpeed * this.track5SpeedMultiplier;
-            
-            // サスティン終了時刻を設定（durationMsが0の場合は無期限）
-            if (durationMs > 0) {
-                this.track5EndTime = Date.now() + durationMs;
-            } else {
-                this.track5EndTime = 0;  // 無期限
-            }
+        // トラック1: カメラをランダムに切り替え（SceneBaseで共通処理されているが、明示的に処理）
+        if (trackNumber === 1) {
+            this.switchCameraRandom();
+        }
+        // トラック2: 色反転エフェクト（SceneBaseで共通化されているため、ここでは処理しない）
+        // トラック3: 色収差エフェクト（ノート、ベロシティ、デュレーション付き）
+        else if (trackNumber === 3) {
+            const velocity = args[0] || 127.0;
+            const noteNumber = args[1] || 64.0;
+            const durationMs = args[2] || 0.0;
+            this.applyChromaticAberration(velocity, noteNumber, durationMs);
+        }
+        // トラック4: グリッチエフェクト（ノート、ベロシティ、デュレーション付き）
+        else if (trackNumber === 4) {
+            const velocity = args[0] || 127.0;
+            const noteNumber = args[1] || 64.0;
+            const durationMs = args[2] || 0.0;
+            this.applyGlitch(velocity, noteNumber, durationMs);
+        }
+        // トラック5: 力を加える（ノート、ベロシティ、デュレーション付き）
+        else if (trackNumber === 5) {
+            const noteNumber = args[0] !== undefined ? args[0] : null; // ノート（36が0）
+            const velocity = args[1] !== undefined ? args[1] : null; // ベロシティ（0-127、力の強さ）
+            const durationMs = args[2] !== undefined ? args[2] : null; // デュレーション（ms、力の長さ）
+            this.applyForce(noteNumber, velocity, durationMs);
         }
     }
     
@@ -390,99 +902,294 @@ export class Scene05 extends SceneBase {
      */
     reset() {
         super.reset(); // TIMEをリセット
-        this.time = 0;
-        this.sketchStartTime = Date.now();
-        
-        // 線描画システムを削除
-        if (this.lineSystem) {
-            this.lineSystem.children.forEach(line => {
-                line.geometry.dispose();
-                line.material.dispose();
-            });
-            this.scene.remove(this.lineSystem);
-            this.lineSystem = null;
+        // パーティクルをリセット（格子状に配置）
+        if (!this.pointsMesh || this.particles.length === 0) {
+            return; // まだ初期化されていない場合はスキップ
         }
         
-        // GPUパーティクルシステムを再初期化
-        if (this.gpuParticleSystem) {
-            const particleSystem = this.gpuParticleSystem.getParticleSystem();
-            if (particleSystem) {
-                this.scene.remove(particleSystem);
-            }
-            if (!this.useSharedResources || !this.sharedResourceManager) {
-                this.gpuParticleSystem.dispose();
-            }
+        // グリッドの範囲を計算
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        
+        for (let i = 0; i < this.particles.length; i++) {
+            const particle = this.particles[i];
+            particle.reset();
+            
+            // グリッド位置を計算
+            const z = Math.floor(i / this.gridSizeX);
+            const x = i % this.gridSizeX;
+            const gridX = -gridWidth / 2 + x * this.gridSpacing;
+            const gridZ = -gridDepth / 2 + z * this.gridSpacing;
+            const y = this.groundY + this.sphereRadius; // 地面の上
+            
+            particle.position.set(gridX, y, gridZ);
+            
+            // Pointsの位置を更新
+            const idx = i * 3;
+            this.pointsPositions[idx] = gridX;
+            this.pointsPositions[idx + 1] = y;
+            this.pointsPositions[idx + 2] = gridZ;
+            
+            // 初期色（青）
+            this.pointsColors[idx] = 0.0;
+            this.pointsColors[idx + 1] = 0.0;
+            this.pointsColors[idx + 2] = 1.0;
         }
         
-        // 共有リソースを使っている場合は、パーティクルシステムを再取得
-        if (this.useSharedResources && this.sharedResourceManager) {
-            this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene05');
-            if (this.gpuParticleSystem) {
-                this.gpuParticleSystem.initializeParticleData();
-                const particleSystem = this.gpuParticleSystem.getParticleSystem();
-                if (particleSystem) {
-                    // パーティクルシステムのローテーションXを90度に設定
-                    particleSystem.rotation.x = Math.PI / 2.0;
-                    this.scene.add(particleSystem);
-                }
-            }
+        // Pointsの属性を更新
+        if (this.pointsMesh && this.pointsMesh.geometry) {
+            this.pointsMesh.geometry.attributes.position.needsUpdate = true;
+            this.pointsMesh.geometry.attributes.color.needsUpdate = true;
         }
         
-        // GPUパーティクルシステムを再作成
-        if (!this.useSharedResources || !this.sharedResourceManager) {
-            const particleCount = this.cols * this.rows;
-            this.gpuParticleSystem = new GPUParticleSystem(
-                this.renderer,
-                particleCount,
-                this.cols,
-                this.rows,
-                this.baseRadius,
-                'scene01',
-                6.0,  // particleSize（大きく）
-                'circle',  // placementType: 円配置
-                {
-                    circleRadius: this.circleRadius,
-                    circleThickness: this.circleThickness,
-                    minLifetime: this.minLifetime,
-                    maxLifetime: this.maxLifetime
-                }
+        // 線の位置を更新
+        this.updateConnections();
+    
+        console.log('🔄 シーンをリセットしました');
+    }
+    
+    /**
+     * 色収差エフェクトを初期化
+     */
+    async initChromaticAberration() {
+        // シェーダーを読み込む
+        const shaderBasePath = `/shaders/common/`;
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
+            fetch(`${shaderBasePath}chromaticAberration.vert`).then(r => r.text()),
+            fetch(`${shaderBasePath}chromaticAberration.frag`).then(r => r.text())
+            ]);
+            // EffectComposerを作成
+            this.composer = new EffectComposer(this.renderer);
+            
+            // RenderPassを追加（通常のシーン描画）
+            const renderPass = new RenderPass(this.scene, this.camera);
+            this.composer.addPass(renderPass);
+            
+            // 色収差シェーダーを作成
+            const chromaticAberrationShader = {
+                uniforms: {
+                    tDiffuse: { value: null },
+                    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                    amount: { value: 0.0 }
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader
+            };
+            
+            // ShaderPassを追加
+            this.chromaticAberrationPass = new ShaderPass(chromaticAberrationShader);
+            this.chromaticAberrationPass.enabled = false;  // デフォルトでは無効
+            this.composer.addPass(this.chromaticAberrationPass);
+            
+            // ブルームエフェクトを追加
+            this.bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5,  // strength（強度）
+                0.4,  // radius（半径）
+                0.85  // threshold（閾値）
             );
-            this.gpuParticleSystem.initPromise.then(() => {
-                const newParticleSystem = this.gpuParticleSystem.getParticleSystem();
-                if (newParticleSystem) {
-                    // パーティクルシステムのローテーションXを90度に設定
-                    newParticleSystem.rotation.x = Math.PI / 2.0;
-                    this.scene.add(newParticleSystem);
-                }
-                // 線描画システムを再作成
-                if (this.SHOW_LINES && this.gpuParticleSystem) {
-                    this.gpuParticleSystem.createLineSystem({
-                        linewidth: 5,
-                        scene: this.scene
-                    }).then(lineSystem => {
-                        this.lineSystem = lineSystem;
-                    });
-                }
-            });
+            this.bloomPass.enabled = this.bloomEnabled;
+            this.composer.addPass(this.bloomPass);
+            
+            // グリッチエフェクトも初期化（composerが作成された後）
+            await this.initGlitchShader();
+        } catch (err) {
+            console.error('色収差シェーダーの読み込みに失敗:', err);
+        }
+    }
+    
+    /**
+     * グリッチエフェクトを初期化
+     */
+    initGlitch() {
+        // composerが作成されるまで待つ（initChromaticAberration内で作成される）
+        // 実際の初期化はinitChromaticAberration内で行う
+    }
+    
+    /**
+     * グリッチシェーダーを初期化（composer作成後）
+     */
+    async initGlitchShader() {
+        if (!this.composer) return;
+        
+        // シェーダーを読み込む
+        const shaderBasePath = `/shaders/common/`;
+        try {
+            const [vertexShader, fragmentShader] = await Promise.all([
+            fetch(`${shaderBasePath}glitch.vert`).then(r => r.text()),
+            fetch(`${shaderBasePath}glitch.frag`).then(r => r.text())
+            ]);
+            // グリッチシェーダーを作成
+            const glitchShader = {
+                uniforms: {
+                    tDiffuse: { value: null },
+                    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                    amount: { value: 0.0 },
+                    time: { value: 0.0 }
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader
+            };
+            
+            // ShaderPassを追加
+            this.glitchPass = new ShaderPass(glitchShader);
+            this.glitchPass.enabled = false;  // デフォルトでは無効
+            this.composer.addPass(this.glitchPass);
+        } catch (err) {
+            console.error('グリッチシェーダーの読み込みに失敗:', err);
+        }
+    }
+    
+    /**
+     * 色収差エフェクトを適用（ノート、ベロシティ、デュレーション付き）
+     */
+    applyChromaticAberration(velocity, noteNumber, durationMs) {
+        if (!this.chromaticAberrationPass) {
+            console.warn('色収差エフェクトが初期化されていません');
+            return;
+        }
+        
+        // ベロシティ（0〜127）を色収差の強度（0.0〜1.0）に変換
+        const amount = THREE.MathUtils.mapLinear(velocity, 0, 127, 0.0, 1.0);
+        this.chromaticAberrationAmount = amount;
+        
+        // シェーダーのuniformを更新
+        if (this.chromaticAberrationPass.material && this.chromaticAberrationPass.material.uniforms) {
+            this.chromaticAberrationPass.material.uniforms.amount.value = amount;
+        }
+        
+        // エフェクトを有効化
+        this.chromaticAberrationPass.enabled = true;
+        
+        // デュレーション（サスティン）を設定
+        if (durationMs > 0) {
+            this.chromaticAberrationEndTime = Date.now() + durationMs;
         } else {
-            // 共有リソースを使っている場合は、線描画システムのみ再作成
-            if (this.SHOW_LINES && this.gpuParticleSystem) {
-                this.gpuParticleSystem.createLineSystem({
-                    linewidth: 5,
-                    scene: this.scene
-                }).then(lineSystem => {
-                    this.lineSystem = lineSystem;
-                });
+            this.chromaticAberrationEndTime = 0;
+        }
+        
+        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
+    }
+    
+    /**
+     * グリッチエフェクトを適用（ノート、ベロシティ、デュレーション付き）
+     */
+    applyGlitch(velocity, noteNumber, durationMs) {
+        if (!this.glitchPass) {
+            console.warn('グリッチエフェクトが初期化されていません');
+            return;
+        }
+        
+        // ベロシティ（0〜127）をグリッチの強度（0.0〜1.0）に変換
+        const amount = THREE.MathUtils.mapLinear(velocity, 0, 127, 0.0, 1.0);
+        this.glitchAmount = amount;
+        
+        // シェーダーのuniformを更新
+        if (this.glitchPass.material && this.glitchPass.material.uniforms) {
+            this.glitchPass.material.uniforms.amount.value = amount;
+        }
+        
+        // エフェクトを有効化
+        this.glitchPass.enabled = true;
+        
+        // デュレーション（サスティン）を設定
+        if (durationMs > 0) {
+            this.glitchEndTime = Date.now() + durationMs;
+        } else {
+            this.glitchEndTime = 0;
+        }
+        
+        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
+    }
+    
+    /**
+     * キーが押された時の処理（キー3、4専用、押している間だけ有効）
+     */
+    handleKeyDown(trackNumber) {
+        // 親クラスのhandleKeyDownを呼ぶ（トラック2の色反転など）
+        super.handleKeyDown(trackNumber);
+        
+        if (trackNumber === 3) {
+            // キー3: 色収差エフェクトを有効化
+            this.chromaticAberrationKeyPressed = true;
+            this.applyChromaticAberration(127.0, 64.0, 0.0);  // デフォルト値で有効化
+        } else if (trackNumber === 4) {
+            // キー4: グリッチエフェクトを有効化
+            this.glitchKeyPressed = true;
+            this.applyGlitch(127.0, 64.0, 0.0);  // デフォルト値で有効化
+        }
+    }
+    
+    /**
+     * キーが離された時の処理（キー3、4専用）
+     */
+    handleKeyUp(trackNumber) {
+        // 親クラスのhandleKeyUpを呼ぶ（トラック2の色反転など）
+        super.handleKeyUp(trackNumber);
+        
+        if (trackNumber === 3) {
+            // キー3: 色収差エフェクトを無効化
+            this.chromaticAberrationKeyPressed = false;
+            if (this.chromaticAberrationPass) {
+                this.chromaticAberrationPass.enabled = false;
+                this.chromaticAberrationAmount = 0.0;
+                this.chromaticAberrationEndTime = 0;
+            }
+        } else if (trackNumber === 4) {
+            // キー4: グリッチエフェクトを無効化
+            this.glitchKeyPressed = false;
+            if (this.glitchPass) {
+                this.glitchPass.enabled = false;
+                this.glitchAmount = 0.0;
+                this.glitchEndTime = 0;
             }
         }
     }
     
     /**
-     * リサイズ処理
+     * 色収差エフェクトの更新（サスティン終了チェック）
      */
-    onResize() {
-        // 親クラスのonResizeを呼ぶ
-        super.onResize();
+    updateChromaticAberration() {
+        if (this.chromaticAberrationPass && this.chromaticAberrationPass.enabled) {
+            // キーが押されている場合は無効化しない
+            if (this.chromaticAberrationKeyPressed) {
+                return;
+            }
+            
+            const currentTime = Date.now();
+            if (this.chromaticAberrationEndTime > 0 && currentTime >= this.chromaticAberrationEndTime) {
+                // サスティン終了
+                this.chromaticAberrationPass.enabled = false;
+                this.chromaticAberrationAmount = 0.0;
+                this.chromaticAberrationEndTime = 0;
+            }
+        }
+    }
+    
+    /**
+     * グリッチエフェクトの更新（サスティン終了チェックと時間更新）
+     */
+    updateGlitch() {
+        if (this.glitchPass && this.glitchPass.enabled) {
+            // 時間を更新
+            if (this.glitchPass.material && this.glitchPass.material.uniforms) {
+                this.glitchPass.material.uniforms.time.value = this.time;
+            }
+            
+            // キーが押されている場合は無効化しない
+            if (this.glitchKeyPressed) {
+                return;
+            }
+            
+            const currentTime = Date.now();
+            if (this.glitchEndTime > 0 && currentTime >= this.glitchEndTime) {
+                // サスティン終了
+                this.glitchPass.enabled = false;
+                this.glitchAmount = 0.0;
+                this.glitchEndTime = 0;
+            }
+        }
     }
     
     /**
@@ -491,47 +1198,54 @@ export class Scene05 extends SceneBase {
     dispose() {
         console.log('Scene05.dispose: クリーンアップ開始');
         
-        // GPUパーティクルシステムを破棄
-        if (this.gpuParticleSystem) {
-            const particleSystem = this.gpuParticleSystem.getParticleSystem();
-            if (particleSystem) {
-                this.scene.remove(particleSystem);
+        // Pointsメッシュを破棄
+        if (this.pointsMesh) {
+            this.scene.remove(this.pointsMesh);
+            if (this.pointsMesh.geometry) {
+                this.pointsMesh.geometry.dispose();
             }
-            
-            if (this.useSharedResources && this.sharedResourceManager) {
-                this.sharedResourceManager.releaseGPUParticleSystem('scene05');
-                console.log('[Scene05] 共有リソースを返却');
-            } else {
-                this.gpuParticleSystem.dispose();
+            if (this.pointsMesh.material) {
+                this.pointsMesh.material.dispose();
             }
-            this.gpuParticleSystem = null;
+            this.pointsMesh = null;
         }
         
-        // 線描画システムを破棄
-        if (this.lineSystem) {
-            this.lineSystem.children.forEach(line => {
-                line.geometry.dispose();
-                line.material.dispose();
-            });
-            this.scene.remove(this.lineSystem);
-            this.lineSystem = null;
+        this.pointsPositions = null;
+        this.pointsColors = null;
+        this.pointsSizes = null;
+        
+        // パーティクルをクリア
+        this.particles = [];
+        this.particleMasses = [];
+        
+        // 線を破棄
+        if (this.lineMesh) {
+            this.scene.remove(this.lineMesh);
+            if (this.lineGeometry) {
+                this.lineGeometry.dispose();
+            }
+            if (this.lineMesh.material) {
+                this.lineMesh.material.dispose();
+            }
+            this.lineMesh = null;
+            this.lineGeometry = null;
         }
         
-        // 背景グラデーションを破棄
-        if (this.backgroundGradientMesh) {
-            this.backgroundGradientMesh.geometry.dispose();
-            this.backgroundGradientMesh.material.dispose();
-            this.scene.remove(this.backgroundGradientMesh);
-            this.backgroundGradientMesh = null;
+        this.connections = [];
+        
+        // エフェクトパスを破棄
+        if (this.chromaticAberrationPass) {
+            this.chromaticAberrationPass = null;
+        }
+        if (this.glitchPass) {
+            this.glitchPass = null;
+        }
+        if (this.composer) {
+            this.composer.dispose();
+            this.composer = null;
         }
         
-        // GridRuler3Dを破棄
-        if (this.gridRuler3D) {
-            this.gridRuler3D.dispose();
-            this.gridRuler3D = null;
-        }
-        
-        // ライトを削除
+        // すべてのライトを削除
         const lightsToRemove = [];
         this.scene.traverse((object) => {
             if (object instanceof THREE.Light) {
@@ -544,10 +1258,6 @@ export class Scene05 extends SceneBase {
                 light.dispose();
             }
         });
-        
-        this.directionalLight1 = null;
-        this.directionalLight2 = null;
-        
         
         console.log('Scene05.dispose: クリーンアップ完了');
         

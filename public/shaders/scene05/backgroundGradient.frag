@@ -19,7 +19,7 @@ void main() {
     vec3 gradientColor = mix(edgeColor, centerColor, gradientFactor);
     
     // 強度を適用
-    gradientColor = mix(vec3(0.0, 0.0, 0.0), gradientColor, intensity);
+    gradientColor = mix(vec3(1.0, 1.0, 1.0), gradientColor, intensity);
     
     gl_FragColor = vec4(gradientColor, 1.0);
 }

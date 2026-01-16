@@ -10,6 +10,7 @@ uniform float maxLifetime;  // lifetimeの最大値（circle配置用）
 uniform float circleRadius;  // 円の半径（circle配置用）
 uniform float circleThickness;  // 円の太さ（circle配置用）
 uniform float placementType;  // 0: sphere, 1: circle, 2: terrain
+uniform float pressure;  // 圧力（0.0 = なし、正の値 = 外側に押し出す、負の値 = 内側に押し込む）
 
 varying vec2 vUv;
 
@@ -51,21 +52,34 @@ float smoothNoise(vec3 p) {
     return mix(y1, y2, f.z);
 }
 
-// カールノイズ関数（circle配置用）
+// シンプルなカールノイズ関数（各軸に異なる時間オフセットを適用）
 vec3 curlNoise(vec3 p, float t, float noiseScale, float noiseStrength) {
-    float eps = 0.1;
+    // epsをノイズスケールに応じて調整（より正確な勾配計算のため）
+    float eps = 0.01 / noiseScale;
     
-    float n1 = smoothNoise(vec3((p.x + eps) * noiseScale + t, p.y * noiseScale + t, p.z * noiseScale + t));
-    float n2 = smoothNoise(vec3((p.x - eps) * noiseScale + t, p.y * noiseScale + t, p.z * noiseScale + t));
-    float n3 = smoothNoise(vec3(p.x * noiseScale + t, (p.y + eps) * noiseScale + t, p.z * noiseScale + t));
-    float n4 = smoothNoise(vec3(p.x * noiseScale + t, (p.y - eps) * noiseScale + t, p.z * noiseScale + t));
-    float n5 = smoothNoise(vec3(p.x * noiseScale + t, p.y * noiseScale + t, (p.z + eps) * noiseScale + t));
-    float n6 = smoothNoise(vec3(p.x * noiseScale + t, p.y * noiseScale + t, (p.z - eps) * noiseScale + t));
+    // 各軸に異なる時間オフセットを適用することで、各軸が独立して動くようにする
+    // 係数を大きくして、より明確な違いを作る
+    float tx = t * 0.5;   // X軸の時間オフセット
+    float ty = t * 1.0;   // Y軸の時間オフセット
+    float tz = t * 0.5;   // Z軸の時間オフセット
     
+    // 位置にノイズスケールを適用し、各軸に異なる時間オフセットを加える
+    vec3 scaledPos = p * noiseScale;
+    
+    // 勾配を計算（各軸に異なる時間オフセットを適用）
+    float n1 = smoothNoise(vec3(scaledPos.x + eps + tx, scaledPos.y + ty, scaledPos.z + tz));
+    float n2 = smoothNoise(vec3(scaledPos.x - eps + tx, scaledPos.y + ty, scaledPos.z + tz));
+    float n3 = smoothNoise(vec3(scaledPos.x + tx, scaledPos.y + eps + ty, scaledPos.z + tz));
+    float n4 = smoothNoise(vec3(scaledPos.x + tx, scaledPos.y - eps + ty, scaledPos.z + tz));
+    float n5 = smoothNoise(vec3(scaledPos.x + tx, scaledPos.y + ty, scaledPos.z + eps + tz));
+    float n6 = smoothNoise(vec3(scaledPos.x + tx, scaledPos.y + ty, scaledPos.z - eps + tz));
+    
+    // 勾配を計算（epsで正規化）
     float dx = (n1 - n2) / (2.0 * eps);
     float dy = (n3 - n4) / (2.0 * eps);
     float dz = (n5 - n6) / (2.0 * eps);
     
+    // curl = (dz - dy, dx - dz, dy - dx)
     float curlX = dz - dy;
     float curlY = dx - dz;
     float curlZ = dy - dx;
@@ -107,6 +121,16 @@ void main() {
             // カールノイズで動かす
             vec3 curl = curlNoise(currentPos, time, noiseScale, noiseStrength);
             currentPos += curl * deltaTime;
+            
+            // 圧力を適用（中心からの方向に圧力を掛ける）
+            if (abs(pressure) > 0.001) {
+                float distanceFromCenter = length(currentPos);
+                if (distanceFromCenter > 0.001) {
+                    vec3 centerToParticle = normalize(currentPos);
+                    // 圧力が正の場合は外側に、負の場合は内側に押す
+                    currentPos += centerToParticle * pressure * deltaTime;
+                }
+            }
         }
         
         // 位置を出力（lifetimeをwに保存）

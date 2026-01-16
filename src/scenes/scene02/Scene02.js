@@ -14,6 +14,7 @@ export class Scene02 extends SceneBase {
     constructor(renderer, camera) {
         super(renderer, camera);
         this.title = 'mathym | bng bng';
+        this.sceneNumber = 2;
         
         // 表示設定
         this.SHOW_PARTICLES = true;

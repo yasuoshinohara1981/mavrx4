@@ -11,6 +11,7 @@ export class Scene04 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | drmsh';
+        this.sceneNumber = 4;
         console.log('Scene04: コンストラクタ実行', this.title);
         
         // 共有リソースマネージャー
@@ -36,7 +37,7 @@ export class Scene04 extends SceneBase {
         
         // ノイズパラメータ
         this.noiseScale = 0.0001;  // 1/100に変更（0.0005 → 0.000005）
-        this.noiseStrength = 0.75;
+        this.noiseStrength = 0.05;
         this.time = 0.0;
         this.timeIncrement = 0.006;
         

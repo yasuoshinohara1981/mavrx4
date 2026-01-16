@@ -14,6 +14,7 @@ export class Scene03 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | uiojp';
+        this.sceneNumber = 3;
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
@@ -591,7 +592,6 @@ export class Scene03 extends SceneBase {
     render() {
         // 背景色を設定
         this.renderer.setClearColor(0x000000);  // 常に黒背景（色反転で白になる）
-        
         // 色反転エフェクトが有効な場合はSceneBaseのrenderメソッドを使用（画面全体を反転）
         if (this.colorInversion && this.colorInversion.isEnabled()) {
             // SceneBaseのrenderメソッドを呼ぶ（色反転エフェクトを適用）

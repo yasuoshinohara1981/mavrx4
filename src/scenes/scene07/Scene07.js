@@ -16,6 +16,7 @@ export class Scene07 extends SceneBase {
     constructor(renderer, camera) {
         super(renderer, camera);
         this.title = 'mathym | t7:Romls';
+        this.sceneNumber = 7;
         
         // グリッド設定
         this.gridSizeX = 200; // グリッドのX方向の数

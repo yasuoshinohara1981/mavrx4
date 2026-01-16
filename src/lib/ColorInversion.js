@@ -16,6 +16,7 @@ export class ColorInversion {
         this.camera = camera;
         this.composer = null;
         this.inversionPass = null;
+        this.renderPass = null;  // RenderPassへの参照を保持
         this.enabled = false;
         this.endTime = 0;  // エフェクト終了時刻（サスティン用）
         this.initialized = false;  // 初期化完了フラグ
@@ -54,8 +55,10 @@ export class ColorInversion {
             this.composer = new EffectComposer(this.renderer);
             
             // RenderPassを追加（通常のシーン描画）
-            const renderPass = new RenderPass(this.scene, this.camera);
-            this.composer.addPass(renderPass);
+            // clearColorを白に設定（Scene05は通常時が白背景）
+            // THREE.Colorオブジェクトとして設定する必要がある
+            this.renderPass = new RenderPass(this.scene, this.camera, null, new THREE.Color(0xffffff), 1.0);
+            this.composer.addPass(this.renderPass);
             
             // 色反転シェーダーを作成
             const inversionShader = {
@@ -139,6 +142,17 @@ export class ColorInversion {
     }
     
     /**
+     * 背景色を設定（Scene05などから呼び出し可能）
+     * @param {number} color - 背景色（0xffffffなど）
+     */
+    setBackgroundColor(color) {
+        if (this.renderPass) {
+            this.renderPass.clearColor = new THREE.Color(color);
+            this.renderPass.clearAlpha = 1.0;
+        }
+    }
+    
+    /**
      * 描画（EffectComposerを使用）
      * EffectComposer内でRenderPassを使ってシーンをレンダリングし、色反転を適用する
      */
@@ -156,9 +170,20 @@ export class ColorInversion {
             return false;
         }
         if (this.enabled && this.inversionPass.enabled) {
+            // トラック2が有効な場合、RenderPassの背景色を黒に設定（色反転で白になる）
+            if (this.renderPass) {
+                this.renderPass.clearColor = new THREE.Color(0x000000);
+                this.renderPass.clearAlpha = 1.0;
+            }
             // EffectComposerがシーンをレンダリングして色反転を適用
             this.composer.render();
             return true;  // レンダリング済み
+        } else {
+            // ColorInversionが無効な場合、RenderPassの背景色を白に設定
+            if (this.renderPass) {
+                this.renderPass.clearColor = new THREE.Color(0xffffff);
+                this.renderPass.clearAlpha = 1.0;
+            }
         }
         return false;  // レンダリングされなかった
     }
@@ -182,6 +207,7 @@ export class ColorInversion {
             this.composer = null;
         }
         this.inversionPass = null;
+        this.renderPass = null;
         this.enabled = false;
         this.endTime = 0;
     }

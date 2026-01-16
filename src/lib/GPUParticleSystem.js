@@ -395,6 +395,45 @@ export class GPUParticleSystem {
                 THREE.FloatType
             );
             this.noiseOffsetTexture.needsUpdate = true;
+        } else if (this.placementType === 'circle') {
+            // 円配置（Scene05用）
+            const circleRadius = this.initOptions.circleRadius ?? 400.0;
+            const circleThickness = this.initOptions.circleThickness ?? 20.0;
+            const minLifetime = this.initOptions.minLifetime ?? 5.0;
+            const maxLifetime = this.initOptions.maxLifetime ?? 15.0;
+            
+            for (let y = 0; y < this.height; y++) {
+                for (let x = 0; x < this.width; x++) {
+                    const index = (y * this.width + x) * 4;
+                    
+                    // 円周上の角度を計算（0～2π）
+                    const angle = (x / (this.width - 1)) * Math.PI * 2.0;
+                    
+                    // 円の半径にランダムなオフセットを加える（太さを表現）
+                    const radiusOffset = (Math.random() - 0.5) * circleThickness;
+                    const radius = circleRadius + radiusOffset;
+                    
+                    // 円周上の位置（XZ平面、Y=0）
+                    const posX = radius * Math.cos(angle);
+                    const posY = 0.0;
+                    const posZ = radius * Math.sin(angle);
+                    
+                    // ランダムなlifetimeを設定
+                    const lifetime = minLifetime + Math.random() * (maxLifetime - minLifetime);
+                    
+                    // 位置データ（x, y, z, lifetime）
+                    positionData[index] = posX;
+                    positionData[index + 1] = posY;
+                    positionData[index + 2] = posZ;
+                    positionData[index + 3] = lifetime;  // lifetimeをwに保存
+                    
+                    // 色データ（初期色、maxLifetimeをaに保存）
+                    colorData[index] = 1.0;     // r
+                    colorData[index + 1] = 1.0; // g
+                    colorData[index + 2] = 1.0; // b
+                    colorData[index + 3] = maxLifetime; // aにmaxLifetimeを保存
+                }
+            }
         } else {
             // 球面上に初期配置（デフォルト）
             for (let y = 0; y < this.height; y++) {
@@ -511,7 +550,12 @@ export class GPUParticleSystem {
             noiseStrength: { value: 50.0 },
             baseRadius: { value: 400.0 },
             width: { value: this.width },
-            height: { value: this.height }
+            height: { value: this.height },
+            maxLifetime: { value: 15.0 },  // lifetimeの最大値（circle配置用）
+            circleRadius: { value: 400.0 },  // 円の半径（circle配置用）
+            circleThickness: { value: 20.0 },  // 円の太さ（circle配置用）
+            placementType: { value: this.placementType === 'circle' ? 1.0 : (this.placementType === 'terrain' ? 2.0 : 0.0) },  // 0: sphere, 1: circle, 2: terrain
+            pressure: { value: 0.0 }  // 圧力（0.0 = なし、正の値 = 外側に押し出す、負の値 = 内側に押し込む）
         };
         
         this.positionUpdateMaterial = new THREE.ShaderMaterial({
@@ -528,7 +572,10 @@ export class GPUParticleSystem {
             deltaTime: { value: 0.0 },
             width: { value: this.width },
             height: { value: this.height },
-            time: { value: 0.0 }
+            time: { value: 0.0 },
+            maxLifetime: { value: 15.0 },  // lifetimeの最大値（circle配置用）
+            placementType: { value: this.placementType === 'circle' ? 1.0 : (this.placementType === 'terrain' ? 2.0 : 0.0) },  // 0: sphere, 1: circle, 2: terrain
+            circleRadius: { value: 400.0 }  // 円の半径（circle配置用、ヒートマップで使用）
         };
         
         this.colorUpdateMaterial = new THREE.ShaderMaterial({
@@ -637,6 +684,19 @@ export class GPUParticleSystem {
             if (this.positionUpdateMaterial.uniforms.baseRadius) {
                 this.positionUpdateMaterial.uniforms.baseRadius.value = uniforms.baseRadius || 400.0;
             }
+            if (this.positionUpdateMaterial.uniforms.deltaTime) {
+                this.positionUpdateMaterial.uniforms.deltaTime.value = uniforms.deltaTime || 0.0;
+            }
+            if (this.positionUpdateMaterial.uniforms.maxLifetime) {
+                this.positionUpdateMaterial.uniforms.maxLifetime.value = uniforms.maxLifetime || 15.0;
+            }
+            if (this.positionUpdateMaterial.uniforms.circleRadius) {
+                this.positionUpdateMaterial.uniforms.circleRadius.value = uniforms.circleRadius || 400.0;
+            }
+            if (this.positionUpdateMaterial.uniforms.circleThickness) {
+                this.positionUpdateMaterial.uniforms.circleThickness.value = uniforms.circleThickness || 20.0;
+            }
+            // placementTypeは初期化時に設定されるため、updateでは更新しない
             
             // 汎用的なuniform設定（uniformsオブジェクトに含まれるすべてのuniformを設定）
             // シーン固有のuniformは、シーン側でaddPositionUniform()を使って追加する
@@ -662,6 +722,9 @@ export class GPUParticleSystem {
         if (this.colorUpdateMaterial && this.colorUpdateMaterial.uniforms) {
             if (this.colorUpdateMaterial.uniforms.baseRadius) {
                 this.colorUpdateMaterial.uniforms.baseRadius.value = uniforms.baseRadius || 400.0;
+            }
+            if (this.colorUpdateMaterial.uniforms.maxLifetime) {
+                this.colorUpdateMaterial.uniforms.maxLifetime.value = uniforms.maxLifetime || 15.0;
             }
             
             // 汎用的なuniform設定（uniformsオブジェクトに含まれるすべてのuniformを設定）

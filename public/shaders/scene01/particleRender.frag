@@ -34,19 +34,19 @@ void main() {
     vec3 lightDir = normalize(vec3(-1.0, 0.0, 0.0));  // 左からのライト
     float NdotL = max(dot(normal, lightDir), 0.0);
     
-    // 環境光（Processingと同じ：ambientLight(63, 31, 31)）
-    vec3 ambient = vec3(0.247, 0.122, 0.122);  // 63/255, 31/255, 31/255
+    // 環境光（マットな見た目のため、より均一な環境光）
+    vec3 ambient = vec3(0.5, 0.5, 0.5);  // より明るい環境光でマットに
     
-    // 拡散反射（Processingと同じ：directionalLight(255, 255, 255, -1, 0, 0)）
-    vec3 diffuse = vec3(1.0, 1.0, 1.0) * NdotL * 0.8;
+    // 拡散反射（マットな見た目のため、コントラストを下げる）
+    vec3 diffuse = vec3(1.0, 1.0, 1.0) * NdotL * 0.3;  // 0.8 → 0.3に下げてマットに
     
-    // オレンジ色のライト（Processingと同じ：directionalLight(255, 165, 0, 0.3, -0.8, -0.5)）
+    // オレンジ色のライト（マットな見た目のため、コントラストを下げる）
     vec3 orangeLightDir = normalize(vec3(0.3, -0.8, -0.5));
     float NdotL2 = max(dot(normal, orangeLightDir), 0.0);
-    vec3 orangeDiffuse = vec3(1.0, 0.647, 0.0) * NdotL2 * 0.8;  // 255/255, 165/255, 0/255
+    vec3 orangeDiffuse = vec3(1.0, 0.647, 0.0) * NdotL2 * 0.2;  // 0.8 → 0.2に下げてマットに
     
-    // 最終的な色を計算（明るさをさらに上げる）
-    vec3 finalColor = vColor * (ambient + diffuse + orangeDiffuse) * 2.5;  // 明るさを2.5倍に
+    // 最終的な色を計算（マットな見た目のため、明るさを下げる）
+    vec3 finalColor = vColor * (ambient + diffuse + orangeDiffuse);  // 2.5倍を削除してマットに
     
     // 完全に不透明にする（DOFエフェクトは無効化）
     gl_FragColor = vec4(finalColor, 1.0);

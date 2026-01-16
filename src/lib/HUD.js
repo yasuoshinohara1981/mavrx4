@@ -78,7 +78,7 @@ export class HUD {
     /**
      * HUDを描画
      */
-    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null) {
+    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null) {
         // HUDが非表示の場合は何もしない
         if (!this.showHUD) {
             return;
@@ -127,7 +127,7 @@ export class HUD {
         this.drawCenterCrosshair();
         this.drawCenterVerticalLine();
         this.drawScaleRuler();
-        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName);
+        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName, sceneNumber);
         this.drawStatusBar(rotationX, rotationY, distance, noiseLevel, oscStatus, particleCount);
         
         // 航空機風HUD要素を追加
@@ -687,7 +687,7 @@ export class HUD {
     /**
      * 情報パネルを描画
      */
-    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null) {
+    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null, sceneNumber = null) {
         const margin = this.squareSize * 0.15;
         let x = margin + 20;
         let y = margin + 40;
@@ -703,6 +703,14 @@ export class HUD {
         this.ctx.font = `${this.fontWeight} ${this.fontSize}px ${this.fontFamily}`;
         this.ctx.fillText('SYSTEM: MAVRX4-experiment', x, y);
         y += lineHeight * 1.5;  // 間隔を空ける（SYSTEMとCLASSIFIEDの間にスペース）
+        
+        // シーン番号を表示（SYSTEMの下）
+        if (sceneNumber !== null && sceneNumber !== undefined) {
+            this.ctx.fillStyle = this.hudColor;  // 白文字
+            this.ctx.font = `${this.fontWeight} ${this.fontSize}px ${this.fontFamily}`;
+            this.ctx.fillText(`SCENE: ${sceneNumber}`, x, y);
+            y += lineHeight * 1.5;  // 間隔を空ける（SCENEと説明文の間にスペース）
+        }
         
         // 軍事システム風の説明文を追加（高速ランダマイズ）
         this.updateMilitaryInfo(frameRate, currentCameraIndex, cameraPosition, rotationX, rotationY, distance, oscStatus, particleCount);

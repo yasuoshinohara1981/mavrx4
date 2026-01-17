@@ -685,7 +685,7 @@ export class SceneBase {
                 const tickValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
                 if (!isNaN(tickValue)) {
                     this.actualTick = Math.floor(tickValue);  // integerとして保存
-                    console.log(`[SceneBase] ActualTick updated: ${this.actualTick} (from ${message.address}, args: ${JSON.stringify(args)})`);
+                    // ログを削除（ユーザー要望）
                 }
             }
             return;  // 処理済み
@@ -1457,6 +1457,27 @@ export class SceneBase {
                     this.cameraDebugGroup.visible = this.SHOW_CAMERA_DEBUG;
                 }
                 
+                // 個々のカメラデバッグオブジェクトの表示/非表示も切り替え
+                if (this.cameraDebugSpheres) {
+                    this.cameraDebugSpheres.forEach(sphere => {
+                        if (sphere) sphere.visible = this.SHOW_CAMERA_DEBUG;
+                    });
+                }
+                if (this.cameraDebugCircles) {
+                    this.cameraDebugCircles.forEach(circles => {
+                        if (circles) {
+                            circles.forEach(circle => {
+                                if (circle) circle.visible = this.SHOW_CAMERA_DEBUG;
+                            });
+                        }
+                    });
+                }
+                if (this.cameraDebugLines) {
+                    this.cameraDebugLines.forEach(line => {
+                        if (line) line.visible = this.SHOW_CAMERA_DEBUG;
+                    });
+                }
+                
                 // 座標軸も連動させる
                 this.SHOW_AXES = this.SHOW_CAMERA_DEBUG;
                 if (this.axesHelper) {
@@ -1617,6 +1638,27 @@ export class SceneBase {
         }
         
         this.cameraDebugGroup.visible = this.SHOW_CAMERA_DEBUG;
+        
+        // 初期化時に個々のオブジェクトのvisibleも設定
+        if (this.cameraDebugSpheres) {
+            this.cameraDebugSpheres.forEach(sphere => {
+                if (sphere) sphere.visible = this.SHOW_CAMERA_DEBUG;
+            });
+        }
+        if (this.cameraDebugCircles) {
+            this.cameraDebugCircles.forEach(circles => {
+                if (circles) {
+                    circles.forEach(circle => {
+                        if (circle) circle.visible = this.SHOW_CAMERA_DEBUG;
+                    });
+                }
+            });
+        }
+        if (this.cameraDebugLines) {
+            this.cameraDebugLines.forEach(line => {
+                if (line) line.visible = this.SHOW_CAMERA_DEBUG;
+            });
+        }
     }
     
     /**
@@ -1628,7 +1670,15 @@ export class SceneBase {
             this.cameraDebugCtx.clearRect(0, 0, this.cameraDebugCanvas.width, this.cameraDebugCanvas.height);
         }
         
-        if (!this.SHOW_CAMERA_DEBUG || !this.cameraDebugGroup) return;
+        if (!this.SHOW_CAMERA_DEBUG || !this.cameraDebugGroup) {
+            // デバッグが無効な場合は、個々のオブジェクトも非表示にする
+            if (this.cameraDebugSpheres) {
+                this.cameraDebugSpheres.forEach(sphere => {
+                    if (sphere) sphere.visible = false;
+                });
+            }
+            return;
+        }
         
         // 中心位置を取得（サブクラスでオーバーライド可能）
         const center = this.getCameraDebugCenter ? this.getCameraDebugCenter() : new THREE.Vector3(0, 0, 0);

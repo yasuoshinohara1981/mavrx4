@@ -5,7 +5,6 @@
 
 import { SceneBase } from '../SceneBase.js';
 import { Particle } from '../../lib/Particle.js';
-import { GPUPhysicsSystem } from '../../lib/GPUPhysicsSystem.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -93,12 +92,8 @@ export class Scene05 extends SceneBase {
         this.markerCrosses = [];
         this.markerLabels = [];
         
-        // GPU物理演算システム
-        this.gpuPhysicsSystem = null;
-        this.useGPUPhysics = true; // GPU物理演算を使用（スプリング拘束もGPUで計算）
-        this.currentForceCenter = new THREE.Vector3(0, 0, 0);
-        this.currentForceStrength = 0.0;
-        this.currentForceRadius = 0.0;
+        // トラック6用の赤いライン（ポリフォニック対応）
+        this.redLines = []; // { line: THREE.Line3, mesh: THREE.Line, startTime: number, speed: number, z: number }[]
         
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -110,24 +105,8 @@ export class Scene05 extends SceneBase {
         // ライトを設定
         this.setupLights();
         
-        // GPU物理演算システムを初期化
-        if (this.useGPUPhysics) {
-            console.log('🔧 GPU物理演算システムを初期化中...');
-            this.gpuPhysicsSystem = new GPUPhysicsSystem(this.renderer, this.gridSizeX, this.gridSizeZ);
-            await this.gpuPhysicsSystem.initPromise;
-            console.log('✅ GPU物理演算システムを初期化しました');
-        }
-        
         // パーティクルを作成（格子状に配置、非同期）
         await this.createParticles();
-        console.log(`✅ パーティクル作成完了: ${this.particles.length}個, 初期位置: ${this.initialPositions.length}個`);
-        
-        // GPU物理演算システムに初期データを設定
-        if (this.useGPUPhysics && this.gpuPhysicsSystem) {
-            console.log('🔧 GPU物理演算システムに初期データを設定中...');
-            this.gpuPhysicsSystem.initializeParticleData(this.initialPositions);
-            console.log('✅ GPU物理演算システムに初期データを設定しました');
-        }
         
         // 線で接続
         this.createConnections();
@@ -609,15 +588,15 @@ export class Scene05 extends SceneBase {
         
         // マーカーの位置（グリッドの端と中心）
         const markerPositions = [
-            { x: -gridWidth / 2, z: -gridDepth / 2, label: '0' },      // 左下
-            { x: gridWidth / 2, z: -gridDepth / 2, label: '1' },      // 右下
-            { x: -gridWidth / 2, z: gridDepth / 2, label: '2' },      // 左上
-            { x: gridWidth / 2, z: gridDepth / 2, label: '3' },       // 右上
-            { x: 0, z: 0, label: 'C' },                                 // 中心
-            { x: -gridWidth / 2, z: 0, label: 'L' },                  // 左中央
-            { x: gridWidth / 2, z: 0, label: 'R' },                   // 右中央
-            { x: 0, z: -gridDepth / 2, label: 'F' },                 // 前中央
-            { x: 0, z: gridDepth / 2, label: 'B' }                    // 後中央
+            { x: -gridWidth / 2, z: -gridDepth / 2 },      // 左下
+            { x: gridWidth / 2, z: -gridDepth / 2 },      // 右下
+            { x: -gridWidth / 2, z: gridDepth / 2 },      // 左上
+            { x: gridWidth / 2, z: gridDepth / 2 },       // 右上
+            { x: 0, z: 0 },                                 // 中心
+            { x: -gridWidth / 2, z: 0 },                  // 左中央
+            { x: gridWidth / 2, z: 0 },                   // 右中央
+            { x: 0, z: -gridDepth / 2 },                 // 前中央
+            { x: 0, z: gridDepth / 2 }                    // 後中央
         ];
         
         // 赤い十字のマテリアル
@@ -631,6 +610,10 @@ export class Scene05 extends SceneBase {
         
         // 各マーカー位置に赤い十字と数字を追加
         markerPositions.forEach((pos, index) => {
+            // ワールド座標からグリッド座標を計算
+            const gridX = Math.round((pos.x + gridWidth / 2) / this.gridSpacing);
+            const gridZ = Math.round((pos.z + gridDepth / 2) / this.gridSpacing);
+            const label = `(${gridX}, ${gridZ})`;
             // 赤い十字を作成
             const crossGeometry = new THREE.BufferGeometry();
             const crossVerts = new Float32Array([
@@ -645,10 +628,10 @@ export class Scene05 extends SceneBase {
             this.markerGroup.add(crossLines);
             this.markerCrosses.push(crossLines);
             
-            // 数字のラベルを作成
-            const label = this.createLabelSprite(pos.label, new THREE.Vector3(pos.x, markerY + crossSize * 2, pos.z));
-            this.markerGroup.add(label);
-            this.markerLabels.push(label);
+            // 数字のラベルを作成（グリッド座標形式）
+            const labelSprite = this.createLabelSprite(label, new THREE.Vector3(pos.x, markerY + crossSize * 2, pos.z));
+            this.markerGroup.add(labelSprite);
+            this.markerLabels.push(labelSprite);
         });
         
         console.log(`✅ ${markerPositions.length}個のマーカー（赤い十字と数字）を追加しました`);
@@ -770,144 +753,118 @@ export class Scene05 extends SceneBase {
             return; // まだ初期化されていない場合はスキップ
         }
         
-        // GPU物理演算を使用する場合
-        if (this.useGPUPhysics && this.gpuPhysicsSystem) {
-            // GPUで基本物理演算を実行（スプリング拘束も含む）
-            this.gpuPhysicsSystem.update(deltaTime, {
-                gravity: this.gravity,
-                restoreStiffness: this.restoreStiffness,
-                restoreDamping: this.restoreDamping,
-                groundY: this.groundY,
-                sphereRadius: this.sphereRadius,
-                gridSpacing: this.gridSpacing,
-                forceCenter: this.currentForceCenter || new THREE.Vector3(0, 0, 0),
-                forceStrength: this.currentForceStrength || 0.0,
-                forceRadius: this.currentForceRadius || 0.0,
-                springStiffness: this.springStiffness,
-                springDamping: this.springDamping,
-                restLength: this.restLength
-            });
+        // スプリング拘束を適用（ニットっぽくするため、接続されているsphere同士の距離を維持）
+        for (const connection of this.connections) {
+            const particleA = this.particles[connection.from];
+            const particleB = this.particles[connection.to];
+            const posA = particleA.getPosition();
+            const posB = particleB.getPosition();
             
-            // GPUで全て計算済み（スプリング拘束も含む）
-            // 位置データをCPUに読み戻す必要はない
-            // TODO: シェーダーで直接Pointsの位置を更新する方法を実装
-            console.log('⚠️ GPU物理演算は実装中です。一旦CPUにフォールバックします。');
-            this.useGPUPhysics = false;
-        } else {
-            // CPU物理演算（フォールバック）
-            // スプリング拘束を適用（ニットっぽくするため、接続されているsphere同士の距離を維持）
-            for (const connection of this.connections) {
-                const particleA = this.particles[connection.from];
-                const particleB = this.particles[connection.to];
-                const posA = particleA.getPosition();
-                const posB = particleB.getPosition();
+            // 現在の距離
+            const diff = new THREE.Vector3().subVectors(posB, posA);
+            const currentLength = diff.length();
+            
+            if (currentLength > 0.01) {
+                // 方向ベクトルを正規化（一度だけ）
+                const forceDir = diff.clone().normalize();
                 
-                // 現在の距離
-                const diff = new THREE.Vector3().subVectors(posB, posA);
-                const currentLength = diff.length();
+                // 理想的な距離からのずれ
+                const stretch = currentLength - this.restLength;
                 
-                if (currentLength > 0.01) {
-                    // 方向ベクトルを正規化（一度だけ）
-                    const forceDir = diff.clone().normalize();
-                    
-                    // 理想的な距離からのずれ
-                    const stretch = currentLength - this.restLength;
-                    
-                    // スプリング力（フックの法則）
-                    const springForce = stretch * this.springStiffness;
-                    
-                    // 速度差による減衰
-                    const velA = particleA.getVelocity();
-                    const velB = particleB.getVelocity();
-                    const velDiff = new THREE.Vector3().subVectors(velB, velA);
-                    const dampingForce = velDiff.dot(forceDir) * this.springDamping;
-                    
-                    // 力を適用
-                    const totalForce = springForce + dampingForce;
-                    
-                    // 粒子Aに力を加える（B方向）
-                    particleA.addForce(forceDir.clone().multiplyScalar(totalForce));
-                    // 粒子Bに力を加える（A方向、反対向き）
-                    particleB.addForce(forceDir.multiplyScalar(-totalForce));
-                }
+                // スプリング力（フックの法則）
+                const springForce = stretch * this.springStiffness;
+                
+                // 速度差による減衰
+                const velA = particleA.getVelocity();
+                const velB = particleB.getVelocity();
+                const velDiff = new THREE.Vector3().subVectors(velB, velA);
+                const dampingForce = velDiff.dot(forceDir) * this.springDamping;
+                
+                // 力を適用
+                const totalForce = springForce + dampingForce;
+                
+                // 粒子Aに力を加える（B方向）
+                particleA.addForce(forceDir.clone().multiplyScalar(totalForce));
+                // 粒子Bに力を加える（A方向、反対向き）
+                particleB.addForce(forceDir.multiplyScalar(-totalForce));
             }
+        }
+        
+        for (let i = 0; i < this.particles.length; i++) {
+            const particle = this.particles[i];
+            const particleMass = this.particleMasses[i];
+            const particlePos = particle.getPosition();
+            const initialPos = this.initialPositions[i];
             
-            for (let i = 0; i < this.particles.length; i++) {
-                const particle = this.particles[i];
-                const particleMass = this.particleMasses[i];
-                const particlePos = particle.getPosition();
-                const initialPos = this.initialPositions[i];
+            // 復元力（元の位置に戻ろうとする力）
+            const restoreDiff = new THREE.Vector3().subVectors(initialPos, particlePos);
+            const restoreDistance = restoreDiff.length();
+            
+            if (restoreDistance > 0.01) {
+                // 方向ベクトルを正規化（一度だけ）
+                const restoreDir = restoreDiff.clone().normalize();
                 
-                // 復元力（元の位置に戻ろうとする力）
-                const restoreDiff = new THREE.Vector3().subVectors(initialPos, particlePos);
-                const restoreDistance = restoreDiff.length();
+                // 復元力（フックの法則）
+                const restoreForce = restoreDistance * this.restoreStiffness;
                 
-                if (restoreDistance > 0.01) {
-                    // 方向ベクトルを正規化（一度だけ）
-                    const restoreDir = restoreDiff.clone().normalize();
-                    
-                    // 復元力（フックの法則）
-                    const restoreForce = restoreDistance * this.restoreStiffness;
-                    
-                    // 速度による減衰
-                    const vel = particle.getVelocity();
-                    const velDot = vel.dot(restoreDir);
-                    const restoreDamping = velDot * this.restoreDamping;
-                    
-                    // 復元力を適用
-                    const totalRestoreForce = restoreForce + restoreDamping;
-                    particle.addForce(restoreDir.multiplyScalar(totalRestoreForce));
-                }
-                
-                // 重力を適用
-                const gravity = this.gravity.clone();
-                particle.addForce(gravity);
-                
-                // パーティクルを更新
-                particle.update();
-                
-                // 地面との衝突判定
-                if (particlePos.y - this.sphereRadius <= this.groundY) {
-                    // 地面に当たったら位置を修正
-                    particlePos.y = this.groundY + this.sphereRadius;
-                    particle.position.copy(particlePos);
-                    
-                    // 速度を減らす（反発と摩擦）
-                    const vel = particle.getVelocity();
-                    if (vel.y < 0) {
-                        vel.y *= -0.3; // 反発係数
-                    }
-                    // 摩擦を適用
-                    const groundFriction = 0.98;
-                    vel.x *= groundFriction;
-                    vel.z *= groundFriction;
-                    particle.velocity.copy(vel);
-                }
-                
-                // Pointsの位置を更新
-                const idx = i * 3;
-                this.pointsPositions[idx] = particlePos.x;
-                this.pointsPositions[idx + 1] = particlePos.y;
-                this.pointsPositions[idx + 2] = particlePos.z;
-                
-                // ノイズでポイントのサイズを変える（initialPosは復元力の処理で既に定義済み）
-                const sizeNoiseX = initialPos.x * this.sizeNoiseScale;
-                const sizeNoiseZ = initialPos.z * this.sizeNoiseScale;
-                const sizeNoiseValue = this.fractalNoise(sizeNoiseX, sizeNoiseZ, this.terrainNoiseTime);
-                const sizeMultiplier = 1.0 + sizeNoiseValue * this.sizeNoiseAmplitude;
-                this.pointsSizes[i] = this.sphereRadius * 2.0 * sizeMultiplier;
-                
-                // ヒートマップの色を計算（速度の大きさに基づく）
+                // 速度による減衰
                 const vel = particle.getVelocity();
-                const speed = vel.length();
-                const normalizedSpeed = Math.min(Math.max((speed - this.heatMapMinValue) / (this.heatMapMaxValue - this.heatMapMinValue), 0), 1);
-                const color = this.getHeatMapColor(normalizedSpeed);
+                const velDot = vel.dot(restoreDir);
+                const restoreDamping = velDot * this.restoreDamping;
                 
-                // Pointsの色を設定（ヒートマップ）
-                this.pointsColors[idx] = color.r;
-                this.pointsColors[idx + 1] = color.g;
-                this.pointsColors[idx + 2] = color.b;
+                // 復元力を適用
+                const totalRestoreForce = restoreForce + restoreDamping;
+                particle.addForce(restoreDir.multiplyScalar(totalRestoreForce));
             }
+            
+            // 重力を適用
+            const gravity = this.gravity.clone();
+            particle.addForce(gravity);
+            
+            // パーティクルを更新
+            particle.update();
+            
+            // 地面との衝突判定
+            if (particlePos.y - this.sphereRadius <= this.groundY) {
+                // 地面に当たったら位置を修正
+                particlePos.y = this.groundY + this.sphereRadius;
+                particle.position.copy(particlePos);
+                
+                // 速度を減らす（反発と摩擦）
+                const vel = particle.getVelocity();
+                if (vel.y < 0) {
+                    vel.y *= -0.3; // 反発係数
+                }
+                // 摩擦を適用
+                const groundFriction = 0.98;
+                vel.x *= groundFriction;
+                vel.z *= groundFriction;
+                particle.velocity.copy(vel);
+            }
+            
+            // Pointsの位置を更新
+            const idx = i * 3;
+            this.pointsPositions[idx] = particlePos.x;
+            this.pointsPositions[idx + 1] = particlePos.y;
+            this.pointsPositions[idx + 2] = particlePos.z;
+            
+            // ノイズでポイントのサイズを変える（initialPosは復元力の処理で既に定義済み）
+            const sizeNoiseX = initialPos.x * this.sizeNoiseScale;
+            const sizeNoiseZ = initialPos.z * this.sizeNoiseScale;
+            const sizeNoiseValue = this.fractalNoise(sizeNoiseX, sizeNoiseZ, this.terrainNoiseTime);
+            const sizeMultiplier = 1.0 + sizeNoiseValue * this.sizeNoiseAmplitude;
+            this.pointsSizes[i] = this.sphereRadius * 2.0 * sizeMultiplier;
+            
+            // ヒートマップの色を計算（速度の大きさに基づく）
+            const vel = particle.getVelocity();
+            const speed = vel.length();
+            const normalizedSpeed = Math.min(Math.max((speed - this.heatMapMinValue) / (this.heatMapMaxValue - this.heatMapMinValue), 0), 1);
+            const color = this.getHeatMapColor(normalizedSpeed);
+            
+            // Pointsの色を設定（ヒートマップ）
+            this.pointsColors[idx] = color.r;
+            this.pointsColors[idx + 1] = color.g;
+            this.pointsColors[idx + 2] = color.b;
         }
         
         // Pointsの属性を更新
@@ -916,6 +873,9 @@ export class Scene05 extends SceneBase {
             this.pointsMesh.geometry.attributes.color.needsUpdate = true;
             this.pointsMesh.geometry.attributes.size.needsUpdate = true;
         }
+        
+        // 赤いラインの位置を更新（左から右へ流れる）
+        this.updateRedLines(deltaTime);
         
         // 線の位置と色を更新
         this.updateConnections();
@@ -1002,6 +962,83 @@ export class Scene05 extends SceneBase {
     }
     
     /**
+     * ライン用のヒートマップ色を計算（Velocity 0-127 → 青→赤のHSLヒートマップ）
+     * @param {number} value - 正規化された値（0.0-1.0、velocity/127.0）
+     * @returns {THREE.Color} ヒートマップの色（青→赤）
+     */
+    getHeatMapColorForLine(value) {
+        // 赤色のヒートマップ：黒（0）→ 赤（127）
+        const color = new THREE.Color();
+        
+        // valueが0.0の時は黒（0, 0, 0）、1.0の時は赤（1, 0, 0）
+        // 黒から赤へのグラデーション
+        color.r = value; // 0.0 → 1.0（黒 → 赤）
+        color.g = 0.0;
+        color.b = 0.0;
+        
+        // デバッグ用ログ
+        console.log(`[getHeatMapColorForLine] value=${value.toFixed(3)}, RGB=(${color.r.toFixed(3)}, ${color.g.toFixed(3)}, ${color.b.toFixed(3)})`);
+        
+        return color;
+    }
+    
+    /**
+     * 赤いラインの位置を更新（縦線が左から右へ流れる、一小節で移動）
+     */
+    updateRedLines(deltaTime) {
+        if (!this.redLines || this.redLines.length === 0) return;
+        
+        // 現在のactualTickを取得（SceneBaseから継承）
+        const currentTick = this.actualTick || 0;
+        
+        // 各ラインを更新
+        for (let i = this.redLines.length - 1; i >= 0; i--) {
+            const lineInfo = this.redLines[i];
+            
+            // 経過したtick数を計算
+            const elapsedTicks = currentTick - lineInfo.startTick;
+            
+            // 一小節（384 ticks）で左端から右端まで移動
+            const progress = elapsedTicks / lineInfo.ticksPerMeasure; // 0.0-1.0
+            
+            // 右端に到達したら削除
+            if (progress >= 1.0) {
+                this.scene.remove(lineInfo.line);
+                lineInfo.geometry.dispose();
+                lineInfo.material.dispose();
+                this.redLines.splice(i, 1);
+                continue;
+            }
+            
+            // 現在のX位置を計算（左端から右端へ）
+            const currentX = lineInfo.startX + progress * (lineInfo.endX - lineInfo.startX);
+            
+            // ラインの位置を更新（BufferGeometryを使用しているため、positionsを更新）
+            const positions = lineInfo.positions;
+            positions[0] = currentX; // 縦線の下端のX
+            positions[1] = lineInfo.y;
+            positions[2] = lineInfo.zMin;
+            positions[3] = currentX; // 縦線の上端のX
+            positions[4] = lineInfo.y;
+            positions[5] = lineInfo.zMax;
+            
+            lineInfo.geometry.attributes.position.needsUpdate = true;
+            
+            // 透明度を更新（右に行くほど透明に）
+            // progressが0.0（左端）の時はopacity=1.0、progressが1.0（右端）の時はopacity=0.0
+            const opacity = 1.0 - progress;
+            lineInfo.material.opacity = Math.max(0.0, opacity);
+            
+            // マテリアルの色が正しく設定されているか確認（デバッグ用）
+            // 注意: マテリアルの色は作成時に設定されているので、ここでは確認のみ
+            if (i === 0 && this.redLines.length > 0) {
+                const firstLine = this.redLines[0];
+                console.log(`[updateRedLines] 最初のライン: velocity=${firstLine.velocity}, material.color=RGB(${firstLine.material.color.r.toFixed(3)}, ${firstLine.material.color.g.toFixed(3)}, ${firstLine.material.color.b.toFixed(3)})`);
+            }
+        }
+    }
+    
+    /**
      * 線の位置と色を更新（Sphereの位置に追従、ヒートマップ色を適用）
      */
     updateConnections() {
@@ -1070,57 +1107,132 @@ export class Scene05 extends SceneBase {
         
         // ベロシティから力の強さを計算（0-127 → 力の強さ、さらに弱めに調整）
         let forceStrength = 2000.0; // デフォルト（さらに弱めに調整）
+        let forceRadius = 200.0; // デフォルトの影響範囲
         if (velocity !== null) {
             const velocityNormalized = velocity / 127.0; // 0.0-1.0
             forceStrength = 2000.0 + velocityNormalized * 5000.0; // 2000-7000（さらに弱めに調整）
+            // 影響範囲もVelocityに応じて変える（小さいvelocityでは小さく、大きいvelocityでは大きく）
+            forceRadius = 100.0 + velocityNormalized * 200.0; // 100-300の範囲
         }
         
-        // 力の影響範囲（拳で持ち上げる範囲）
-        const forceRadius = 400.0; // 元の範囲に戻す
-        
-        // GPU物理演算を使用する場合、uniformに力を設定
-        if (this.useGPUPhysics && this.gpuPhysicsSystem) {
-            this.currentForceCenter.copy(forceCenter);
-            this.currentForceStrength = forceStrength;
-            this.currentForceRadius = forceRadius;
-            console.log(`💪 GPUで力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-            console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}`);
-        } else {
-            // CPU物理演算（フォールバック）
-            // 影響範囲内のSphereに力を加える（下から上に）
-            let affectedCount = 0;
-            for (let i = 0; i < this.particles.length; i++) {
-                const particle = this.particles[i];
-                const particlePos = particle.getPosition();
-                const toParticle = new THREE.Vector3().subVectors(particlePos, forceCenter);
-                const distance = toParticle.length();
-                
-                if (distance < forceRadius && distance > 0.1) {
-                    // 距離に応じた力の強さ（中心に近いほど強い）
-                    const normalizedDist = distance / forceRadius;
-                    const localForceStrength = forceStrength * (1.0 - normalizedDist) * (1.0 - normalizedDist);
-                    
-                    // 上方向への力（下から上に吹き飛ばす）
-                    const upwardForce = localForceStrength;
-                    
-                    // 中心から外側への放射状の力（山なりにするため）
-                    // XZ平面での方向ベクトルを計算
-                    const horizontalDir = new THREE.Vector3(toParticle.x, 0, toParticle.z).normalize();
-                    const outwardForceStrength = localForceStrength * 0.3; // 外側への力は上方向の30%
-                    const outwardForce = horizontalDir.multiplyScalar(outwardForceStrength);
-                    
-                    // 力を合成（上方向 + 外側方向）
-                    const totalForce = new THREE.Vector3(outwardForce.x, upwardForce, outwardForce.z);
-                    
-                    // 力を適用
-                    particle.addForce(totalForce);
-                    affectedCount++;
-                }
-            }
+        // 影響範囲内のSphereに力を加える（下から上に）
+        let affectedCount = 0;
+        for (let i = 0; i < this.particles.length; i++) {
+            const particle = this.particles[i];
+            const particlePos = particle.getPosition();
+            const toParticle = new THREE.Vector3().subVectors(particlePos, forceCenter);
+            const distance = toParticle.length();
             
-            console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-            console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
+            if (distance < forceRadius && distance > 0.1) {
+                // 距離に応じた力の強さ（中心に近いほど強い）
+                const normalizedDist = distance / forceRadius;
+                const localForceStrength = forceStrength * (1.0 - normalizedDist) * (1.0 - normalizedDist);
+                
+                // ノイズを使って高さに緩急を付ける
+                // パーティクルのXZ位置からノイズ値を計算
+                const noiseScale = 0.1; // ノイズのスケール
+                const noiseValue = this.fractalNoise(
+                    particlePos.x * noiseScale,
+                    particlePos.z * noiseScale,
+                    this.time * 0.1
+                );
+                // ノイズ値を0.0-1.0の範囲に正規化
+                const noiseNormalized = (noiseValue + 1.0) * 0.5; // -1.0～1.0 → 0.0～1.0
+                
+                // ノイズを使って力の強さに緩急を付ける（0.5倍～1.5倍の範囲）
+                const noiseMultiplier = 0.5 + noiseNormalized * 1.0; // 0.5～1.5
+                const upwardForce = localForceStrength * noiseMultiplier;
+                
+                // 中心から外側への放射状の力（山なりにするため）
+                // XZ平面での方向ベクトルを計算
+                const horizontalDir = new THREE.Vector3(toParticle.x, 0, toParticle.z).normalize();
+                const outwardForceStrength = localForceStrength * 0.3; // 外側への力は上方向の30%
+                const outwardForce = horizontalDir.multiplyScalar(outwardForceStrength);
+                
+                // 力を合成（上方向 + 外側方向）
+                const totalForce = new THREE.Vector3(outwardForce.x, upwardForce, outwardForce.z);
+                
+                // 力を適用
+                particle.addForce(totalForce);
+                affectedCount++;
+            }
         }
+        
+        console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
+        console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
+    }
+    
+    /**
+     * 赤いラインを作成（トラック6用、縦線が左から右へ流れる）
+     * @param {number} velocity - ベロシティ（0-127、色に影響）
+     * @param {number} noteNumber - ノート番号（未使用、将来の拡張用）
+     */
+    createRedLine(velocity = 127.0, noteNumber = 64.0) {
+        // グリッド範囲を計算
+        const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+        const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+        
+        // マーカーの高さと同じ
+        const markerY = this.groundY + 5.0;
+        
+        // 左端と右端のX位置
+        const leftX = -gridWidth / 2;
+        const rightX = gridWidth / 2;
+        
+        // 縦線のZ範囲（グリッド全体をカバー）
+        const zMin = -gridDepth / 2;
+        const zMax = gridDepth / 2;
+        
+        // 一小節 = 384 ticksで左端から右端まで移動
+        const ticksPerMeasure = 384;
+        
+        // Velocityから色を計算（0-127 → 青→赤のHSLヒートマップ）
+        const velocityNormalized = Math.max(0.0, Math.min(1.0, velocity / 127.0)); // 0.0-1.0
+        console.log(`[Scene05] createRedLine: velocity=${velocity}, normalized=${velocityNormalized.toFixed(3)}`);
+        const heatMapColor = this.getHeatMapColorForLine(velocityNormalized);
+        console.log(`[Scene05] 計算された色: RGB(${heatMapColor.r.toFixed(3)}, ${heatMapColor.g.toFixed(3)}, ${heatMapColor.b.toFixed(3)})`);
+        
+        // ラインのジオメトリを作成（縦線、初期位置は左端）
+        const lineGeometry = new THREE.BufferGeometry();
+        const positions = new Float32Array([
+            leftX, markerY, zMin,  // 縦線の下端
+            leftX, markerY, zMax   // 縦線の上端
+        ]);
+        lineGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        
+        // ラインのマテリアル（velocityに応じた色、透明度は動的に更新）
+        // LineBasicMaterialを使用（linewidthは多くの環境で無視されるが、シンプルな線として表示）
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: new THREE.Color(heatMapColor.r, heatMapColor.g, heatMapColor.b),  // 新しいColorオブジェクトを作成
+            linewidth: 5.0,  // 5ピクセル（多くの環境で無視されるが、設定しておく）
+            transparent: true,
+            opacity: 1.0  // 初期は不透明、右に行くほど透明に
+        });
+        
+        // マテリアルの色を確認するログ
+        console.log(`[createRedLine] velocity=${velocity}, heatMapColor=RGB(${heatMapColor.r.toFixed(3)}, ${heatMapColor.g.toFixed(3)}, ${heatMapColor.b.toFixed(3)}), material.color=RGB(${lineMaterial.color.r.toFixed(3)}, ${lineMaterial.color.g.toFixed(3)}, ${lineMaterial.color.b.toFixed(3)})`);
+        
+        // ラインのメッシュを作成（Lineを使用）
+        const lineMesh = new THREE.Line(lineGeometry, lineMaterial);
+        this.scene.add(lineMesh);
+        
+        // ライン情報を保存（ポリフォニック対応）
+        this.redLines.push({
+            line: lineMesh,
+            material: lineMaterial,
+            startX: leftX,
+            endX: rightX,
+            y: markerY,
+            zMin: zMin,
+            zMax: zMax,
+            ticksPerMeasure: ticksPerMeasure,
+            startTick: this.actualTick || 0,  // 開始時のactualTickを記録
+            geometry: lineGeometry,
+            positions: positions,  // 位置データを保存
+            velocity: velocity  // velocityを保存（将来の拡張用）
+        });
+        
+        console.log(`🔴 縦線を作成！Velocity: ${velocity}, 色: (${heatMapColor.r.toFixed(2)}, ${heatMapColor.g.toFixed(2)}, ${heatMapColor.b.toFixed(2)}), X位置: ${leftX.toFixed(1)}, Z範囲: ${zMin.toFixed(1)} ～ ${zMax.toFixed(1)}`);
     }
     
     /**
@@ -1185,8 +1297,13 @@ export class Scene05 extends SceneBase {
                     this.particleCount,
                     this.trackEffects,  // エフェクト状態を渡す
                     this.phase,  // phase値を渡す
-                    this.title || null,  // sceneName
-                    this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
+                    null,  // hudScales
+                    null,  // hudGrid
+                    0,  // currentBar
+                    '',  // debugText
+                    this.actualTick || 0,  // actualTick（OSCから受け取る値）
+                    null,  // cameraModeName
+                    this.sceneNumber  // sceneNumber
                 );
             } else {
                 this.hud.clear();
@@ -1231,6 +1348,16 @@ export class Scene05 extends SceneBase {
             const velocity = args[1] !== undefined ? args[1] : null; // ベロシティ（0-127、力の強さ）
             const durationMs = args[2] !== undefined ? args[2] : null; // デュレーション（ms、力の長さ）
             this.applyForce(noteNumber, velocity, durationMs);
+        }
+        // トラック6: 赤いラインが左から右へ流れる（ポリフォニック対応）
+        // argsの順序: [ノート, ベロシティ, デュレーション, ミュート]
+        else if (trackNumber === 6) {
+            const noteNumber = args[0] !== undefined ? args[0] : 64.0; // ノート（Z座標の位置に影響）
+            const velocity = args[1] !== undefined ? args[1] : 127.0; // ベロシティ（0-127、色に影響）
+            const durationMs = args[2] !== undefined ? args[2] : 0.0; // デュレーション（未使用）
+            const mute = args[3] !== undefined ? args[3] : 0.0; // ミュート（未使用）
+            console.log(`[Scene05] トラック6受信: noteNumber=${noteNumber}, velocity=${velocity}, durationMs=${durationMs}, mute=${mute}, args=`, args);
+            this.createRedLine(velocity, noteNumber);
         }
     }
     
@@ -1586,6 +1713,22 @@ export class Scene05 extends SceneBase {
             this.markerGroup = null;
             this.markerCrosses = [];
             this.markerLabels = [];
+        }
+        
+        // 赤いラインを破棄
+        if (this.redLines && this.redLines.length > 0) {
+            this.redLines.forEach(lineInfo => {
+                if (lineInfo.line) {
+                    this.scene.remove(lineInfo.line);
+                }
+                if (lineInfo.geometry) {
+                    lineInfo.geometry.dispose();
+                }
+                if (lineInfo.line && lineInfo.line.material) {
+                    lineInfo.line.material.dispose();
+                }
+            });
+            this.redLines = [];
         }
         
         // エフェクトパスを破棄

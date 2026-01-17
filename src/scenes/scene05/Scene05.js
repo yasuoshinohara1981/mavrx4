@@ -17,6 +17,9 @@ export class Scene05 extends SceneBase {
         this.title = 'mathym | Scene05';
         this.sceneNumber = 5;
         
+        // カメラデバッグを有効化
+        this.SHOW_CAMERA_DEBUG = false;
+        
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
         this.useSharedResources = !!sharedResourceManager;
@@ -94,6 +97,17 @@ export class Scene05 extends SceneBase {
         
         // トラック6用の赤いライン（ポリフォニック対応）
         this.redLines = []; // { line: THREE.Line3, mesh: THREE.Line, startTime: number, speed: number, z: number }[]
+        
+        // コード進行管理
+        this.chords = []; // 現在のコード進行 [{ notes: [note1, note2, ...], center: Vector3, timestamp: number }]
+        this.chordSpheres = []; // コードのSphere [{ mesh: THREE.Mesh, chordIndex: number }]
+        this.chordLines = []; // コードのSphere同士を接続する線 [{ line: THREE.Line, geometry: THREE.BufferGeometry, material: THREE.LineBasicMaterial, chordIndex: number }]
+        this.chordTexts = []; // コードのビルボードテキスト [{ sprite: THREE.Sprite, material: THREE.SpriteMaterial, chordIndex: number, createdAt: number }]
+        this.chordLookAtTarget = new THREE.Vector3(0, 0, 0); // カメラの注視点（コード位置に向かう）
+        this.chordLookAtGoal = new THREE.Vector3(0, 0, 0); // カメラの目標注視点
+        this.chordLookAtLerp = 0.05; // カメラ注視の補間係数（自然に中心に戻る）
+        this.chordTextLifetime = 3.0; // テキストの表示時間（秒）
+        this.chordHeightRange = [this.groundY + this.sphereRadius * 2.0, this.groundY + this.gridSizeZ * this.gridSpacing * 0.3]; // コードの高さ範囲
         
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -177,7 +191,7 @@ export class Scene05 extends SceneBase {
         return new Promise((resolve, reject) => {
             canvas.toBlob((blob) => {
                 if (!blob) {
-                    console.warn('発光体テクスチャのBlob生成に失敗');
+                    // エラーログは削除（デバッグ時のみ必要）
                     resolve(false);
                     return;
                 }
@@ -202,20 +216,20 @@ export class Scene05 extends SceneBase {
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            console.log(`✅ 発光体テクスチャを保存しました: ${data.path}`);
+                            // ログは削除（デバッグ時のみ必要）
                             resolve(true);
         } else {
-                            console.warn('発光体テクスチャの保存に失敗:', data.error);
+                            // エラーログは削除（デバッグ時のみ必要）
                             resolve(false);
                         }
                     })
                     .catch(error => {
-                        console.warn('発光体テクスチャの保存エラー:', error);
+                        // エラーログは削除（デバッグ時のみ必要）
                         resolve(false);
                     });
                 };
                 reader.onerror = () => {
-                    console.warn('FileReaderエラー');
+                    // エラーログは削除（デバッグ時のみ必要）
                     resolve(false);
                 };
                 reader.readAsDataURL(blob);
@@ -246,21 +260,21 @@ export class Scene05 extends SceneBase {
                     }
                 );
             });
-            console.log('✅ 既存の発光体テクスチャを読み込みました');
+            // ログは削除（デバッグ時のみ必要）
         } catch (error) {
             // テクスチャが存在しない場合は生成
-            console.log('📝 発光体テクスチャを生成中...');
+            // ログは削除（デバッグ時のみ必要）
             const canvas = this.generateGlowTexture();
             
             // サーバーに保存（非同期、エラーでも続行）
             this.saveGlowTextureToServer(canvas).catch(err => {
-                console.warn('テクスチャの保存に失敗しましたが、続行します:', err);
+                // エラーログは削除（デバッグ時のみ必要）
             });
             
             // Canvasからテクスチャを作成
             glowTexture = new THREE.CanvasTexture(canvas);
             glowTexture.colorSpace = THREE.SRGBColorSpace;
-            console.log('✅ 発光体テクスチャを生成しました');
+            // ログは削除（デバッグ時のみ必要）
         }
         
         // THREE.Pointsを使用（より軽量）
@@ -340,7 +354,7 @@ export class Scene05 extends SceneBase {
         pointsGeometry.attributes.size.needsUpdate = true;
         
         this.setParticleCount(particleIndex);
-        console.log(`✅ ${particleIndex}個のPointsを格子状に配置しました`);
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -400,7 +414,7 @@ export class Scene05 extends SceneBase {
         this.lineMesh.renderOrder = 0;
         this.scene.add(this.lineMesh);
         
-        console.log(`✅ ${this.connections.length}本の接続線を作成しました`);
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -634,7 +648,7 @@ export class Scene05 extends SceneBase {
             this.markerLabels.push(labelSprite);
         });
         
-        console.log(`✅ ${markerPositions.length}個のマーカー（赤い十字と数字）を追加しました`);
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -689,9 +703,15 @@ export class Scene05 extends SceneBase {
             const cameraPos = this.cameraParticles[this.currentCameraIndex].getPosition();
             this.camera.position.copy(cameraPos);
             
-            // グリッドの中心を見る（少し上方向を見る）
-            const lookAtY = this.groundY + this.gridSizeZ * this.gridSpacing * 0.1; // グリッドの少し上を見る
-            this.camera.lookAt(0, lookAtY, 0);
+            // コードの注視点がある場合はそれを使用、なければグリッドの中心を見る
+            const defaultLookAt = new THREE.Vector3(0, this.groundY + this.gridSizeZ * this.gridSpacing * 0.1, 0);
+            if (this.chordLookAtTarget && this.chordLookAtTarget.lengthSq() > 0.01) {
+                // コードの注視点とデフォルト位置を補間（自然に中心に戻る）
+                const blendedLookAt = new THREE.Vector3().lerpVectors(this.chordLookAtTarget, defaultLookAt, 0.3);
+                this.camera.lookAt(blendedLookAt);
+            } else {
+                this.camera.lookAt(defaultLookAt);
+            }
             this.camera.up.set(0, 1, 0);
         }
         
@@ -700,6 +720,15 @@ export class Scene05 extends SceneBase {
             this.markerLabels.forEach(label => {
                 if (label && this.camera) {
                     label.quaternion.copy(this.camera.quaternion);
+                }
+            });
+        }
+        
+        // コードのテキストもカメラに向ける（ビルボード）
+        if (this.chordTexts) {
+            this.chordTexts.forEach(textInfo => {
+                if (textInfo.sprite && this.camera) {
+                    textInfo.sprite.quaternion.copy(this.camera.quaternion);
                 }
             });
         }
@@ -765,8 +794,9 @@ export class Scene05 extends SceneBase {
             const currentLength = diff.length();
             
             if (currentLength > 0.01) {
-                // 方向ベクトルを正規化（一度だけ）
-                const forceDir = diff.clone().normalize();
+                // 方向ベクトルを正規化（一度だけ、効率的に）
+                const invLength = 1.0 / currentLength;
+                diff.multiplyScalar(invLength); // 正規化（diffを直接変更）
                 
                 // 理想的な距離からのずれ
                 const stretch = currentLength - this.restLength;
@@ -778,15 +808,16 @@ export class Scene05 extends SceneBase {
                 const velA = particleA.getVelocity();
                 const velB = particleB.getVelocity();
                 const velDiff = new THREE.Vector3().subVectors(velB, velA);
-                const dampingForce = velDiff.dot(forceDir) * this.springDamping;
+                const dampingForce = velDiff.dot(diff) * this.springDamping;
                 
                 // 力を適用
                 const totalForce = springForce + dampingForce;
                 
-                // 粒子Aに力を加える（B方向）
-                particleA.addForce(forceDir.clone().multiplyScalar(totalForce));
+                // 粒子Aに力を加える（B方向、clone()を避けて直接計算）
+                const forceA = diff.clone().multiplyScalar(totalForce);
+                particleA.addForce(forceA);
                 // 粒子Bに力を加える（A方向、反対向き）
-                particleB.addForce(forceDir.multiplyScalar(-totalForce));
+                particleB.addForce(diff.multiplyScalar(-totalForce));
             }
         }
         
@@ -801,25 +832,24 @@ export class Scene05 extends SceneBase {
             const restoreDistance = restoreDiff.length();
             
             if (restoreDistance > 0.01) {
-                // 方向ベクトルを正規化（一度だけ）
-                const restoreDir = restoreDiff.clone().normalize();
+                // 方向ベクトルを正規化（clone()を避けて直接正規化）
+                restoreDiff.normalize();
                 
                 // 復元力（フックの法則）
                 const restoreForce = restoreDistance * this.restoreStiffness;
                 
                 // 速度による減衰
                 const vel = particle.getVelocity();
-                const velDot = vel.dot(restoreDir);
+                const velDot = vel.dot(restoreDiff);
                 const restoreDamping = velDot * this.restoreDamping;
                 
                 // 復元力を適用
                 const totalRestoreForce = restoreForce + restoreDamping;
-                particle.addForce(restoreDir.multiplyScalar(totalRestoreForce));
+                particle.addForce(restoreDiff.multiplyScalar(totalRestoreForce));
             }
             
-            // 重力を適用
-            const gravity = this.gravity.clone();
-            particle.addForce(gravity);
+            // 重力を適用（clone()は不要、固定値なので直接渡す）
+            particle.addForce(this.gravity);
             
             // パーティクルを更新
             particle.update();
@@ -876,6 +906,9 @@ export class Scene05 extends SceneBase {
         
         // 赤いラインの位置を更新（左から右へ流れる）
         this.updateRedLines(deltaTime);
+        
+        // コードエフェクトを更新（テキストのフェードアウトとカメラの注視）
+        this.updateChordEffects(deltaTime);
         
         // 線の位置と色を更新
         this.updateConnections();
@@ -976,8 +1009,7 @@ export class Scene05 extends SceneBase {
         color.g = 0.0;
         color.b = 0.0;
         
-        // デバッグ用ログ
-        console.log(`[getHeatMapColorForLine] value=${value.toFixed(3)}, RGB=(${color.r.toFixed(3)}, ${color.g.toFixed(3)}, ${color.b.toFixed(3)})`);
+        // デバッグログは削除（FPS向上のため）
         
         return color;
     }
@@ -1029,12 +1061,7 @@ export class Scene05 extends SceneBase {
             const opacity = 1.0 - progress;
             lineInfo.material.opacity = Math.max(0.0, opacity);
             
-            // マテリアルの色が正しく設定されているか確認（デバッグ用）
-            // 注意: マテリアルの色は作成時に設定されているので、ここでは確認のみ
-            if (i === 0 && this.redLines.length > 0) {
-                const firstLine = this.redLines[0];
-                console.log(`[updateRedLines] 最初のライン: velocity=${firstLine.velocity}, material.color=RGB(${firstLine.material.color.r.toFixed(3)}, ${firstLine.material.color.g.toFixed(3)}, ${firstLine.material.color.b.toFixed(3)})`);
-            }
+            // デバッグログは削除（FPS向上のため）
         }
     }
     
@@ -1106,11 +1133,11 @@ export class Scene05 extends SceneBase {
         const forceCenter = new THREE.Vector3(centerX, heightY, centerZ);
         
         // ベロシティから力の強さを計算（0-127 → 力の強さ、さらに弱めに調整）
-        let forceStrength = 2000.0; // デフォルト（さらに弱めに調整）
-        let forceRadius = 200.0; // デフォルトの影響範囲
+        let forceStrength = 800.0; // デフォルト（さらに弱めに調整）
+        let forceRadius = 50.0; // デフォルトの影響範囲
         if (velocity !== null) {
             const velocityNormalized = velocity / 127.0; // 0.0-1.0
-            forceStrength = 2000.0 + velocityNormalized * 5000.0; // 2000-7000（さらに弱めに調整）
+            forceStrength = 800.0 + velocityNormalized * 2000.0; // 800-2800（さらに弱めに調整）
             // 影響範囲もVelocityに応じて変える（小さいvelocityでは小さく、大きいvelocityでは大きく）
             forceRadius = 100.0 + velocityNormalized * 200.0; // 100-300の範囲
         }
@@ -1158,8 +1185,7 @@ export class Scene05 extends SceneBase {
             }
         }
         
-        console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-        console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
+        // デバッグログは削除（FPS向上のため）
     }
     
     /**
@@ -1186,11 +1212,9 @@ export class Scene05 extends SceneBase {
         // 一小節 = 384 ticksで左端から右端まで移動
         const ticksPerMeasure = 384;
         
-        // Velocityから色を計算（0-127 → 青→赤のHSLヒートマップ）
+        // Velocityから色を計算（0-127 → 黒→赤のヒートマップ）
         const velocityNormalized = Math.max(0.0, Math.min(1.0, velocity / 127.0)); // 0.0-1.0
-        console.log(`[Scene05] createRedLine: velocity=${velocity}, normalized=${velocityNormalized.toFixed(3)}`);
         const heatMapColor = this.getHeatMapColorForLine(velocityNormalized);
-        console.log(`[Scene05] 計算された色: RGB(${heatMapColor.r.toFixed(3)}, ${heatMapColor.g.toFixed(3)}, ${heatMapColor.b.toFixed(3)})`);
         
         // ラインのジオメトリを作成（縦線、初期位置は左端）
         const lineGeometry = new THREE.BufferGeometry();
@@ -1208,9 +1232,6 @@ export class Scene05 extends SceneBase {
             transparent: true,
             opacity: 1.0  // 初期は不透明、右に行くほど透明に
         });
-        
-        // マテリアルの色を確認するログ
-        console.log(`[createRedLine] velocity=${velocity}, heatMapColor=RGB(${heatMapColor.r.toFixed(3)}, ${heatMapColor.g.toFixed(3)}, ${heatMapColor.b.toFixed(3)}), material.color=RGB(${lineMaterial.color.r.toFixed(3)}, ${lineMaterial.color.g.toFixed(3)}, ${lineMaterial.color.b.toFixed(3)})`);
         
         // ラインのメッシュを作成（Lineを使用）
         const lineMesh = new THREE.Line(lineGeometry, lineMaterial);
@@ -1232,7 +1253,7 @@ export class Scene05 extends SceneBase {
             velocity: velocity  // velocityを保存（将来の拡張用）
         });
         
-        console.log(`🔴 縦線を作成！Velocity: ${velocity}, 色: (${heatMapColor.r.toFixed(2)}, ${heatMapColor.g.toFixed(2)}, ${heatMapColor.b.toFixed(2)}), X位置: ${leftX.toFixed(1)}, Z範囲: ${zMin.toFixed(1)} ～ ${zMax.toFixed(1)}`);
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -1318,6 +1339,26 @@ export class Scene05 extends SceneBase {
     }
     
     /**
+     * OSCメッセージの処理（SceneBaseをオーバーライド）
+     */
+    handleOSC(message) {
+        // /chord/メッセージを処理
+        if (message.address === '/chord/' || message.address === '/chord') {
+            const args = message.args || [];
+            if (args.length >= 3) {
+                const noteNumber = args[0] !== undefined ? args[0] : 64.0;
+                const velocity = args[1] !== undefined ? args[1] : 127.0;
+                const durationMs = args[2] !== undefined ? args[2] : 0.0;
+                this.handleChord(noteNumber, velocity, durationMs);
+            }
+            return; // 処理済み
+        }
+        
+        // 親クラスのhandleOSCを呼び出す
+        super.handleOSC(message);
+    }
+    
+    /**
      * OSCメッセージの処理
      */
     handleTrackNumber(trackNumber, message) {
@@ -1356,9 +1397,297 @@ export class Scene05 extends SceneBase {
             const velocity = args[1] !== undefined ? args[1] : 127.0; // ベロシティ（0-127、色に影響）
             const durationMs = args[2] !== undefined ? args[2] : 0.0; // デュレーション（未使用）
             const mute = args[3] !== undefined ? args[3] : 0.0; // ミュート（未使用）
-            console.log(`[Scene05] トラック6受信: noteNumber=${noteNumber}, velocity=${velocity}, durationMs=${durationMs}, mute=${mute}, args=`, args);
+            // デバッグログは削除（FPS向上のため）
             this.createRedLine(velocity, noteNumber);
         }
+    }
+    
+    /**
+     * ノート番号からコード名を取得
+     * @param {number[]} notes - ノート番号の配列
+     * @returns {string} コード名（例: "Cmaj7", "Am"）
+     */
+    getChordName(notes) {
+        if (!notes || notes.length === 0) return '?';
+        
+        // ノート番号をMIDIノート（0-127）から12音階に変換
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const rootNote = Math.floor(notes[0]) % 12;
+        const rootName = noteNames[rootNote];
+        
+        // 簡易的なコード判定（完全なコード解析は複雑なので、シンプルに）
+        if (notes.length === 3) {
+            // 3音の場合はトライアド
+            const intervals = notes.slice(1).map(n => (Math.floor(n) - Math.floor(notes[0]) + 12) % 12).sort((a, b) => a - b);
+            if (intervals[0] === 3 && intervals[1] === 7) return rootName + 'm'; // 短三和音
+            if (intervals[0] === 4 && intervals[1] === 7) return rootName; // 長三和音
+        } else if (notes.length === 4) {
+            // 4音の場合はセブンスコード
+            const intervals = notes.slice(1).map(n => (Math.floor(n) - Math.floor(notes[0]) + 12) % 12).sort((a, b) => a - b);
+            if (intervals.includes(3) && intervals.includes(7) && intervals.includes(10)) return rootName + 'm7';
+            if (intervals.includes(4) && intervals.includes(7) && intervals.includes(11)) return rootName + 'maj7';
+            if (intervals.includes(4) && intervals.includes(7) && intervals.includes(10)) return rootName + '7';
+        }
+        
+        // デフォルトはルート音のみ
+        return rootName;
+    }
+    
+    /**
+     * コード進行を処理（和音を管理）
+     * @param {number} noteNumber - ノート番号
+     * @param {number} velocity - ベロシティ
+     * @param {number} durationMs - デュレーション
+     */
+    handleChord(noteNumber, velocity, durationMs) {
+        const currentTime = performance.now();
+        const chordWindow = 100; // 100ms以内に来たノートは同じコードとして扱う
+        
+        // 最新のコードを取得、または新規作成
+        let currentChord = this.chords[this.chords.length - 1];
+        if (!currentChord || (currentTime - currentChord.timestamp) > chordWindow) {
+            // 新しいコードを作成
+            const gridWidth = (this.gridSizeX - 1) * this.gridSpacing;
+            const gridDepth = (this.gridSizeZ - 1) * this.gridSpacing;
+            
+            // ランダムな中心位置を決定（高さもランダム）
+            const centerX = (Math.random() - 0.5) * gridWidth * 0.8;
+            const centerZ = (Math.random() - 0.5) * gridDepth * 0.8;
+            const centerY = this.chordHeightRange[0] + Math.random() * (this.chordHeightRange[1] - this.chordHeightRange[0]);
+            
+            currentChord = {
+                notes: [],
+                center: new THREE.Vector3(centerX, centerY, centerZ),
+                timestamp: currentTime,
+                chordIndex: this.chords.length
+            };
+            this.chords.push(currentChord);
+        }
+        
+        // ノートを追加
+        if (!currentChord.notes.find(n => Math.abs(n - noteNumber) < 0.1)) {
+            currentChord.notes.push(noteNumber);
+        }
+        
+        // 和音が完成したら（3-4音）、Sphereとテキストを作成
+        if (currentChord.notes.length >= 3 && currentChord.notes.length <= 4) {
+            // ノート番号の平均値に応じて高さを設定
+            const avgNote = currentChord.notes.reduce((sum, n) => sum + n, 0) / currentChord.notes.length;
+            const noteMin = 36; // 最低ノート
+            const noteMax = 127; // 最高ノート
+            const normalizedNote = Math.max(0, Math.min(1, (avgNote - noteMin) / (noteMax - noteMin)));
+            const heightRange = this.chordHeightRange[1] - this.chordHeightRange[0];
+            currentChord.center.y = this.chordHeightRange[0] + normalizedNote * heightRange;
+            
+            this.createChordSpheres(currentChord);
+            this.createChordText(currentChord);
+            
+            // カメラをその位置に注視させる
+            this.chordLookAtGoal.copy(currentChord.center);
+        }
+    }
+    
+    /**
+     * ノート番号から色を取得（ヒートマップ：36が青、127が赤）
+     * @param {number} noteNumber - ノート番号（36-127）
+     * @returns {THREE.Color} 色
+     */
+    getHeatMapColorForNote(noteNumber) {
+        const noteMin = 36;
+        const noteMax = 127;
+        // より大げさな色の変化のために、範囲を拡張して正規化
+        const normalized = Math.max(0, Math.min(1, (noteNumber - noteMin) / (noteMax - noteMin)));
+        
+        // 色の変化をより大げさにするために、非線形マッピング
+        const enhancedNormalized = Math.pow(normalized, 0.7); // 0.7乗でより早く色が変わる
+        
+        // 青（36）→ シアン → 緑 → 黄 → オレンジ → 赤（127）のヒートマップ
+        const color = new THREE.Color();
+        if (enhancedNormalized < 0.2) {
+            // 青 → シアン（より青を強調）
+            const t = enhancedNormalized / 0.2;
+            color.r = 0.0;
+            color.g = t * 0.5;
+            color.b = 1.0;
+        } else if (enhancedNormalized < 0.4) {
+            // シアン → 緑
+            const t = (enhancedNormalized - 0.2) / 0.2;
+            color.r = 0.0;
+            color.g = 0.5 + t * 0.5;
+            color.b = 1.0 - t;
+        } else if (enhancedNormalized < 0.6) {
+            // 緑 → 黄
+            const t = (enhancedNormalized - 0.4) / 0.2;
+            color.r = t;
+            color.g = 1.0;
+            color.b = 0.0;
+        } else if (enhancedNormalized < 0.8) {
+            // 黄 → オレンジ
+            const t = (enhancedNormalized - 0.6) / 0.2;
+            color.r = 1.0;
+            color.g = 1.0 - t * 0.5;
+            color.b = 0.0;
+            } else {
+            // オレンジ → 赤
+            const t = (enhancedNormalized - 0.8) / 0.2;
+            color.r = 1.0;
+            color.g = 0.5 - t * 0.5;
+            color.b = 0.0;
+        }
+        
+        return color;
+    }
+    
+    /**
+     * コードのSphereを作成
+     * @param {Object} chord - コード情報
+     */
+    createChordSpheres(chord) {
+        const sphereRadius = this.sphereRadius * 3.0; // 通常のSphereより大きく
+        const spreadRadius = this.gridSpacing * 2.0; // 和音同士の距離
+        
+        const spherePositions = []; // Sphereの位置を保存（線の接続用）
+        
+        chord.notes.forEach((noteNumber, index) => {
+            // ノート番号に応じて高さを設定（より大げさに）
+            const noteMin = 36;
+            const noteMax = 127;
+            const normalizedNote = Math.max(0, Math.min(1, (noteNumber - noteMin) / (noteMax - noteMin)));
+            // 高さの変化をより大げさにする（グリッド間隔の5倍まで）
+            const heightOffset = normalizedNote * this.gridSpacing * 5.0; // ノートが高いほど上に
+            
+            // 中心位置からランダムに配置（円形の範囲内でランダム）
+            const randomAngle = Math.random() * Math.PI * 2.0;
+            const randomRadius = Math.random() * spreadRadius; // 0からspreadRadiusまでのランダムな距離
+            const offsetX = Math.cos(randomAngle) * randomRadius;
+            const offsetZ = Math.sin(randomAngle) * randomRadius;
+            
+            // さらにランダム性を追加（完全にランダムなオフセット）
+            const additionalRandomX = (Math.random() - 0.5) * spreadRadius * 0.5;
+            const additionalRandomZ = (Math.random() - 0.5) * spreadRadius * 0.5;
+            
+            const position = new THREE.Vector3(
+                chord.center.x + offsetX + additionalRandomX,
+                chord.center.y + heightOffset,
+                chord.center.z + offsetZ + additionalRandomZ
+            );
+            
+            spherePositions.push(position.clone()); // 位置を保存
+            
+            // ノート番号に応じた色を取得（ヒートマップ）
+            const heatMapColor = this.getHeatMapColorForNote(noteNumber);
+            
+            // Sphereジオメトリとマテリアルを作成
+            const geometry = new THREE.SphereGeometry(sphereRadius, 16, 16);
+            const material = new THREE.MeshStandardMaterial({
+                color: heatMapColor,
+                emissive: heatMapColor.clone().multiplyScalar(0.2), // 少し発光
+                metalness: 0.3,
+                roughness: 0.7
+            });
+            
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.copy(position);
+            this.scene.add(sphere);
+            
+            this.chordSpheres.push({
+                mesh: sphere,
+                chordIndex: chord.chordIndex
+            });
+        });
+        
+        // Sphere同士をグレーの線で接続
+        if (spherePositions.length >= 2) {
+            // 全てのSphere同士を接続（完全グラフ）
+            const positions = [];
+            for (let i = 0; i < spherePositions.length; i++) {
+                for (let j = i + 1; j < spherePositions.length; j++) {
+                    positions.push(
+                        spherePositions[i].x, spherePositions[i].y, spherePositions[i].z,
+                        spherePositions[j].x, spherePositions[j].y, spherePositions[j].z
+                    );
+                }
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+            
+            const material = new THREE.LineBasicMaterial({
+                color: 0x888888, // グレー
+                linewidth: 1.0,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            const line = new THREE.LineSegments(geometry, material);
+            this.scene.add(line);
+            
+            this.chordLines.push({
+                line: line,
+                geometry: geometry,
+                material: material,
+                chordIndex: chord.chordIndex
+            });
+        }
+    }
+    
+    /**
+     * コードのビルボードテキストを作成
+     * @param {Object} chord - コード情報
+     */
+    createChordText(chord) {
+        const chordName = this.getChordName(chord.notes);
+        const text = `${chordName} (${chord.notes.map(n => Math.floor(n)).join(',')})`;
+        
+        // テキスト位置はコードの中心の上
+        const textPosition = new THREE.Vector3(
+            chord.center.x,
+            chord.center.y + this.sphereRadius * 5.0,
+            chord.center.z
+        );
+        
+        const sprite = this.createLabelSprite(text, textPosition);
+        this.scene.add(sprite);
+        
+        this.chordTexts.push({
+            sprite: sprite,
+            material: sprite.material,
+            chordIndex: chord.chordIndex,
+            createdAt: performance.now()
+        });
+    }
+    
+    /**
+     * コードエフェクトを更新（テキストのフェードアウトとカメラの注視）
+     * @param {number} deltaTime - 経過時間（秒）
+     */
+    updateChordEffects(deltaTime) {
+        const currentTime = performance.now();
+        
+        // テキストのフェードアウト
+        this.chordTexts.forEach((textInfo, index) => {
+            const age = (currentTime - textInfo.createdAt) / 1000.0; // 秒
+            if (age > this.chordTextLifetime) {
+                // テキストを削除
+                this.scene.remove(textInfo.sprite);
+                if (textInfo.material.map) {
+                    textInfo.material.map.dispose();
+                }
+                textInfo.material.dispose();
+                this.chordTexts.splice(index, 1);
+            } else {
+                // フェードアウト
+                const fadeProgress = age / this.chordTextLifetime;
+                textInfo.material.opacity = 1.0 - fadeProgress;
+            }
+        });
+        
+        // カメラの注視を自然に中心に戻す
+        this.chordLookAtTarget.lerp(this.chordLookAtGoal, this.chordLookAtLerp);
+        
+        // 目標注視点を中心に戻す（自然に戻る）
+        const center = new THREE.Vector3(0, this.groundY + this.gridSizeZ * this.gridSpacing * 0.1, 0);
+        this.chordLookAtGoal.lerp(center, 0.01); // ゆっくり中心に戻る
     }
     
     /**
@@ -1409,7 +1738,7 @@ export class Scene05 extends SceneBase {
         // 線の位置を更新
         this.updateConnections();
     
-        console.log('🔄 シーンをリセットしました');
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -1459,7 +1788,7 @@ export class Scene05 extends SceneBase {
             // グリッチエフェクトも初期化（composerが作成された後）
             await this.initGlitchShader();
         } catch (err) {
-            console.error('色収差シェーダーの読み込みに失敗:', err);
+            // エラーログは削除（デバッグ時のみ必要）
         }
     }
     
@@ -1501,7 +1830,7 @@ export class Scene05 extends SceneBase {
             this.glitchPass.enabled = false;  // デフォルトでは無効
             this.composer.addPass(this.glitchPass);
         } catch (err) {
-            console.error('グリッチシェーダーの読み込みに失敗:', err);
+            // エラーログは削除（デバッグ時のみ必要）
         }
     }
     
@@ -1510,7 +1839,7 @@ export class Scene05 extends SceneBase {
      */
     applyChromaticAberration(velocity, noteNumber, durationMs) {
         if (!this.chromaticAberrationPass) {
-            console.warn('色収差エフェクトが初期化されていません');
+            // エラーログは削除（デバッグ時のみ必要）
             return;
         }
         
@@ -1533,7 +1862,7 @@ export class Scene05 extends SceneBase {
             this.chromaticAberrationEndTime = 0;
         }
         
-        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -1541,7 +1870,7 @@ export class Scene05 extends SceneBase {
      */
     applyGlitch(velocity, noteNumber, durationMs) {
         if (!this.glitchPass) {
-            console.warn('グリッチエフェクトが初期化されていません');
+            // エラーログは削除（デバッグ時のみ必要）
             return;
         }
         
@@ -1564,7 +1893,7 @@ export class Scene05 extends SceneBase {
             this.glitchEndTime = 0;
         }
         
-        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
+        // ログは削除（デバッグ時のみ必要）
     }
     
     /**
@@ -1660,7 +1989,7 @@ export class Scene05 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene05.dispose: クリーンアップ開始');
+        // ログは削除（デバッグ時のみ必要）
         
         // Pointsメッシュを破棄
         if (this.pointsMesh) {
@@ -1731,6 +2060,54 @@ export class Scene05 extends SceneBase {
             this.redLines = [];
         }
         
+        // コード進行を破棄
+        if (this.chordSpheres && this.chordSpheres.length > 0) {
+            this.chordSpheres.forEach(sphereInfo => {
+                if (sphereInfo.mesh) {
+                    this.scene.remove(sphereInfo.mesh);
+                    if (sphereInfo.mesh.geometry) {
+                        sphereInfo.mesh.geometry.dispose();
+                    }
+                    if (sphereInfo.mesh.material) {
+                        sphereInfo.mesh.material.dispose();
+                    }
+                }
+            });
+            this.chordSpheres = [];
+        }
+        
+        if (this.chordLines && this.chordLines.length > 0) {
+            this.chordLines.forEach(lineInfo => {
+                if (lineInfo.line) {
+                    this.scene.remove(lineInfo.line);
+                }
+                if (lineInfo.geometry) {
+                    lineInfo.geometry.dispose();
+                }
+                if (lineInfo.material) {
+                    lineInfo.material.dispose();
+                }
+            });
+            this.chordLines = [];
+        }
+        
+        if (this.chordTexts && this.chordTexts.length > 0) {
+            this.chordTexts.forEach(textInfo => {
+                if (textInfo.sprite) {
+                    this.scene.remove(textInfo.sprite);
+                }
+                if (textInfo.material) {
+                    if (textInfo.material.map) {
+                        textInfo.material.map.dispose();
+                    }
+                    textInfo.material.dispose();
+                }
+            });
+            this.chordTexts = [];
+        }
+        
+        this.chords = [];
+        
         // エフェクトパスを破棄
         if (this.chromaticAberrationPass) {
             this.chromaticAberrationPass = null;
@@ -1757,7 +2134,7 @@ export class Scene05 extends SceneBase {
             }
         });
         
-        console.log('Scene05.dispose: クリーンアップ完了');
+        // ログは削除（デバッグ時のみ必要）
         
         // 親クラスのdisposeを呼ぶ
         super.dispose();

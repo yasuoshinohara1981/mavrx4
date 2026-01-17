@@ -96,8 +96,8 @@ export class SceneBase {
         this.trackEffects = {
             1: true,   // カメラ切り替え（表示のみ、実際の切り替えは別処理）
             2: true,   // 色反転
-            3: false,  // 色収差（オフ）
-            4: false,  // グリッチ（オフ）
+            3: true,   // 色収差（オン）
+            4: true,   // グリッチ（オン）
             5: true,   // シーン固有のエフェクト（爆発、圧力など）
             6: true,   // 予備
             7: true,   // 予備

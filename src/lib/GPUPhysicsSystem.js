@@ -29,7 +29,9 @@ export class GPUPhysicsSystem {
         
         // 更新用シェーダーマテリアル
         this.physicsUpdateMaterial = null;
+        this.velocityUpdateMaterial = null;
         this.physicsUpdateMesh = null;
+        this.velocityUpdateMesh = null;
         
         // 更新用シーンとカメラ
         this.updateScene = null;
@@ -75,13 +77,15 @@ export class GPUPhysicsSystem {
                 return text;
             };
             
-            const [physicsVert, physicsFrag] = await Promise.all([
+            const [physicsVert, physicsFrag, velocityFrag] = await Promise.all([
                 loadShader(`${shaderBasePath}physicsUpdate.vert`, 'physicsUpdate.vert'),
-                loadShader(`${shaderBasePath}physicsUpdate.frag`, 'physicsUpdate.frag')
+                loadShader(`${shaderBasePath}physicsUpdate.frag`, 'physicsUpdate.frag'),
+                loadShader(`${shaderBasePath}velocityUpdate.frag`, 'velocityUpdate.frag')
             ]);
             
             this.shaders = {
-                physicsUpdate: { vertex: physicsVert, fragment: physicsFrag }
+                physicsUpdate: { vertex: physicsVert, fragment: physicsFrag },
+                velocityUpdate: { vertex: physicsVert, fragment: velocityFrag }
             };
             
             console.log(`✓ シェーダー読み込み完了: scene05`);
@@ -165,8 +169,14 @@ export class GPUPhysicsSystem {
             forceStrength: { value: 0.0 },
             forceRadius: { value: 0.0 },
             width: { value: this.width },
-            height: { value: this.height }
+            height: { value: this.height },
+            springStiffness: { value: 0.15 },
+            springDamping: { value: 0.05 },
+            restLength: { value: 10.0 }
         };
+        
+        // 速度更新用のuniformsをコピー（参照を共有）
+        const velocityUniforms = Object.assign({}, physicsUniforms);
         
         this.physicsUpdateMaterial = new THREE.ShaderMaterial({
             uniforms: physicsUniforms,
@@ -174,11 +184,19 @@ export class GPUPhysicsSystem {
             fragmentShader: this.shaders.physicsUpdate.fragment
         });
         
+        this.velocityUpdateMaterial = new THREE.ShaderMaterial({
+            uniforms: velocityUniforms,
+            vertexShader: this.shaders.velocityUpdate.vertex,
+            fragmentShader: this.shaders.velocityUpdate.fragment
+        });
+        
         // 更新用メッシュを作成
         const geometry = new THREE.PlaneGeometry(2, 2);
         this.physicsUpdateMesh = new THREE.Mesh(geometry, this.physicsUpdateMaterial);
+        this.velocityUpdateMesh = new THREE.Mesh(geometry.clone(), this.velocityUpdateMaterial);
         this.updateScene = new THREE.Scene();
         this.updateScene.add(this.physicsUpdateMesh);
+        this.updateScene.add(this.velocityUpdateMesh);
         this.updateCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     }
     
@@ -313,6 +331,15 @@ export class GPUPhysicsSystem {
         if (uniforms.forceRadius !== undefined) {
             this.physicsUpdateMaterial.uniforms.forceRadius.value = uniforms.forceRadius;
         }
+        if (uniforms.springStiffness !== undefined) {
+            this.velocityUpdateMaterial.uniforms.springStiffness.value = uniforms.springStiffness;
+        }
+        if (uniforms.springDamping !== undefined) {
+            this.velocityUpdateMaterial.uniforms.springDamping.value = uniforms.springDamping;
+        }
+        if (uniforms.restLength !== undefined) {
+            this.velocityUpdateMaterial.uniforms.restLength.value = uniforms.restLength;
+        }
         
         // 読み取りバッファ
         const readPositionBuffer = this.currentPositionBuffer;
@@ -322,19 +349,29 @@ export class GPUPhysicsSystem {
         const writePositionBuffer = 1 - readPositionBuffer;
         const writeVelocityBuffer = 1 - readVelocityBuffer;
         
-        // 位置と速度のテクスチャを設定
+        // 位置と速度のテクスチャを設定（両方のマテリアルに設定）
         this.physicsUpdateMaterial.uniforms.positionTexture.value = this.positionRenderTargets[readPositionBuffer].texture;
         this.physicsUpdateMaterial.uniforms.velocityTexture.value = this.velocityRenderTargets[readVelocityBuffer].texture;
         this.physicsUpdateMaterial.uniforms.initialPositionTexture.value = this.initialPositionRenderTarget.texture;
         
-        // 位置を更新
-        this.renderer.setRenderTarget(this.positionRenderTargets[writePositionBuffer]);
+        this.velocityUpdateMaterial.uniforms.positionTexture.value = this.positionRenderTargets[readPositionBuffer].texture;
+        this.velocityUpdateMaterial.uniforms.velocityTexture.value = this.velocityRenderTargets[readVelocityBuffer].texture;
+        this.velocityUpdateMaterial.uniforms.initialPositionTexture.value = this.initialPositionRenderTarget.texture;
+        
+        // まず速度を更新（位置はまだ古い値を使用）
+        this.velocityUpdateMesh.visible = true;
+        this.physicsUpdateMesh.visible = false;
+        this.renderer.setRenderTarget(this.velocityRenderTargets[writeVelocityBuffer]);
         this.renderer.render(this.updateScene, this.updateCamera);
         
-        // 速度を更新（位置更新と同じシェーダーを使用、ただし出力を変更）
-        // 注意: 現在の実装では位置と速度を同時に更新しているため、
-        // 速度の更新は位置更新の結果を使用する必要がある
-        // これは将来的に改善が必要
+        // 次に位置を更新（更新された速度を使用）
+        this.velocityUpdateMaterial.uniforms.velocityTexture.value = this.velocityRenderTargets[writeVelocityBuffer].texture;
+        this.physicsUpdateMaterial.uniforms.velocityTexture.value = this.velocityRenderTargets[writeVelocityBuffer].texture;
+        
+        this.velocityUpdateMesh.visible = false;
+        this.physicsUpdateMesh.visible = true;
+        this.renderer.setRenderTarget(this.positionRenderTargets[writePositionBuffer]);
+        this.renderer.render(this.updateScene, this.updateCamera);
         
         // バッファを切り替え
         this.currentPositionBuffer = writePositionBuffer;
@@ -356,6 +393,97 @@ export class GPUPhysicsSystem {
     }
     
     /**
+     * 位置データをCPUに読み込む（デバッグ用、パフォーマンスに注意）
+     */
+    readPositionData() {
+        const renderTarget = this.positionRenderTargets[this.currentPositionBuffer];
+        const width = renderTarget.width;
+        const height = renderTarget.height;
+        const size = width * height * 4;
+        
+        // FloatTypeのRenderTargetから読み取る
+        // WebGLでは、FloatTypeのRenderTargetから直接Float32Arrayを読み取れる場合と、Uint8Arrayで読み取る必要がある場合がある
+        let floatPixels;
+        try {
+            // まずFloat32Arrayで直接読み取ってみる
+            floatPixels = new Float32Array(size);
+            this.renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, floatPixels);
+        } catch (e) {
+            // Float32Arrayで読み取れない場合は、Uint8Arrayで読み取ってから変換
+            console.warn('Float32Arrayで読み取れないため、Uint8Array経由で変換します');
+            const uint8Pixels = new Uint8Array(size * 4);
+            this.renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, uint8Pixels);
+            
+            // Uint8ArrayをFloat32Arrayに変換
+            floatPixels = new Float32Array(size);
+            const buffer = new ArrayBuffer(size * 4);
+            const view = new DataView(buffer);
+            for (let i = 0; i < size; i++) {
+                const byteOffset = i * 4;
+                view.setUint8(byteOffset, uint8Pixels[byteOffset]);
+                view.setUint8(byteOffset + 1, uint8Pixels[byteOffset + 1]);
+                view.setUint8(byteOffset + 2, uint8Pixels[byteOffset + 2]);
+                view.setUint8(byteOffset + 3, uint8Pixels[byteOffset + 3]);
+                floatPixels[i] = view.getFloat32(byteOffset, true);
+            }
+        }
+        
+        // 位置データを配列に変換
+        const positions = [];
+        for (let i = 0; i < this.particleCount; i++) {
+            const idx = i * 4;
+            positions.push(new THREE.Vector3(floatPixels[idx], floatPixels[idx + 1], floatPixels[idx + 2]));
+        }
+        
+        return positions;
+    }
+    
+    /**
+     * 速度データをCPUに読み込む（デバッグ用、パフォーマンスに注意）
+     */
+    readVelocityData() {
+        const renderTarget = this.velocityRenderTargets[this.currentVelocityBuffer];
+        const width = renderTarget.width;
+        const height = renderTarget.height;
+        const size = width * height * 4;
+        
+        // FloatTypeのRenderTargetから読み取る
+        let floatPixels;
+        try {
+            // まずFloat32Arrayで直接読み取ってみる
+            floatPixels = new Float32Array(size);
+            this.renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, floatPixels);
+        } catch (e) {
+            // Float32Arrayで読み取れない場合は、Uint8Arrayで読み取ってから変換
+            console.warn('Float32Arrayで読み取れないため、Uint8Array経由で変換します');
+            const uint8Pixels = new Uint8Array(size * 4);
+            this.renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, uint8Pixels);
+            
+            // Uint8ArrayをFloat32Arrayに変換
+            floatPixels = new Float32Array(size);
+            const buffer = new ArrayBuffer(size * 4);
+            const view = new DataView(buffer);
+            for (let i = 0; i < size; i++) {
+                const byteOffset = i * 4;
+                view.setUint8(byteOffset, uint8Pixels[byteOffset]);
+                view.setUint8(byteOffset + 1, uint8Pixels[byteOffset + 1]);
+                view.setUint8(byteOffset + 2, uint8Pixels[byteOffset + 2]);
+                view.setUint8(byteOffset + 3, uint8Pixels[byteOffset + 3]);
+                floatPixels[i] = view.getFloat32(byteOffset, true);
+            }
+        }
+        
+        // 速度データを配列に変換
+        const velocities = [];
+        for (let i = 0; i < this.particleCount; i++) {
+            const idx = i * 4;
+            velocities.push(new THREE.Vector3(floatPixels[idx], floatPixels[idx + 1], floatPixels[idx + 2]));
+        }
+        
+        return velocities;
+    }
+    
+    /**
      * 破棄
      */
     dispose() {
@@ -370,12 +498,21 @@ export class GPUPhysicsSystem {
         if (this.physicsUpdateMaterial) {
             this.physicsUpdateMaterial.dispose();
         }
+        if (this.velocityUpdateMaterial) {
+            this.velocityUpdateMaterial.dispose();
+        }
         
         // メッシュを破棄
         if (this.physicsUpdateMesh) {
             this.physicsUpdateMesh.geometry.dispose();
             if (this.physicsUpdateMesh.material) {
                 this.physicsUpdateMesh.material.dispose();
+            }
+        }
+        if (this.velocityUpdateMesh) {
+            this.velocityUpdateMesh.geometry.dispose();
+            if (this.velocityUpdateMesh.material) {
+                this.velocityUpdateMesh.material.dispose();
             }
         }
     }

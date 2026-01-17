@@ -5,6 +5,7 @@
 
 import { SceneBase } from '../SceneBase.js';
 import { Particle } from '../../lib/Particle.js';
+import { GPUPhysicsSystem } from '../../lib/GPUPhysicsSystem.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -92,6 +93,13 @@ export class Scene05 extends SceneBase {
         this.markerCrosses = [];
         this.markerLabels = [];
         
+        // GPU物理演算システム
+        this.gpuPhysicsSystem = null;
+        this.useGPUPhysics = true; // GPU物理演算を使用（スプリング拘束もGPUで計算）
+        this.currentForceCenter = new THREE.Vector3(0, 0, 0);
+        this.currentForceStrength = 0.0;
+        this.currentForceRadius = 0.0;
+        
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
@@ -102,8 +110,24 @@ export class Scene05 extends SceneBase {
         // ライトを設定
         this.setupLights();
         
+        // GPU物理演算システムを初期化
+        if (this.useGPUPhysics) {
+            console.log('🔧 GPU物理演算システムを初期化中...');
+            this.gpuPhysicsSystem = new GPUPhysicsSystem(this.renderer, this.gridSizeX, this.gridSizeZ);
+            await this.gpuPhysicsSystem.initPromise;
+            console.log('✅ GPU物理演算システムを初期化しました');
+        }
+        
         // パーティクルを作成（格子状に配置、非同期）
         await this.createParticles();
+        console.log(`✅ パーティクル作成完了: ${this.particles.length}個, 初期位置: ${this.initialPositions.length}個`);
+        
+        // GPU物理演算システムに初期データを設定
+        if (this.useGPUPhysics && this.gpuPhysicsSystem) {
+            console.log('🔧 GPU物理演算システムに初期データを設定中...');
+            this.gpuPhysicsSystem.initializeParticleData(this.initialPositions);
+            console.log('✅ GPU物理演算システムに初期データを設定しました');
+        }
         
         // 線で接続
         this.createConnections();
@@ -746,118 +770,144 @@ export class Scene05 extends SceneBase {
             return; // まだ初期化されていない場合はスキップ
         }
         
-        // スプリング拘束を適用（ニットっぽくするため、接続されているsphere同士の距離を維持）
-        for (const connection of this.connections) {
-            const particleA = this.particles[connection.from];
-            const particleB = this.particles[connection.to];
-            const posA = particleA.getPosition();
-            const posB = particleB.getPosition();
+        // GPU物理演算を使用する場合
+        if (this.useGPUPhysics && this.gpuPhysicsSystem) {
+            // GPUで基本物理演算を実行（スプリング拘束も含む）
+            this.gpuPhysicsSystem.update(deltaTime, {
+                gravity: this.gravity,
+                restoreStiffness: this.restoreStiffness,
+                restoreDamping: this.restoreDamping,
+                groundY: this.groundY,
+                sphereRadius: this.sphereRadius,
+                gridSpacing: this.gridSpacing,
+                forceCenter: this.currentForceCenter || new THREE.Vector3(0, 0, 0),
+                forceStrength: this.currentForceStrength || 0.0,
+                forceRadius: this.currentForceRadius || 0.0,
+                springStiffness: this.springStiffness,
+                springDamping: this.springDamping,
+                restLength: this.restLength
+            });
             
-            // 現在の距離
-            const diff = new THREE.Vector3().subVectors(posB, posA);
-            const currentLength = diff.length();
-            
-            if (currentLength > 0.01) {
-                // 方向ベクトルを正規化（一度だけ）
-                const forceDir = diff.clone().normalize();
+            // GPUで全て計算済み（スプリング拘束も含む）
+            // 位置データをCPUに読み戻す必要はない
+            // TODO: シェーダーで直接Pointsの位置を更新する方法を実装
+            console.log('⚠️ GPU物理演算は実装中です。一旦CPUにフォールバックします。');
+            this.useGPUPhysics = false;
+        } else {
+            // CPU物理演算（フォールバック）
+            // スプリング拘束を適用（ニットっぽくするため、接続されているsphere同士の距離を維持）
+            for (const connection of this.connections) {
+                const particleA = this.particles[connection.from];
+                const particleB = this.particles[connection.to];
+                const posA = particleA.getPosition();
+                const posB = particleB.getPosition();
                 
-                // 理想的な距離からのずれ
-                const stretch = currentLength - this.restLength;
+                // 現在の距離
+                const diff = new THREE.Vector3().subVectors(posB, posA);
+                const currentLength = diff.length();
                 
-                // スプリング力（フックの法則）
-                const springForce = stretch * this.springStiffness;
-                
-                // 速度差による減衰
-                const velA = particleA.getVelocity();
-                const velB = particleB.getVelocity();
-                const velDiff = new THREE.Vector3().subVectors(velB, velA);
-                const dampingForce = velDiff.dot(forceDir) * this.springDamping;
-                
-                // 力を適用
-                const totalForce = springForce + dampingForce;
-                
-                // 粒子Aに力を加える（B方向）
-                particleA.addForce(forceDir.clone().multiplyScalar(totalForce));
-                // 粒子Bに力を加える（A方向、反対向き）
-                particleB.addForce(forceDir.multiplyScalar(-totalForce));
-            }
-        }
-        
-        for (let i = 0; i < this.particles.length; i++) {
-            const particle = this.particles[i];
-            const particleMass = this.particleMasses[i];
-            const particlePos = particle.getPosition();
-            const initialPos = this.initialPositions[i];
-            
-            // 復元力（元の位置に戻ろうとする力）
-            const restoreDiff = new THREE.Vector3().subVectors(initialPos, particlePos);
-            const restoreDistance = restoreDiff.length();
-            
-            if (restoreDistance > 0.01) {
-                // 方向ベクトルを正規化（一度だけ）
-                const restoreDir = restoreDiff.clone().normalize();
-                
-                // 復元力（フックの法則）
-                const restoreForce = restoreDistance * this.restoreStiffness;
-                
-                // 速度による減衰
-                const vel = particle.getVelocity();
-                const velDot = vel.dot(restoreDir);
-                const restoreDamping = velDot * this.restoreDamping;
-                
-                // 復元力を適用
-                const totalRestoreForce = restoreForce + restoreDamping;
-                particle.addForce(restoreDir.multiplyScalar(totalRestoreForce));
-            }
-            
-            // 重力を適用
-            const gravity = this.gravity.clone();
-            particle.addForce(gravity);
-            
-            // パーティクルを更新
-            particle.update();
-            
-            // 地面との衝突判定
-            if (particlePos.y - this.sphereRadius <= this.groundY) {
-                // 地面に当たったら位置を修正
-                particlePos.y = this.groundY + this.sphereRadius;
-                particle.position.copy(particlePos);
-                
-                // 速度を減らす（反発と摩擦）
-                const vel = particle.getVelocity();
-                if (vel.y < 0) {
-                    vel.y *= -0.3; // 反発係数
+                if (currentLength > 0.01) {
+                    // 方向ベクトルを正規化（一度だけ）
+                    const forceDir = diff.clone().normalize();
+                    
+                    // 理想的な距離からのずれ
+                    const stretch = currentLength - this.restLength;
+                    
+                    // スプリング力（フックの法則）
+                    const springForce = stretch * this.springStiffness;
+                    
+                    // 速度差による減衰
+                    const velA = particleA.getVelocity();
+                    const velB = particleB.getVelocity();
+                    const velDiff = new THREE.Vector3().subVectors(velB, velA);
+                    const dampingForce = velDiff.dot(forceDir) * this.springDamping;
+                    
+                    // 力を適用
+                    const totalForce = springForce + dampingForce;
+                    
+                    // 粒子Aに力を加える（B方向）
+                    particleA.addForce(forceDir.clone().multiplyScalar(totalForce));
+                    // 粒子Bに力を加える（A方向、反対向き）
+                    particleB.addForce(forceDir.multiplyScalar(-totalForce));
                 }
-                // 摩擦を適用
-                const groundFriction = 0.98;
-                vel.x *= groundFriction;
-                vel.z *= groundFriction;
-                particle.velocity.copy(vel);
             }
             
-            // Pointsの位置を更新
-            const idx = i * 3;
-            this.pointsPositions[idx] = particlePos.x;
-            this.pointsPositions[idx + 1] = particlePos.y;
-            this.pointsPositions[idx + 2] = particlePos.z;
-            
-            // ノイズでポイントのサイズを変える（initialPosは復元力の処理で既に定義済み）
-            const sizeNoiseX = initialPos.x * this.sizeNoiseScale;
-            const sizeNoiseZ = initialPos.z * this.sizeNoiseScale;
-            const sizeNoiseValue = this.fractalNoise(sizeNoiseX, sizeNoiseZ, this.terrainNoiseTime);
-            const sizeMultiplier = 1.0 + sizeNoiseValue * this.sizeNoiseAmplitude;
-            this.pointsSizes[i] = this.sphereRadius * 2.0 * sizeMultiplier;
-            
-            // ヒートマップの色を計算（速度の大きさに基づく）
-            const vel = particle.getVelocity();
-            const speed = vel.length();
-            const normalizedSpeed = Math.min(Math.max((speed - this.heatMapMinValue) / (this.heatMapMaxValue - this.heatMapMinValue), 0), 1);
-            const color = this.getHeatMapColor(normalizedSpeed);
-            
-            // Pointsの色を設定（ヒートマップ）
-            this.pointsColors[idx] = color.r;
-            this.pointsColors[idx + 1] = color.g;
-            this.pointsColors[idx + 2] = color.b;
+            for (let i = 0; i < this.particles.length; i++) {
+                const particle = this.particles[i];
+                const particleMass = this.particleMasses[i];
+                const particlePos = particle.getPosition();
+                const initialPos = this.initialPositions[i];
+                
+                // 復元力（元の位置に戻ろうとする力）
+                const restoreDiff = new THREE.Vector3().subVectors(initialPos, particlePos);
+                const restoreDistance = restoreDiff.length();
+                
+                if (restoreDistance > 0.01) {
+                    // 方向ベクトルを正規化（一度だけ）
+                    const restoreDir = restoreDiff.clone().normalize();
+                    
+                    // 復元力（フックの法則）
+                    const restoreForce = restoreDistance * this.restoreStiffness;
+                    
+                    // 速度による減衰
+                    const vel = particle.getVelocity();
+                    const velDot = vel.dot(restoreDir);
+                    const restoreDamping = velDot * this.restoreDamping;
+                    
+                    // 復元力を適用
+                    const totalRestoreForce = restoreForce + restoreDamping;
+                    particle.addForce(restoreDir.multiplyScalar(totalRestoreForce));
+                }
+                
+                // 重力を適用
+                const gravity = this.gravity.clone();
+                particle.addForce(gravity);
+                
+                // パーティクルを更新
+                particle.update();
+                
+                // 地面との衝突判定
+                if (particlePos.y - this.sphereRadius <= this.groundY) {
+                    // 地面に当たったら位置を修正
+                    particlePos.y = this.groundY + this.sphereRadius;
+                    particle.position.copy(particlePos);
+                    
+                    // 速度を減らす（反発と摩擦）
+                    const vel = particle.getVelocity();
+                    if (vel.y < 0) {
+                        vel.y *= -0.3; // 反発係数
+                    }
+                    // 摩擦を適用
+                    const groundFriction = 0.98;
+                    vel.x *= groundFriction;
+                    vel.z *= groundFriction;
+                    particle.velocity.copy(vel);
+                }
+                
+                // Pointsの位置を更新
+                const idx = i * 3;
+                this.pointsPositions[idx] = particlePos.x;
+                this.pointsPositions[idx + 1] = particlePos.y;
+                this.pointsPositions[idx + 2] = particlePos.z;
+                
+                // ノイズでポイントのサイズを変える（initialPosは復元力の処理で既に定義済み）
+                const sizeNoiseX = initialPos.x * this.sizeNoiseScale;
+                const sizeNoiseZ = initialPos.z * this.sizeNoiseScale;
+                const sizeNoiseValue = this.fractalNoise(sizeNoiseX, sizeNoiseZ, this.terrainNoiseTime);
+                const sizeMultiplier = 1.0 + sizeNoiseValue * this.sizeNoiseAmplitude;
+                this.pointsSizes[i] = this.sphereRadius * 2.0 * sizeMultiplier;
+                
+                // ヒートマップの色を計算（速度の大きさに基づく）
+                const vel = particle.getVelocity();
+                const speed = vel.length();
+                const normalizedSpeed = Math.min(Math.max((speed - this.heatMapMinValue) / (this.heatMapMaxValue - this.heatMapMinValue), 0), 1);
+                const color = this.getHeatMapColor(normalizedSpeed);
+                
+                // Pointsの色を設定（ヒートマップ）
+                this.pointsColors[idx] = color.r;
+                this.pointsColors[idx + 1] = color.g;
+                this.pointsColors[idx + 2] = color.b;
+            }
         }
         
         // Pointsの属性を更新
@@ -1028,39 +1078,49 @@ export class Scene05 extends SceneBase {
         // 力の影響範囲（拳で持ち上げる範囲）
         const forceRadius = 400.0; // 元の範囲に戻す
         
-        // 影響範囲内のSphereに力を加える（下から上に）
-        let affectedCount = 0;
-        for (let i = 0; i < this.particles.length; i++) {
-            const particle = this.particles[i];
-            const particlePos = particle.getPosition();
-            const toParticle = new THREE.Vector3().subVectors(particlePos, forceCenter);
-            const distance = toParticle.length();
-            
-            if (distance < forceRadius && distance > 0.1) {
-                // 距離に応じた力の強さ（中心に近いほど強い）
-                const normalizedDist = distance / forceRadius;
-                const localForceStrength = forceStrength * (1.0 - normalizedDist) * (1.0 - normalizedDist);
+        // GPU物理演算を使用する場合、uniformに力を設定
+        if (this.useGPUPhysics && this.gpuPhysicsSystem) {
+            this.currentForceCenter.copy(forceCenter);
+            this.currentForceStrength = forceStrength;
+            this.currentForceRadius = forceRadius;
+            console.log(`💪 GPUで力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
+            console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}`);
+        } else {
+            // CPU物理演算（フォールバック）
+            // 影響範囲内のSphereに力を加える（下から上に）
+            let affectedCount = 0;
+            for (let i = 0; i < this.particles.length; i++) {
+                const particle = this.particles[i];
+                const particlePos = particle.getPosition();
+                const toParticle = new THREE.Vector3().subVectors(particlePos, forceCenter);
+                const distance = toParticle.length();
                 
-                // 上方向への力（下から上に吹き飛ばす）
-                const upwardForce = localForceStrength;
-                
-                // 中心から外側への放射状の力（山なりにするため）
-                // XZ平面での方向ベクトルを計算
-                const horizontalDir = new THREE.Vector3(toParticle.x, 0, toParticle.z).normalize();
-                const outwardForceStrength = localForceStrength * 0.3; // 外側への力は上方向の30%
-                const outwardForce = horizontalDir.multiplyScalar(outwardForceStrength);
-                
-                // 力を合成（上方向 + 外側方向）
-                const totalForce = new THREE.Vector3(outwardForce.x, upwardForce, outwardForce.z);
-                
-                // 力を適用
-                particle.addForce(totalForce);
-                affectedCount++;
+                if (distance < forceRadius && distance > 0.1) {
+                    // 距離に応じた力の強さ（中心に近いほど強い）
+                    const normalizedDist = distance / forceRadius;
+                    const localForceStrength = forceStrength * (1.0 - normalizedDist) * (1.0 - normalizedDist);
+                    
+                    // 上方向への力（下から上に吹き飛ばす）
+                    const upwardForce = localForceStrength;
+                    
+                    // 中心から外側への放射状の力（山なりにするため）
+                    // XZ平面での方向ベクトルを計算
+                    const horizontalDir = new THREE.Vector3(toParticle.x, 0, toParticle.z).normalize();
+                    const outwardForceStrength = localForceStrength * 0.3; // 外側への力は上方向の30%
+                    const outwardForce = horizontalDir.multiplyScalar(outwardForceStrength);
+                    
+                    // 力を合成（上方向 + 外側方向）
+                    const totalForce = new THREE.Vector3(outwardForce.x, upwardForce, outwardForce.z);
+                    
+                    // 力を適用
+                    particle.addForce(totalForce);
+                    affectedCount++;
+                }
             }
+            
+            console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
+            console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
         }
-        
-        console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-        console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
     }
     
     /**

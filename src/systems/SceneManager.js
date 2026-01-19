@@ -14,6 +14,7 @@ import { Scene07 } from '../scenes/scene07/Scene07.js';
 import { Scene08 } from '../scenes/scene08/Scene08.js';
 import { Scene09 } from '../scenes/scene09/Scene09.js';
 import { Scene10 } from '../scenes/scene10/Scene10.js';
+import { Scene11 } from '../scenes/scene11/Scene11.js';
 
 export class SceneManager {
     constructor(renderer, camera, sharedResourceManager = null, options = {}) {
@@ -78,6 +79,9 @@ export class SceneManager {
             case 9:
                 scene = new Scene10(this.renderer, this.camera, this.sharedResourceManager);
                 break;
+            case 10:
+                scene = new Scene11(this.renderer, this.camera, this.sharedResourceManager);
+                break;
             default:
                 console.warn(`無効なシーンインデックス: ${index}`);
                 return null;
@@ -112,6 +116,7 @@ export class SceneManager {
             this.scenes.push(new Scene08(this.renderer, this.camera));
             this.scenes.push(new Scene09(this.renderer, this.camera, this.sharedResourceManager));
             this.scenes.push(new Scene10(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene11(this.renderer, this.camera, this.sharedResourceManager));
             
             // デフォルトシーンに設定
             this.currentSceneIndex = this.defaultSceneIndex;

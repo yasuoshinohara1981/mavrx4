@@ -37,6 +37,7 @@ export class SceneBase {
         this.oscStatus = 'Unknown';  // OSC接続状態
         this.phase = 0;  // OSCの/phase/メッセージで受け取る値
         this.actualTick = 0;  // OSCの/actual_tick/メッセージで受け取る値（96小節で1ループ）
+        this.kitNo = 0;  // OSCの/kit/メッセージで受け取る値（キット番号）
         this.particleCount = 0;  // パーティクル数
         this.time = 0.0;  // 時間変数（サブクラスで設定）
         
@@ -686,6 +687,19 @@ export class SceneBase {
                 if (!isNaN(tickValue)) {
                     this.actualTick = Math.floor(tickValue);  // integerとして保存
                     // ログを削除（ユーザー要望）
+                }
+            }
+            return;  // 処理済み
+        }
+        
+        // /kit/メッセージを処理（/kit/ または /kit の両方に対応）
+        if (message.address === '/kit/' || message.address === '/kit') {
+            const args = message.args || [];
+            if (args.length > 0) {
+                const kitValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+                if (!isNaN(kitValue)) {
+                    this.kitNo = Math.floor(kitValue);  // integerとして保存
+                    console.log(`[SceneBase] Kit number updated: ${this.kitNo} (from ${message.address}, args: ${JSON.stringify(args)})`);
                 }
             }
             return;  // 処理済み

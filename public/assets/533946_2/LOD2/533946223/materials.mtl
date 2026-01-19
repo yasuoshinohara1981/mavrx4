@@ -1,0 +1,93 @@
+# Created with FME Version: FME(R) 2020.2.3.0 20210129 - Build 20820 - WIN64
+newmtl tbfd1397
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1397.jpg
+
+newmtl tbfd1990
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1990.jpg
+
+newmtl tbfd1389
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1389.jpg
+
+newmtl tbfd1992
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1992.jpg
+
+newmtl tbfd1991
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1991.jpg
+
+newmtl tbfd1190
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1190.jpg
+
+newmtl tbfd1391
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1391.jpg
+
+newmtl tbfd1188
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1188.jpg
+
+newmtl tbfd1200
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1200.jpg
+
+newmtl tbfd1373
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1373.jpg
+
+newmtl tbfd1396
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1396.jpg
+
+newmtl tbfd1393
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1393.jpg
+
+newmtl tbfd1390
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1390.jpg
+
+newmtl tbfd1392
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1392.jpg
+
+newmtl tbfd1963
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1963.jpg
+
+newmtl tbfd1984
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1984.jpg
+
+newmtl tbfd1387
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1387.jpg
+
+newmtl tbfd1967
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1967.jpg
+
+newmtl tbfd1375
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1375.jpg
+
+newmtl tbfd1191
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1191.jpg
+
+newmtl tbfd1189
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1189.jpg
+
+newmtl tbfd1374
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1374.jpg
+
+newmtl tbfd1376
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1376.jpg
+

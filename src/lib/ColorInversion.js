@@ -98,8 +98,6 @@ export class ColorInversion {
             } else {
                 debugLog('colorInversion', `setEnabled: ${enabled}`);
             }
-        } else {
-            console.warn('ColorInversion: inversionPass is null');
         }
     }
     
@@ -157,16 +155,7 @@ export class ColorInversion {
      * EffectComposer内でRenderPassを使ってシーンをレンダリングし、色反転を適用する
      */
     render() {
-        if (!this.initialized) {
-            console.warn('ColorInversion: not initialized yet');
-            return false;
-        }
-        if (!this.composer) {
-            console.warn('ColorInversion: composer is null');
-            return false;
-        }
-        if (!this.inversionPass) {
-            console.warn('ColorInversion: inversionPass is null');
+        if (!this.initialized || !this.composer || !this.inversionPass) {
             return false;
         }
         if (this.enabled && this.inversionPass.enabled) {

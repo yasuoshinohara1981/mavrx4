@@ -31,7 +31,7 @@ const debugCategories = {
     track: false,            // トラック処理
     
     // === 調査用（必要に応じてON） ===
-    colorInversion: true,    // 色反転デバッグ（現在調査中）
+    colorInversion: false,   // 色反転デバッグ
     laserScan: false,        // レーザースキャン
     
     // === シーン固有 ===

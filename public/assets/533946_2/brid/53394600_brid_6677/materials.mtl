@@ -1,0 +1,41 @@
+# Created with FME Version: FME(R) 2020.2.0.0 20201027 - Build 20787 - WIN64
+newmtl tbff2767
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2767.png
+
+newmtl tbff1815
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1815.png
+
+newmtl tbfe02926
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02926.png
+
+newmtl tbff0665
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0665.png
+
+newmtl tbfe02925
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02925.png
+
+newmtl tbff1358
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1358.png
+
+newmtl tbfg1663
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfg1663.png
+
+newmtl tbff0001
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0001.png
+
+newmtl tbfg0101
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfg0101.png
+
+newmtl tbff1291
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1291.png
+

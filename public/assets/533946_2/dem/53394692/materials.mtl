@@ -1,0 +1,5 @@
+# Created with FME Version: FME(R) 2020.2.0.0 20201027 - Build 20787 - WIN64
+newmtl txtr_1
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\txtr_1.jpg
+

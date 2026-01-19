@@ -1,0 +1,1953 @@
+# Created with FME Version: FME(R) 2020.2.3.0 20210129 - Build 20820 - WIN64
+newmtl tbfe04653
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04653.jpg
+
+newmtl tbfe04609
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04609.jpg
+
+newmtl tbfe04618
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04618.jpg
+
+newmtl tbfe03818
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03818.jpg
+
+newmtl tbfe04598
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04598.jpg
+
+newmtl tbfe04595
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04595.jpg
+
+newmtl tbff1547
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1547.jpg
+
+newmtl tbff2711
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2711.jpg
+
+newmtl tbfe04395
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04395.jpg
+
+newmtl tbfe03824
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03824.jpg
+
+newmtl tbfe03980
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03980.jpg
+
+newmtl tbff1380
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1380.jpg
+
+newmtl tbfe09486
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe09486.jpg
+
+newmtl tbff1538
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1538.jpg
+
+newmtl tbfe03893
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03893.jpg
+
+newmtl tbff2715
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2715.jpg
+
+newmtl tbfe04561
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04561.jpg
+
+newmtl tbff0038
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0038.jpg
+
+newmtl tbff0064
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0064.jpg
+
+newmtl tbfe04620
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04620.jpg
+
+newmtl tbfe03750
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03750.jpg
+
+newmtl tbfe03877
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03877.jpg
+
+newmtl tbfe04639
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04639.jpg
+
+newmtl tbff1413
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1413.jpg
+
+newmtl tbff2788
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2788.jpg
+
+newmtl tbff1768
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1768.jpg
+
+newmtl tbfe04699
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04699.jpg
+
+newmtl tbfe04570
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04570.jpg
+
+newmtl tbfe04654
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04654.jpg
+
+newmtl tbfe04644
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04644.jpg
+
+newmtl tbfe03856
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03856.jpg
+
+newmtl tbfe04636
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04636.jpg
+
+newmtl tbfe03879
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03879.jpg
+
+newmtl tbff1981
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1981.jpg
+
+newmtl tbfe03865
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03865.jpg
+
+newmtl tbff2029
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2029.jpg
+
+newmtl tbfe04547
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04547.jpg
+
+newmtl tbfe04607
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04607.jpg
+
+newmtl tbfe03855
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03855.jpg
+
+newmtl tbff2731
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2731.jpg
+
+newmtl tbff1984
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1984.jpg
+
+newmtl tbfe04610
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04610.jpg
+
+newmtl tbfe04555
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04555.jpg
+
+newmtl tbfe04655
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04655.jpg
+
+newmtl tbff2734
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2734.jpg
+
+newmtl tbff1971
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1971.jpg
+
+newmtl tbfe04628
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04628.jpg
+
+newmtl tbff1396
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1396.jpg
+
+newmtl tbfe04617
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04617.jpg
+
+newmtl tbfe03870
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03870.jpg
+
+newmtl tbfe03931
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03931.jpg
+
+newmtl tbfe04661
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04661.jpg
+
+newmtl tbfe03918
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03918.jpg
+
+newmtl tbfe03924
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03924.jpg
+
+newmtl tbfe03880
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03880.jpg
+
+newmtl tbfe03806
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03806.jpg
+
+newmtl tbfe03848
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03848.jpg
+
+newmtl tbfe03915
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03915.jpg
+
+newmtl tbfe03866
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03866.jpg
+
+newmtl tbfe04657
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04657.jpg
+
+newmtl tbff1961
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1961.jpg
+
+newmtl tbff2717
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2717.jpg
+
+newmtl tbfe04630
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04630.jpg
+
+newmtl tbfe03749
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03749.jpg
+
+newmtl tbfe03740
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03740.jpg
+
+newmtl tbfe04536
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04536.jpg
+
+newmtl tbfe03873
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03873.jpg
+
+newmtl tbff1416
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1416.jpg
+
+newmtl tbfe04589
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04589.jpg
+
+newmtl tbfe04614
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04614.jpg
+
+newmtl tbfe03822
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03822.jpg
+
+newmtl tbff2740
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2740.jpg
+
+newmtl tbfe03947
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03947.jpg
+
+newmtl tbff2738
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2738.jpg
+
+newmtl tbfe04641
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04641.jpg
+
+newmtl tbfe03987
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03987.jpg
+
+newmtl tbfe02919
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02919.jpg
+
+newmtl tbfe03905
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03905.jpg
+
+newmtl tbfe03751
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03751.jpg
+
+newmtl tbfe04629
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04629.jpg
+
+newmtl tbff1425
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1425.jpg
+
+newmtl tbff2712
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2712.jpg
+
+newmtl tbfe03920
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03920.jpg
+
+newmtl tbff1980
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1980.jpg
+
+newmtl tbfe04574
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04574.jpg
+
+newmtl tbfe04398
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04398.jpg
+
+newmtl tbfe03912
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03912.jpg
+
+newmtl tbfe04633
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04633.jpg
+
+newmtl tbfe04597
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04597.jpg
+
+newmtl tbff1421
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1421.jpg
+
+newmtl tbfe04593
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04593.jpg
+
+newmtl tbff2743
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2743.jpg
+
+newmtl tbff1537
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1537.jpg
+
+newmtl tbfe04603
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04603.jpg
+
+newmtl tbff1830
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1830.jpg
+
+newmtl tbff1976
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1976.jpg
+
+newmtl tbfe03821
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03821.jpg
+
+newmtl tbff0065
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0065.jpg
+
+newmtl tbff1377
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1377.jpg
+
+newmtl tbfe03891
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03891.jpg
+
+newmtl tbff0031
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0031.jpg
+
+newmtl tbfe04615
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04615.jpg
+
+newmtl tbff0041
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0041.jpg
+
+newmtl tbfe03840
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03840.jpg
+
+newmtl tbfe04651
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04651.jpg
+
+newmtl tbfe04391
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04391.jpg
+
+newmtl tbfe04576
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04576.jpg
+
+newmtl tbfe04128
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04128.jpg
+
+newmtl tbff1525
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1525.jpg
+
+newmtl tbff1546
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1546.jpg
+
+newmtl tbfe04394
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04394.jpg
+
+newmtl tbfe04399
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04399.jpg
+
+newmtl tbfe04556
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04556.jpg
+
+newmtl tbff1982
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1982.jpg
+
+newmtl tbfe04126
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04126.jpg
+
+newmtl tbfe03793
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03793.jpg
+
+newmtl tbff1967
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1967.jpg
+
+newmtl tbff0060
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0060.jpg
+
+newmtl tbfe03904
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03904.jpg
+
+newmtl tbfe04546
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04546.jpg
+
+newmtl tbff1346
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1346.jpg
+
+newmtl tbff2729
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2729.jpg
+
+newmtl tbff1960
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1960.jpg
+
+newmtl tbfe04587
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04587.jpg
+
+newmtl tbfe03836
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03836.jpg
+
+newmtl tbfe04557
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04557.jpg
+
+newmtl tbff0056
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0056.jpg
+
+newmtl tbfe03892
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03892.jpg
+
+newmtl tbfe03816
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03816.jpg
+
+newmtl tbfe09483
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe09483.jpg
+
+newmtl tbff1507
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1507.jpg
+
+newmtl tbff1533
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1533.jpg
+
+newmtl tbfe04388
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04388.jpg
+
+newmtl tbfe09487
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe09487.jpg
+
+newmtl tbff1418
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1418.jpg
+
+newmtl tbfe04648
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04648.jpg
+
+newmtl tbfe04632
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04632.jpg
+
+newmtl tbfe04551
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04551.jpg
+
+newmtl tbfe03844
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03844.jpg
+
+newmtl tbfe04123
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04123.jpg
+
+newmtl tbfe03833
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03833.jpg
+
+newmtl tbfe03874
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03874.jpg
+
+newmtl tbfe04130
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04130.jpg
+
+newmtl tbfe03752
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03752.jpg
+
+newmtl tbff1607
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1607.jpg
+
+newmtl tbfe03922
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03922.jpg
+
+newmtl tbff1970
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1970.jpg
+
+newmtl tbff1957
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1957.jpg
+
+newmtl tbff1973
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1973.jpg
+
+newmtl tbff0053
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0053.jpg
+
+newmtl tbff1407
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1407.jpg
+
+newmtl tbfe04132
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04132.jpg
+
+newmtl tbfe03827
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03827.jpg
+
+newmtl tbfe04590
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04590.jpg
+
+newmtl tbfe03861
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03861.jpg
+
+newmtl tbfe03835
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03835.jpg
+
+newmtl tbfe04119
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04119.jpg
+
+newmtl tbfe04584
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04584.jpg
+
+newmtl tbfe04579
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04579.jpg
+
+newmtl tbff1400
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1400.jpg
+
+newmtl tbff1424
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1424.jpg
+
+newmtl tbff2641
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2641.jpg
+
+newmtl tbfe04564
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04564.jpg
+
+newmtl tbff1562
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1562.jpg
+
+newmtl tbfe04602
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04602.jpg
+
+newmtl tbfe04605
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04605.jpg
+
+newmtl tbff1410
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1410.jpg
+
+newmtl tbff0069
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0069.jpg
+
+newmtl tbff1408
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1408.jpg
+
+newmtl tbff1536
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1536.jpg
+
+newmtl tbff0050
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0050.jpg
+
+newmtl tbfe03817
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03817.jpg
+
+newmtl tbff1340
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1340.jpg
+
+newmtl tbff1401
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1401.jpg
+
+newmtl tbff0057
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0057.jpg
+
+newmtl tbff1959
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1959.jpg
+
+newmtl tbfe03837
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03837.jpg
+
+newmtl tbfe04637
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04637.jpg
+
+newmtl tbfe03914
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03914.jpg
+
+newmtl tbfe04658
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04658.jpg
+
+newmtl tbff2741
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2741.jpg
+
+newmtl tbff2735
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2735.jpg
+
+newmtl tbfe04691
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04691.jpg
+
+newmtl tbff2709
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2709.jpg
+
+newmtl tbff1972
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1972.jpg
+
+newmtl tbfe03858
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03858.jpg
+
+newmtl tbff0039
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0039.jpg
+
+newmtl tbfe04542
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04542.jpg
+
+newmtl tbfe04562
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04562.jpg
+
+newmtl tbff1526
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1526.jpg
+
+newmtl tbfe03789
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03789.jpg
+
+newmtl tbfe04642
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04642.jpg
+
+newmtl tbfe04667
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04667.jpg
+
+newmtl tbfe03927
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03927.jpg
+
+newmtl tbfe04656
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04656.jpg
+
+newmtl tbff2739
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2739.jpg
+
+newmtl tbff1394
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1394.jpg
+
+newmtl tbfe03923
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03923.jpg
+
+newmtl tbfe03913
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03913.jpg
+
+newmtl tbfe04580
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04580.jpg
+
+newmtl tbff1397
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1397.jpg
+
+newmtl tbfe04575
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04575.jpg
+
+newmtl tbfe03850
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03850.jpg
+
+newmtl tbff0032
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0032.jpg
+
+newmtl tbff2736
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2736.jpg
+
+newmtl tbfe03795
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03795.jpg
+
+newmtl tbff1419
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1419.jpg
+
+newmtl tbfe03724
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03724.jpg
+
+newmtl tbfe03826
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03826.jpg
+
+newmtl tbff1415
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1415.jpg
+
+newmtl tbfe04563
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04563.jpg
+
+newmtl tbff1954
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1954.jpg
+
+newmtl tbff1979
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1979.jpg
+
+newmtl tbfe03926
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03926.jpg
+
+newmtl tbfe03843
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03843.jpg
+
+newmtl tbff2492
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2492.jpg
+
+newmtl tbfe04596
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04596.jpg
+
+newmtl tbfe04541
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04541.jpg
+
+newmtl tbfe03911
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03911.jpg
+
+newmtl tbfe03908
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03908.jpg
+
+newmtl tbfe03948
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03948.jpg
+
+newmtl tbfe04696
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04696.jpg
+
+newmtl tbfe03871
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03871.jpg
+
+newmtl tbfe04646
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04646.jpg
+
+newmtl tbff1374
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1374.jpg
+
+newmtl tbfe04678
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04678.jpg
+
+newmtl tbfe04583
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04583.jpg
+
+newmtl tbfe03804
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03804.jpg
+
+newmtl tbfe03845
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03845.jpg
+
+newmtl tbff2730
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2730.jpg
+
+newmtl tbff1965
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1965.jpg
+
+newmtl tbfe03897
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03897.jpg
+
+newmtl tbfe03903
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03903.jpg
+
+newmtl tbfe03921
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03921.jpg
+
+newmtl tbfe03881
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03881.jpg
+
+newmtl tbfe04392
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04392.jpg
+
+newmtl tbff1412
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1412.jpg
+
+newmtl tbff1983
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1983.jpg
+
+newmtl tbff0049
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0049.jpg
+
+newmtl tbfe04652
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04652.jpg
+
+newmtl tbff1540
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1540.jpg
+
+newmtl tbff1405
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1405.jpg
+
+newmtl tbfe03814
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03814.jpg
+
+newmtl tbff1527
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1527.jpg
+
+newmtl tbfe03869
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03869.jpg
+
+newmtl tbff2523
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2523.jpg
+
+newmtl tbfe04586
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04586.jpg
+
+newmtl tbff0036
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0036.jpg
+
+newmtl tbfe03849
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03849.jpg
+
+newmtl tbff0033
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0033.jpg
+
+newmtl tbfe04670
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04670.jpg
+
+newmtl tbff0054
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0054.jpg
+
+newmtl tbfe03823
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03823.jpg
+
+newmtl tbff2716
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2716.jpg
+
+newmtl tbff1564
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1564.jpg
+
+newmtl tbff2733
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2733.jpg
+
+newmtl tbff1393
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1393.jpg
+
+newmtl tbfe04635
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04635.jpg
+
+newmtl tbfe03895
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03895.jpg
+
+newmtl tbff2714
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2714.jpg
+
+newmtl tbfe04588
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04588.jpg
+
+newmtl tbff0034
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0034.jpg
+
+newmtl tbff1427
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1427.jpg
+
+newmtl tbff0037
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0037.jpg
+
+newmtl tbfe04554
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04554.jpg
+
+newmtl tbff1430
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1430.jpg
+
+newmtl tbfe03839
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03839.jpg
+
+newmtl tbfe03981
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03981.jpg
+
+newmtl tbfe03868
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03868.jpg
+
+newmtl tbfe04390
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04390.jpg
+
+newmtl tbfe03815
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03815.jpg
+
+newmtl tbff1551
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1551.jpg
+
+newmtl tbff1363
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1363.jpg
+
+newmtl tbff1765
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1765.jpg
+
+newmtl tbff2710
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2710.jpg
+
+newmtl tbff2708
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2708.jpg
+
+newmtl tbff2757
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2757.jpg
+
+newmtl tbfe04387
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04387.jpg
+
+newmtl tbfe03929
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03929.jpg
+
+newmtl tbfe04613
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04613.jpg
+
+newmtl tbfe03867
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03867.jpg
+
+newmtl tbff1975
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1975.jpg
+
+newmtl tbfe04600
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04600.jpg
+
+newmtl tbff1336
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1336.jpg
+
+newmtl tbfe04638
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04638.jpg
+
+newmtl tbff1545
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1545.jpg
+
+newmtl tbfe04599
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04599.jpg
+
+newmtl tbfe04560
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04560.jpg
+
+newmtl tbfe03933
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03933.jpg
+
+newmtl tbff1429
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1429.jpg
+
+newmtl tbff2359
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2359.jpg
+
+newmtl tbfe09463
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe09463.jpg
+
+newmtl tbfe04540
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04540.jpg
+
+newmtl tbff1542
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1542.jpg
+
+newmtl tbfe04559
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04559.jpg
+
+newmtl tbfe03805
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03805.jpg
+
+newmtl tbff1552
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1552.jpg
+
+newmtl tbfe03794
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03794.jpg
+
+newmtl tbfe04389
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04389.jpg
+
+newmtl tbff0044
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0044.jpg
+
+newmtl tbfe04594
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04594.jpg
+
+newmtl tbfe04608
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04608.jpg
+
+newmtl tbfe03834
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03834.jpg
+
+newmtl tbfe04662
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04662.jpg
+
+newmtl tbff1563
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1563.jpg
+
+newmtl tbfe03896
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03896.jpg
+
+newmtl tbfe03841
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03841.jpg
+
+newmtl tbff1561
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1561.jpg
+
+newmtl tbff1414
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1414.jpg
+
+newmtl tbfe04663
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04663.jpg
+
+newmtl tbfe04544
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04544.jpg
+
+newmtl tbff1966
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1966.jpg
+
+newmtl tbfe04549
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04549.jpg
+
+newmtl tbfe04571
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04571.jpg
+
+newmtl tbfe04591
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04591.jpg
+
+newmtl tbff0058
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0058.jpg
+
+newmtl tbff1534
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1534.jpg
+
+newmtl tbff1335
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1335.jpg
+
+newmtl tbff1541
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1541.jpg
+
+newmtl tbff1974
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1974.jpg
+
+newmtl tbff1411
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1411.jpg
+
+newmtl tbfe03909
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03909.jpg
+
+newmtl tbff1968
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1968.jpg
+
+newmtl tbfe03851
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03851.jpg
+
+newmtl tbfe03813
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03813.jpg
+
+newmtl tbff0059
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0059.jpg
+
+newmtl tbff0843
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0843.jpg
+
+newmtl tbff1362
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1362.jpg
+
+newmtl tbfe04582
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04582.jpg
+
+newmtl tbff0068
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0068.jpg
+
+newmtl tbfe03899
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03899.jpg
+
+newmtl tbfe03854
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03854.jpg
+
+newmtl tbff1964
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1964.jpg
+
+newmtl tbfe04548
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04548.jpg
+
+newmtl tbfe04601
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04601.jpg
+
+newmtl tbff1543
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1543.jpg
+
+newmtl tbfe04543
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04543.jpg
+
+newmtl tbff2027
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2027.jpg
+
+newmtl tbfe04125
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04125.jpg
+
+newmtl tbfe03863
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03863.jpg
+
+newmtl tbfe04397
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04397.jpg
+
+newmtl tbff1550
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1550.jpg
+
+newmtl tbfe03819
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03819.jpg
+
+newmtl tbff1512
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1512.jpg
+
+newmtl tbfe04647
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04647.jpg
+
+newmtl tbff1978
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1978.jpg
+
+newmtl tbff1392
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1392.jpg
+
+newmtl tbfe03932
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03932.jpg
+
+newmtl tbfe03807
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03807.jpg
+
+newmtl tbfe04585
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04585.jpg
+
+newmtl tbfe04669
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04669.jpg
+
+newmtl tbfe04566
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04566.jpg
+
+newmtl tbff1544
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1544.jpg
+
+newmtl tbff1381
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1381.jpg
+
+newmtl tbfe04650
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04650.jpg
+
+newmtl tbff0042
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0042.jpg
+
+newmtl tbff0061
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0061.jpg
+
+newmtl tbff1422
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1422.jpg
+
+newmtl tbff0062
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0062.jpg
+
+newmtl tbff2737
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2737.jpg
+
+newmtl tbfe03916
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03916.jpg
+
+newmtl tbff1395
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1395.jpg
+
+newmtl tbfe03906
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03906.jpg
+
+newmtl tbff1535
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1535.jpg
+
+newmtl tbfe04640
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04640.jpg
+
+newmtl tbff1370
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1370.jpg
+
+newmtl tbfe04611
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04611.jpg
+
+newmtl tbfe04569
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04569.jpg
+
+newmtl tbfe03930
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03930.jpg
+
+newmtl tbfe04545
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04545.jpg
+
+newmtl tbfe03802
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03802.jpg
+
+newmtl tbff1570
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1570.jpg
+
+newmtl tbfe04552
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04552.jpg
+
+newmtl tbff1528
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1528.jpg
+
+newmtl tbff1369
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1369.jpg
+
+newmtl tbfe03982
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03982.jpg
+
+newmtl tbff1399
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1399.jpg
+
+newmtl tbfe03872
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03872.jpg
+
+newmtl tbfe04568
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04568.jpg
+
+newmtl tbfe03853
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03853.jpg
+
+newmtl tbfe04606
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04606.jpg
+
+newmtl tbff1402
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1402.jpg
+
+newmtl tbfe03859
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03859.jpg
+
+newmtl tbfe04592
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04592.jpg
+
+newmtl tbff0040
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0040.jpg
+
+newmtl tbfe04675
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04675.jpg
+
+newmtl tbfe03901
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03901.jpg
+
+newmtl tbfe04565
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04565.jpg
+
+newmtl tbff1406
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1406.jpg
+
+newmtl tbff1524
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1524.jpg
+
+newmtl tbfe04634
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04634.jpg
+
+newmtl tbfe03876
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03876.jpg
+
+newmtl tbfe03894
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03894.jpg
+
+newmtl tbff1969
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1969.jpg
+
+newmtl tbfe03846
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03846.jpg
+
+newmtl tbff1548
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1548.jpg
+
+newmtl tbfe03878
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03878.jpg
+
+newmtl tbff1409
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1409.jpg
+
+newmtl tbff1953
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1953.jpg
+
+newmtl tbfe03883
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03883.jpg
+
+newmtl tbfe04539
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04539.jpg
+
+newmtl tbff1339
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1339.jpg
+
+newmtl tbfe03852
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03852.jpg
+
+newmtl tbff1963
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1963.jpg
+
+newmtl tbfe04619
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04619.jpg
+
+newmtl tbfe04553
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04553.jpg
+
+newmtl tbff1423
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1423.jpg
+
+newmtl tbfe03898
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03898.jpg
+
+newmtl tbfe04534
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04534.jpg
+
+newmtl tbfe04664
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04664.jpg
+
+newmtl tbfe04396
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04396.jpg
+
+newmtl tbfe03860
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03860.jpg
+
+newmtl tbfe04668
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04668.jpg
+
+newmtl tbff1158
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1158.jpg
+
+newmtl tbff2764
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2764.jpg
+
+newmtl tbff1977
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1977.jpg
+
+newmtl tbff0035
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0035.jpg
+
+newmtl tbfe04558
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04558.jpg
+
+newmtl tbfe04660
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04660.jpg
+
+newmtl tbfe04623
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04623.jpg
+
+newmtl tbff1431
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1431.jpg
+
+newmtl tbfe03828
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03828.jpg
+
+newmtl tbfe03825
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03825.jpg
+
+newmtl tbfe04621
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04621.jpg
+
+newmtl tbfe03820
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03820.jpg
+
+newmtl tbfe03934
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03934.jpg
+
+newmtl tbfe03900
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03900.jpg
+
+newmtl tbfe03917
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03917.jpg
+
+newmtl tbfe03830
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03830.jpg
+
+newmtl tbff2732
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2732.jpg
+
+newmtl tbff1985
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1985.jpg
+
+newmtl tbff1379
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1379.jpg
+
+newmtl tbfe04671
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04671.jpg
+
+newmtl tbff1420
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1420.jpg
+
+newmtl tbfe03742
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03742.jpg
+
+newmtl tbfe03803
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03803.jpg
+
+newmtl tbfe03831
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03831.jpg
+
+newmtl tbff0045
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0045.jpg
+
+newmtl tbfe04573
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04573.jpg
+
+newmtl tbfe03864
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03864.jpg
+
+newmtl tbfe03902
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03902.jpg
+
+newmtl tbfe03832
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03832.jpg
+
+newmtl tbff2713
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2713.jpg
+
+newmtl tbfe03808
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03808.jpg
+
+newmtl tbff2742
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff2742.jpg
+
+newmtl tbfe04631
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04631.jpg
+
+newmtl tbfe04550
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04550.jpg
+
+newmtl tbfe04538
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04538.jpg
+
+newmtl tbff1398
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1398.jpg
+
+newmtl tbfe04127
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04127.jpg
+
+newmtl tbfe03838
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03838.jpg
+
+newmtl tbff0046
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0046.jpg
+
+newmtl tbfe03847
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03847.jpg
+
+newmtl tbff1417
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1417.jpg
+
+newmtl tbfe03875
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03875.jpg
+
+newmtl tbfe04567
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04567.jpg
+
+newmtl tbff0043
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0043.jpg
+
+newmtl tbff0063
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0063.jpg
+
+newmtl tbfe04666
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04666.jpg
+
+newmtl tbff0030
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0030.jpg
+
+newmtl tbfe03925
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03925.jpg
+
+newmtl tbfe04122
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04122.jpg
+
+newmtl tbfe04612
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04612.jpg
+
+newmtl tbff1958
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1958.jpg
+
+newmtl tbfe04581
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04581.jpg
+
+newmtl tbfe04665
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04665.jpg
+
+newmtl tbfe03791
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03791.jpg
+
+newmtl tbfe04577
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04577.jpg
+
+newmtl tbfe09473
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe09473.jpg
+
+newmtl tbfe03884
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03884.jpg
+
+newmtl tbff1368
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1368.jpg
+
+newmtl tbfe03829
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03829.jpg
+
+newmtl tbff0066
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0066.jpg
+
+newmtl tbfe04572
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04572.jpg
+
+newmtl tbff1426
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff1426.jpg
+
+newmtl tbfe04645
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04645.jpg
+
+newmtl tbfe04124
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04124.jpg
+
+newmtl tbfe04604
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04604.jpg
+
+newmtl tbfe03919
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03919.jpg
+
+newmtl tbff0055
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbff0055.jpg
+
+newmtl tbfe03842
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03842.jpg
+
+newmtl tbfe04578
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04578.jpg
+
+newmtl tbfe04131
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04131.jpg
+
+newmtl tbfe04535
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04535.jpg
+
+newmtl tbfe04616
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04616.jpg
+
+newmtl tbfe04649
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04649.jpg
+
+newmtl tbfe04643
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04643.jpg
+
+newmtl tbfe04537
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04537.jpg
+

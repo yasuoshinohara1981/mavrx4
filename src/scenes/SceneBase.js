@@ -240,8 +240,6 @@ export class SceneBase {
         }
         if (this.colorInversion.initialized) {
             debugLog('colorInversion', 'SceneBase.setup: 初期化完了');
-        } else {
-            console.warn('SceneBase.setup: ColorInversion初期化タイムアウト');
         }
         
         // ポストプロセッシングエフェクトを初期化（すべてのシーンで使用可能）
@@ -293,8 +291,6 @@ export class SceneBase {
             if (this.colorInversion.inversionPass) {
                 this.colorInversion.inversionPass.enabled = false;
             }
-        } else {
-            console.warn('initializeEffectStates: colorInversionがnull');
         }
         
         // トラック3: 色収差エフェクト（デフォルトはオフ）

@@ -1,0 +1,21 @@
+# Created with FME Version: FME(R) 2020.2.3.0 20210129 - Build 20820 - WIN64
+newmtl tkjp200387
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200387.jpg
+
+newmtl tkjp200365
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200365.jpg
+
+newmtl tkjp200363
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200363.jpg
+
+newmtl tkjp200359
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200359.jpg
+
+newmtl tkjp200243
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200243.jpg
+

@@ -1,0 +1,89 @@
+# Created with FME Version: FME(R) 2020.2.0.0 20201027 - Build 20787 - WIN64
+newmtl tbfe01597
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe01597.png
+
+newmtl tkjp200302
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200302.png
+
+newmtl tbfe03296
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe03296.png
+
+newmtl tkjp200347
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200347.png
+
+newmtl tbfd1786
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1786.png
+
+newmtl tbfe04748
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04748.png
+
+newmtl tbfe02246
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02246.png
+
+newmtl tbfe00747
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe00747.png
+
+newmtl tbfe00844
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe00844.png
+
+newmtl tbfe04046
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04046.png
+
+newmtl tbfe00739
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe00739.png
+
+newmtl tbfe04784
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04784.png
+
+newmtl tbfe00617
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe00617.png
+
+newmtl tbfe04858
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe04858.png
+
+newmtl tbfe00740
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe00740.png
+
+newmtl tbfe01911
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe01911.png
+
+newmtl tbfe02840
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02840.png
+
+newmtl tkjp200339
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200339.png
+
+newmtl tbfe02927
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02927.png
+
+newmtl tbfe00756
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe00756.png
+
+newmtl tkjp200301
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200301.png
+
+newmtl tbfe02929
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfe02929.png
+

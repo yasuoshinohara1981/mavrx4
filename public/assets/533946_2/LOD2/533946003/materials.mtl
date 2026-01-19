@@ -1,0 +1,13 @@
+# Created with FME Version: FME(R) 2020.2.3.0 20210129 - Build 20820 - WIN64
+newmtl tbfg1575
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfg1575.jpg
+
+newmtl tbfg1571
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfg1571.jpg
+
+newmtl tbfg1576
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfg1576.jpg
+

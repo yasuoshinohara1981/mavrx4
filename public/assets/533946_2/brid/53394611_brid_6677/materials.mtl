@@ -1,0 +1,49 @@
+# Created with FME Version: FME(R) 2020.2.0.0 20201027 - Build 20787 - WIN64
+newmtl tkjp200356
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200356.png
+
+newmtl tbfd2258
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd2258.png
+
+newmtl tbfd2264
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd2264.png
+
+newmtl tkjp200325
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200325.png
+
+newmtl tkjp200357
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200357.png
+
+newmtl tbfd2263
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd2263.png
+
+newmtl tkjp200013
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200013.png
+
+newmtl tkjp200355
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200355.png
+
+newmtl tbfd2227
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd2227.png
+
+newmtl tkjp200017
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200017.png
+
+newmtl tbfd1186
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tbfd1186.png
+
+newmtl tkjp200005
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200005.png
+

@@ -1,0 +1,85 @@
+# Created with FME Version: FME(R) 2020.2.3.0 20210129 - Build 20820 - WIN64
+newmtl tkjp200143
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200143.jpg
+
+newmtl tkjp200056
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200056.jpg
+
+newmtl tkjp200380
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200380.jpg
+
+newmtl tkjp200113
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200113.jpg
+
+newmtl tkjp200379
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200379.jpg
+
+newmtl tkjp200103
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200103.jpg
+
+newmtl tkjp200102
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200102.jpg
+
+newmtl tkjp200106
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200106.jpg
+
+newmtl tkjp200109
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200109.jpg
+
+newmtl tkjp200112
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200112.jpg
+
+newmtl tkjp200107
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200107.jpg
+
+newmtl tkjp200100
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200100.jpg
+
+newmtl tkjp200142
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200142.jpg
+
+newmtl tkjp200110
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200110.jpg
+
+newmtl tkjp200097
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200097.jpg
+
+newmtl tkjp200381
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200381.jpg
+
+newmtl tkjp200098
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200098.jpg
+
+newmtl tkjp200115
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200115.jpg
+
+newmtl tkjp200101
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200101.jpg
+
+newmtl tkjp200377
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200377.jpg
+
+newmtl tkjp200059
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200059.jpg
+

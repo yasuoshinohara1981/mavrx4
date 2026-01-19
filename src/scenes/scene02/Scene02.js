@@ -15,7 +15,6 @@ export class Scene02 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | bng bng';
         this.sceneNumber = 2;
-        this.kitNo = 15;  // キット番号を設定
         
         // 表示設定
         this.SHOW_PARTICLES = true;

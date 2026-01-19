@@ -1,0 +1,109 @@
+# Created with FME Version: FME(R) 2020.2.3.0 20210129 - Build 20820 - WIN64
+newmtl tkjp200153
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200153.jpg
+
+newmtl tkjp200132
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200132.jpg
+
+newmtl tkjp200156
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200156.jpg
+
+newmtl tkjp200128
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200128.jpg
+
+newmtl tkjp200138
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200138.jpg
+
+newmtl tkjp200163
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200163.jpg
+
+newmtl tkjp200137
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200137.jpg
+
+newmtl tkjp200123
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200123.jpg
+
+newmtl tkjp200131
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200131.jpg
+
+newmtl tkjp200121
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200121.jpg
+
+newmtl tkjp200245
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200245.jpg
+
+newmtl tkjp200129
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200129.jpg
+
+newmtl tkjp200124
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200124.jpg
+
+newmtl tkjp200133
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200133.jpg
+
+newmtl tkjp200119
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200119.jpg
+
+newmtl tkjp200139
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200139.jpg
+
+newmtl tkjp200159
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200159.jpg
+
+newmtl tkjp200122
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200122.jpg
+
+newmtl tkjp200327
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200327.jpg
+
+newmtl tkjp200130
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200130.jpg
+
+newmtl tkjp200116
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200116.jpg
+
+newmtl tkjp200127
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200127.jpg
+
+newmtl tkjp200160
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200160.jpg
+
+newmtl tkjp200358
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200358.jpg
+
+newmtl tkjp200108
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200108.jpg
+
+newmtl tkjp200351
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200351.jpg
+
+newmtl tkjp200136
+Ks 0.333333 0.333333 0.333333
+map_Kd .\materials_textures\tkjp200136.jpg
+

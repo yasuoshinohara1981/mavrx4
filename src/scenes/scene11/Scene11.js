@@ -6,6 +6,7 @@ import { SceneTemplate } from '../SceneTemplate.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 
 export class Scene11 extends SceneTemplate {
@@ -18,11 +19,14 @@ export class Scene11 extends SceneTemplate {
         // 建物の設定
         this.buildings = [];  // 個別の建物（CPUパーティクル）
         this.instancedBuildings = null;  // インスタンシング用の建物マネージャー
-        this.numSimpleBuildings = 500;  // シンプルな建物（Box）の数
+        this.numSimpleBuildings = 4900;  // シンプルな建物（Box）の数（5000 - 100 = 4900）
         this.specialBuildings = [];  // 特殊な形状の建物（3Dモデル）
+        this.firstBuildingCenter = null;  // 最初の建物の中心座標（相対位置計算用）
+        this.firstBuildingCenterOffset = null;  // 最初の建物のcenterオフセット（全建物の基準位置）
+        this.totalBuildingCount = 0;  // 総建物数（HUD表示用）
         
         // 建物の生成範囲
-        this.spawnRadius = 2000.0;
+        this.spawnRadius = 5000.0;  // 範囲を広げて間隔を確保
         this.groundY = 0;
         
         // ライト
@@ -43,10 +47,13 @@ export class Scene11 extends SceneTemplate {
         this.setupLights();
         
         // シンプルな建物（Box）をインスタンシングで作成
-        this.createSimpleBuildings();
+        // this.createSimpleBuildings();  // 一旦コメントアウト
         
         // 特殊な形状の建物（3Dモデル）を読み込む
         await this.loadSpecialBuildings();
+        
+        // 建物数を更新（HUD表示用）
+        this.updateBuildingCount();
     }
     
     /**
@@ -126,10 +133,10 @@ export class Scene11 extends SceneTemplate {
             const x = Math.cos(angle) * radius;
             const z = Math.sin(angle) * radius;
             
-            // 建物のサイズをランダムに決定
-            const width = 20 + Math.random() * 80;  // 20-100
-            const depth = 20 + Math.random() * 80;  // 20-100
-            const height = 30 + Math.random() * 200;  // 30-230
+            // 建物のサイズをランダムに決定（PLATEAUの建物と整合性を取るため少し大きく）
+            const width = 50 + Math.random() * 150;  // 50-200
+            const depth = 50 + Math.random() * 150;  // 50-200
+            const height = 50 + Math.random() * 300;  // 50-350
             
             // 位置（Y座標は地面の高さ + 建物の高さの半分）
             const y = this.groundY + height / 2.0;
@@ -154,43 +161,54 @@ export class Scene11 extends SceneTemplate {
         
         // 更新をマーク
         this.instancedBuildings.markNeedsUpdate();
-        
-        console.log(`Scene11: ${this.numSimpleBuildings} simple buildings created (instanced)`);
+    }
+    
+    /**
+     * 建物数を更新（HUD表示用）
+     */
+    updateBuildingCount() {
+        const instancedCount = this.instancedBuildings ? this.instancedBuildings.getCount() : 0;
+        const specialCount = this.specialBuildings.length;
+        this.totalBuildingCount = instancedCount + specialCount;
+        this.setParticleCount(this.totalBuildingCount);
     }
     
     /**
      * 特殊な形状の建物（3Dモデル）を読み込む
+     * Project PLATEAUのOBJデータを読み込む
      */
     async loadSpecialBuildings() {
-        // 3Dモデルのパス（public/models/plateau/に配置する想定）
-        const modelPaths = [
-            // '/models/plateau/building1.glb',
-            // '/models/plateau/building2.obj',
-            // 例として、実際のパスを指定する必要がある
-        ];
+        // LOD1のOBJファイルを全て読み込む（100個）
+        const lod1BasePath = '/assets/533946_2/LOD1';
         
-        if (modelPaths.length === 0) {
-            console.log('Scene11: No special building models to load');
-            return;
-        }
-        
-        const gltfLoader = new GLTFLoader();
         const objLoader = new OBJLoader();
+        const mtlLoader = new MTLLoader();
         
-        for (const path of modelPaths) {
+        // 読み込みカウンター
+        let loadedCount = 0;
+        const maxLoadCount = 60;  // 60個の建物を読み込み
+        
+        // LOD1の全フォルダを順次読み込む
+        for (let i = 0; i < maxLoadCount; i++) {
+            const folder = `533946${String(i).padStart(2, '0')}`;
+            
+            const objPath = `${lod1BasePath}/${folder}/${folder}_bldg_6677.obj`;
+            const mtlPath = `${lod1BasePath}/${folder}/${folder}_bldg_6677.mtl`;
+            
             try {
                 let model = null;
                 
-                // ファイル拡張子でローダーを選択
-                if (path.endsWith('.glb') || path.endsWith('.gltf')) {
-                    const gltf = await gltfLoader.loadAsync(path);
-                    model = gltf.scene;
-                } else if (path.endsWith('.obj')) {
-                    model = await objLoader.loadAsync(path);
-                } else {
-                    console.warn(`Scene11: Unsupported model format: ${path}`);
-                    continue;
+                // MTLファイルがある場合は先に読み込む
+                try {
+                    const materials = await mtlLoader.loadAsync(mtlPath);
+                    materials.preload();
+                    objLoader.setMaterials(materials);
+                } catch (mtlError) {
+                    // MTLファイルがない場合はスキップ（OBJのみで読み込む）
                 }
+                
+                // OBJファイルを読み込む
+                model = await objLoader.loadAsync(objPath);
                 
                 // モデルの設定
                 model.traverse((child) => {
@@ -217,33 +235,77 @@ export class Scene11 extends SceneTemplate {
                     }
                 });
                 
-                // 位置をランダムに決定
-                const angle = Math.random() * Math.PI * 2;
-                const radius = Math.random() * this.spawnRadius;
-                const x = Math.cos(angle) * radius;
-                const z = Math.sin(angle) * radius;
+                // 座標の調整（Qiita記事参考：座標が中央から離れているので調整が必要）
+                // 参考: https://qiita.com/ProjectPLATEAU/items/a5a64d681045ea2f76b6
                 
-                // スケールを調整（必要に応じて）
-                const scale = 1.0;  // モデルのサイズに応じて調整
-                model.scale.set(scale, scale, scale);
+                // 回転前に元の座標（PLATEAU実座標）を取得
+                const boxBefore = new THREE.Box3().setFromObject(model);
+                const originalCenter = boxBefore.getCenter(new THREE.Vector3());
                 
-                // 位置を設定
-                model.position.set(x, this.groundY, z);
+                // 最初の建物の座標を基準として保存
+                if (this.specialBuildings.length === 0) {
+                    this.firstBuildingCenter = originalCenter.clone();
+                    console.log('Scene11: First building center:', this.firstBuildingCenter);
+                }
                 
-                // 回転（Y軸周りにランダムに回転）
-                model.rotation.y = Math.random() * Math.PI * 2;
+                // スケールを調整（記事では0.3推奨）
+                const modelScale = 1.0;
+                model.scale.set(modelScale, modelScale, modelScale);
+                
+                // 回転を調整（縦向きになっているのを修正）
+                model.rotation.x = -Math.PI / 2;  // X軸で-90度回転
+                
+                // 回転後にバウンディングボックスを計算（Y座標用）
+                model.updateMatrixWorld(true);
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                
+                // PLATEAUの元の座標から相対位置を計算（位置関係を保つ）
+                // 座標をスケールダウンして画面内に収める
+                const positionScale = 0.01;  // 1/100にスケールダウン
+                const relativeX = (originalCenter.x - this.firstBuildingCenter.x) * positionScale;
+                const relativeZ = (originalCenter.z - this.firstBuildingCenter.z) * positionScale;
+                
+                console.log(`Scene11: Building ${this.specialBuildings.length} - relativePos: (${relativeX.toFixed(2)}, ${relativeZ.toFixed(2)}), center: (${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)})`);
+                
+                // 建物を配置
+                // 全ての建物を同じ座標系で配置（最初の建物のcenterオフセット + 相対位置）
+                if (this.specialBuildings.length === 0) {
+                    // 最初の建物：centerオフセットのみ
+                    this.firstBuildingCenterOffset = new THREE.Vector3(-center.x, 0, -center.z);
+                }
+                
+                // 全ての建物：最初の建物のcenterオフセット + 相対位置
+                model.position.set(
+                    this.firstBuildingCenterOffset.x + relativeX,
+                    0,
+                    this.firstBuildingCenterOffset.z + relativeZ
+                );
                 
                 // シーンに追加
                 this.scene.add(model);
                 this.specialBuildings.push(model);
                 
-                console.log(`Scene11: Loaded special building: ${path}`);
+                loadedCount++;
             } catch (error) {
-                console.error(`Scene11: Error loading model ${path}:`, error);
+                console.warn(`Scene11: Error loading model ${objPath}:`, error);
+                // エラーが発生しても続行
             }
         }
         
-        console.log(`Scene11: ${this.specialBuildings.length} special buildings loaded`);
+        // 建物数を更新（HUD表示用）
+        this.updateBuildingCount();
+    }
+    
+    /**
+     * LOD2の建物を読み込む（テクスチャ付き、より詳細）
+     * パフォーマンスを考慮して、必要に応じて使用
+     */
+    async loadLOD2Buildings() {
+        const lod2BasePath = '/assets/533946_2/LOD2';
+        // LOD2の構造を確認して実装
+        // テクスチャも読み込む必要がある
     }
     
     /**

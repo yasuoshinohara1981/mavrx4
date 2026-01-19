@@ -28,6 +28,7 @@ export class Scene11 extends SceneTemplate {
         // 建物の生成範囲
         this.spawnRadius = 5000.0;  // 範囲を広げて間隔を確保
         this.groundY = 0;
+        this.offsetY = -500;  // Y座標のオフセット（調整用）
         
         // ライト
         this.ambientLight = null;
@@ -272,14 +273,17 @@ export class Scene11 extends SceneTemplate {
                 // 建物を配置
                 // 全ての建物を同じ座標系で配置（最初の建物のcenterオフセット + 相対位置）
                 if (this.specialBuildings.length === 0) {
-                    // 最初の建物：centerオフセットのみ
+                    // 最初の建物：centerオフセットを保存
                     this.firstBuildingCenterOffset = new THREE.Vector3(-center.x, 0, -center.z);
                 }
+                
+                // Y座標：単純にoffsetYで下げる
+                const yPosition = this.offsetY;
                 
                 // 全ての建物：最初の建物のcenterオフセット + 相対位置
                 model.position.set(
                     this.firstBuildingCenterOffset.x + relativeX,
-                    0,
+                    yPosition,
                     this.firstBuildingCenterOffset.z + relativeZ
                 );
                 

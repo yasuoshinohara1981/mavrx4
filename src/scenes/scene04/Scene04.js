@@ -12,7 +12,7 @@ export class Scene04 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | drmsh';
         this.sceneNumber = 4;
-        this.kitNo = 4;  // キット番号を設定
+        this.kitNo = 37;  // キット番号を設定
         console.log('Scene04: コンストラクタ実行', this.title);
         
         // 共有リソースマネージャー

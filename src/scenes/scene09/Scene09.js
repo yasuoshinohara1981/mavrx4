@@ -14,7 +14,7 @@ export class Scene09 extends SceneTemplate {
         super(renderer, camera, sharedResourceManager);
         this.title = 'mathym | Scene09 - 新宿駅構内';
         this.sceneNumber = 9;
-        this.kitNo = 9;  // キット番号を設定
+        this.kitNo = 0;  // キット番号を設定
         
         // コントロール
         this.mapControls = null;

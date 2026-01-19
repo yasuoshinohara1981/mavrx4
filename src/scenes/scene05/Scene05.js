@@ -16,7 +16,7 @@ export class Scene05 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | Kch20';
         this.sceneNumber = 5;
-        this.kitNo = 5;  // キット番号を設定
+        this.kitNo = 22;  // キット番号を設定
         
         // カメラデバッグを有効化
         this.SHOW_CAMERA_DEBUG = false;

@@ -16,7 +16,7 @@ export class Scene10 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | SP-n(Hrrr)';
         this.sceneNumber = 10;
-        this.kitNo = 10;  // キット番号を設定
+        this.kitNo = 18;  // キット番号を設定
         debugLog('scene10', 'コンストラクタ実行', this.title);
         
         // 共有リソースマネージャー

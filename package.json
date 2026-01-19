@@ -12,6 +12,7 @@
   "dependencies": {
     "osc-js": "^2.4.0",
     "three": "^0.160.0",
+    "three.meshline": "^1.4.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {

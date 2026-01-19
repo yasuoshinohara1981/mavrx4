@@ -203,10 +203,3 @@ export class Scene09GPUParticleSystem extends GPUParticleSystem {
         this.particleSystem = new THREE.Points(this.particleGeometry, this.particleMaterial);
     }
 }
-
-
-
-
-
-
-

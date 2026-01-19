@@ -14,7 +14,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 export class Scene05 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'mathym | Scene05';
+        this.title = 'mathym | Kch20';
         this.sceneNumber = 5;
         
         // カメラデバッグを有効化

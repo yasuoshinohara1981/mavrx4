@@ -18,6 +18,7 @@ export class Scene01 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | wzswrs';
         this.sceneNumber = 1;
+        this.kitNo = 1;  // キット番号を設定
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;

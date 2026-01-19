@@ -34,6 +34,9 @@ export class SceneManager {
         // HUDの状態をグローバルに保持（シーン切り替えに関係なく保持）
         this.globalShowHUD = true;
         
+        // 選択されたキット番号（OSCの/kit/メッセージで受け取る値）
+        this.selectedKitNo = 0;
+        
         // シーンを初期化
         this.initScenes();
     }
@@ -251,10 +254,47 @@ export class SceneManager {
     }
     
     handleOSC(message) {
+        // /kit/メッセージを処理（シーン切り替えを伴うため、SceneManagerで処理）
+        if (message.address === '/kit/' || message.address === '/kit') {
+            const args = message.args || [];
+            if (args.length > 0) {
+                const kitValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+                if (!isNaN(kitValue)) {
+                    const kitNo = Math.floor(kitValue);
+                    this.selectedKitNo = kitNo;
+                    console.log(`[SceneManager] Kit number received: ${kitNo}, switching scene...`);
+                    
+                    // 該当するkitNoを持つシーンを探して切り替え
+                    this.switchSceneByKitNo(kitNo);
+                }
+            }
+            return;  // 処理済み（シーン切り替えが発生するため、現在のシーンのhandleOSCは呼ばない）
+        }
+        
+        // その他のOSCメッセージは現在のシーンに転送
         const scene = this.scenes[this.currentSceneIndex];
         if (scene) {
             scene.handleOSC(message);
         }
+    }
+    
+    /**
+     * キット番号でシーンを切り替え
+     * @param {number} kitNo - キット番号
+     */
+    switchSceneByKitNo(kitNo) {
+        // 全シーンを確認して、該当するkitNoを持つシーンを探す
+        for (let i = 0; i < this.scenes.length; i++) {
+            const scene = this.scenes[i];
+            if (scene && scene.kitNo === kitNo) {
+                console.log(`[SceneManager] Found scene with kitNo ${kitNo} at index ${i}, switching...`);
+                this.switchScene(i);
+                return;
+            }
+        }
+        
+        // 該当するシーンが見つからない場合
+        console.warn(`[SceneManager] Scene with kitNo ${kitNo} not found`);
     }
     
     onResize() {

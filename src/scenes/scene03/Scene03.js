@@ -15,6 +15,7 @@ export class Scene03 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | uiojp';
         this.sceneNumber = 3;
+        this.kitNo = 3;  // キット番号を設定
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;

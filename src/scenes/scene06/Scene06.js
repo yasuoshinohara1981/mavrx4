@@ -17,6 +17,7 @@ export class Scene06 extends SceneBase {
         super(renderer, camera);
         this.title = 'mathym | 07-XPL';
         this.sceneNumber = 6;
+        this.kitNo = 6;  // キット番号を設定
         
         // パーティクル設定
         this.numParticles = 120000;

@@ -9,6 +9,7 @@ export class Scene11 extends SceneTemplate {
         super(renderer, camera, sharedResourceManager);
         this.title = 'mathym | Scene11';
         this.sceneNumber = 11;
+        this.kitNo = 11;  // キット番号を設定
         
         // ============================================
         // ここにシーン固有のプロパティを定義

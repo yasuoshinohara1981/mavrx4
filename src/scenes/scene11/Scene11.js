@@ -8,6 +8,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
+import { Particle } from '../../lib/Particle.js';
 
 export class Scene11 extends SceneTemplate {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -21,6 +22,7 @@ export class Scene11 extends SceneTemplate {
         this.instancedBuildings = null;  // インスタンシング用の建物マネージャー
         this.numSimpleBuildings = 4900;  // シンプルな建物（Box）の数（5000 - 100 = 4900）
         this.specialBuildings = [];  // 特殊な形状の建物（3Dモデル）
+        this.buildingParticles = [];  // 各建物の物理演算用Particleインスタンス
         this.firstBuildingCenter = null;  // 最初の建物の中心座標（相対位置計算用）
         this.firstBuildingCenterOffset = null;  // 最初の建物のcenterオフセット（全建物の基準位置）
         this.totalBuildingCount = 0;  // 総建物数（HUD表示用）
@@ -29,6 +31,10 @@ export class Scene11 extends SceneTemplate {
         this.spawnRadius = 5000.0;  // 範囲を広げて間隔を確保
         this.groundY = 0;
         this.offsetY = -500;  // Y座標のオフセット（調整用）
+        
+        // 物理演算設定
+        this.gravity = new THREE.Vector3(0, -9.8, 0);  // 重力
+        this.physicsEnabled = false;  // 物理演算の有効/無効
         
         // ライト
         this.ambientLight = null;
@@ -291,6 +297,16 @@ export class Scene11 extends SceneTemplate {
                 this.scene.add(model);
                 this.specialBuildings.push(model);
                 
+                // 物理演算用のParticleインスタンスを作成
+                const particle = new Particle(
+                    this.firstBuildingCenterOffset.x + relativeX,
+                    yPosition,
+                    this.firstBuildingCenterOffset.z + relativeZ
+                );
+                particle.friction = 0.98;  // 摩擦を強めに設定
+                particle.maxSpeed = 50.0;  // 最大速度
+                this.buildingParticles.push(particle);
+                
                 loadedCount++;
             } catch (error) {
                 console.warn(`Scene11: Error loading model ${objPath}:`, error);
@@ -320,6 +336,34 @@ export class Scene11 extends SceneTemplate {
         
         // 時間を更新
         this.time += deltaTime;
+        
+        // 物理演算が有効な場合、建物を更新
+        if (this.physicsEnabled && this.buildingParticles.length > 0) {
+            for (let i = 0; i < this.buildingParticles.length; i++) {
+                const particle = this.buildingParticles[i];
+                const building = this.specialBuildings[i];
+                
+                if (!particle || !building) continue;
+                
+                // 重力を適用
+                particle.addForce(this.gravity);
+                
+                // パーティクルを更新
+                particle.update();
+                
+                // 地面との衝突判定（バウンド）
+                const pos = particle.getPosition();
+                if (pos.y < this.groundY) {
+                    pos.y = this.groundY;
+                    particle.velocity.y *= -0.5;  // バウンド（反発係数0.5）
+                    particle.velocity.x *= 0.8;  // 地面での摩擦
+                    particle.velocity.z *= 0.8;
+                }
+                
+                // 建物のメッシュ位置を更新
+                building.position.copy(pos);
+            }
+        }
         
         // 建物のアニメーション（必要に応じて）
         // 例：建物が上下に揺れる、回転するなど
@@ -353,6 +397,56 @@ export class Scene11 extends SceneTemplate {
     }
     
     /**
+     * トラック番号を処理
+     */
+    handleTrackNumber(trackNumber, message) {
+        if (trackNumber === 5) {
+            // トラック5: 全ての建物の表示/非表示をトグル
+            const visible = !this.specialBuildings[0]?.visible;
+            this.specialBuildings.forEach(building => {
+                building.visible = visible;
+            });
+            
+            if (this.instancedBuildings) {
+                this.instancedBuildings.setVisible(visible);
+            }
+        } else if (trackNumber === 6) {
+            // トラック6: 物理演算ON/OFF
+            this.physicsEnabled = !this.physicsEnabled;
+            console.log(`Scene11: Physics ${this.physicsEnabled ? 'ON' : 'OFF'}`);
+        } else if (trackNumber === 7) {
+            // トラック7: 中心から放射状に爆発
+            this.applyExplosionForce(new THREE.Vector3(0, 0, 0), 1000.0, 50.0);
+        }
+    }
+    
+    /**
+     * 爆発の力を適用（中心点から放射状に力を加える）
+     */
+    applyExplosionForce(center, radius, strength) {
+        for (let i = 0; i < this.buildingParticles.length; i++) {
+            const particle = this.buildingParticles[i];
+            const building = this.specialBuildings[i];
+            
+            if (!particle || !building) continue;
+            
+            const pos = particle.getPosition();
+            const direction = new THREE.Vector3().subVectors(pos, center);
+            const distance = direction.length();
+            
+            if (distance < radius && distance > 0) {
+                // 距離に応じた力の減衰
+                const forceMagnitude = strength * (1.0 - distance / radius);
+                direction.normalize().multiplyScalar(forceMagnitude);
+                particle.addForce(direction);
+                
+                // 物理演算を有効化（爆発時は自動的にON）
+                this.physicsEnabled = true;
+            }
+        }
+    }
+    
+    /**
      * リセット処理
      */
     reset() {
@@ -361,8 +455,14 @@ export class Scene11 extends SceneTemplate {
         // 時間をリセット
         this.time = 0.0;
         
-        // 建物の位置をリセット（必要に応じて）
-        // ここでは実装しないが、必要に応じて追加可能
+        // 物理演算をリセット
+        this.physicsEnabled = false;
+        for (let i = 0; i < this.buildingParticles.length; i++) {
+            const particle = this.buildingParticles[i];
+            if (particle) {
+                particle.reset();
+            }
+        }
     }
     
     /**

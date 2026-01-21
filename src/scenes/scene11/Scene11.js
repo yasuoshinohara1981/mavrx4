@@ -400,17 +400,8 @@ export class Scene11 extends SceneTemplate {
      * トラック番号を処理
      */
     handleTrackNumber(trackNumber, message) {
-        if (trackNumber === 5) {
-            // トラック5: 全ての建物の表示/非表示をトグル
-            const visible = !this.specialBuildings[0]?.visible;
-            this.specialBuildings.forEach(building => {
-                building.visible = visible;
-            });
-            
-            if (this.instancedBuildings) {
-                this.instancedBuildings.setVisible(visible);
-            }
-        } else if (trackNumber === 6) {
+        // トラック5の処理は削除（建物が消えたり現れたりする問題を回避）
+        if (trackNumber === 6) {
             // トラック6: 物理演算ON/OFF
             this.physicsEnabled = !this.physicsEnabled;
             console.log(`Scene11: Physics ${this.physicsEnabled ? 'ON' : 'OFF'}`);

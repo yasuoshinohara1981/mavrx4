@@ -1335,6 +1335,45 @@ export class Scene05 extends SceneBase {
         // スクリーンショットテキストを描画
         this.drawScreenshotText();
         
+        // デバッグ用シーンを描画（エフェクト適用後、HUDと同じタイミング）
+        // カメラデバッグとAxesHelperはエフェクトから除外
+        // SHOW_CAMERA_DEBUGがtrueの時のみレンダリング
+        if (this.SHOW_CAMERA_DEBUG && this.debugScene) {
+            // 診断ログ（一時的）
+            if (!this._debugLogged) {
+                console.log('[Scene05 Debug]', {
+                    debugScene: !!this.debugScene,
+                    debugSceneChildren: this.debugScene?.children?.length,
+                    cameraDebugGroup: !!this.cameraDebugGroup,
+                    cameraDebugGroupVisible: this.cameraDebugGroup?.visible,
+                    cameraDebugGroupParent: this.cameraDebugGroup?.parent?.uuid === this.debugScene?.uuid ? 'debugScene' : 'other',
+                    cameraDebugGroupChildren: this.cameraDebugGroup?.children?.length,
+                    cameraDebugSpheres: this.cameraDebugSpheres?.length,
+                    firstSphereVisible: this.cameraDebugSpheres?.[0]?.visible,
+                    firstSphereParent: this.cameraDebugSpheres?.[0]?.parent?.uuid === this.cameraDebugGroup?.uuid ? 'cameraDebugGroup' : 'other',
+                    cameraParticles: this.cameraParticles?.length
+                });
+                this._debugLogged = true;
+            }
+            
+            // debugSceneの背景を確実に透明にする
+            this.debugScene.background = null;
+            
+            // EffectComposerがレンダーターゲットを変更している可能性があるので、
+            // 明示的にnull（画面）に設定
+            this.renderer.setRenderTarget(null);
+            
+            // autoClearを一時的にfalseにして、sceneの描画結果を保持したまま
+            // debugSceneを上書きレンダリングする
+            const originalAutoClear = this.renderer.autoClear;
+            this.renderer.autoClear = false;
+            
+            this.renderer.render(this.debugScene, this.camera);
+            
+            // autoClearを復元
+            this.renderer.autoClear = originalAutoClear;
+        }
+        
         // カメラデバッグを描画（テキスト）
         this.drawCameraDebug();
     }

@@ -648,10 +648,21 @@ export class Scene03 extends SceneBase {
         
         // デバッグ用シーンを描画（エフェクト適用後、HUDと同じタイミング）
         // カメラデバッグとAxesHelperはエフェクトから除外
-        // 一時的に無効化（問題が発生しているため）
-        // if (this.debugScene) {
-        //     this.renderer.render(this.debugScene, this.camera, null, false);
-        // }
+        // SHOW_CAMERA_DEBUGがtrueの時のみレンダリング
+        if (this.SHOW_CAMERA_DEBUG && this.debugScene) {
+            // debugSceneの背景を確実に透明にする
+            this.debugScene.background = null;
+            
+            // autoClearを一時的にfalseにして、sceneの描画結果を保持したまま
+            // debugSceneを上書きレンダリングする
+            const originalAutoClear = this.renderer.autoClear;
+            this.renderer.autoClear = false;
+            
+            this.renderer.render(this.debugScene, this.camera);
+            
+            // autoClearを復元
+            this.renderer.autoClear = originalAutoClear;
+        }
         
         // カメラデバッグを描画（テキスト）
         this.drawCameraDebug();

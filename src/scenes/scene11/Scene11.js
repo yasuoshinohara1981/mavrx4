@@ -61,6 +61,9 @@ export class Scene11 extends SceneTemplate {
         
         // 建物数を更新（HUD表示用）
         this.updateBuildingCount();
+        
+        // 建物の範囲をカバーするグリッドを配置
+        this.setupBuildingGrid();
     }
     
     /**
@@ -178,6 +181,59 @@ export class Scene11 extends SceneTemplate {
         const specialCount = this.specialBuildings.length;
         this.totalBuildingCount = instancedCount + specialCount;
         this.setParticleCount(this.totalBuildingCount);
+    }
+    
+    /**
+     * 建物の範囲をカバーするグリッドを配置
+     */
+    setupBuildingGrid() {
+        if (this.specialBuildings.length === 0) {
+            console.warn('Scene11: No buildings to calculate grid bounds');
+            return;
+        }
+        
+        // 全ての建物を含むバウンディングボックスを計算
+        const box = new THREE.Box3();
+        
+        this.specialBuildings.forEach(building => {
+            building.updateMatrixWorld(true);
+            const buildingBox = new THREE.Box3().setFromObject(building);
+            box.union(buildingBox);
+        });
+        
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // グリッドのパラメータを設定
+        // 建物の範囲に少し余白を追加
+        const padding = 100;  // 余白
+        const gridSize = {
+            x: size.x + padding * 2,
+            y: size.y + padding * 2,
+            z: size.z + padding * 2
+        };
+        
+        // グリッドを初期化
+        this.showGridRuler3D = true;
+        this.initGridRuler3D({
+            center: center,
+            size: gridSize,
+            floorY: this.offsetY - 10,  // 地面より少し下に配置
+            floorSize: Math.max(gridSize.x, gridSize.z) * 1.2,  // 床のサイズ
+            floorDivisions: 40,
+            divX: 20,
+            divY: 10,
+            divZ: 20,
+            labelMax: 100,  // ラベルの最大値
+            color: 0xffffff,
+            opacity: 0.5
+        });
+        
+        console.log('Scene11: Grid initialized for building bounds:', {
+            center: center,
+            size: size,
+            gridSize: gridSize
+        });
     }
     
     /**

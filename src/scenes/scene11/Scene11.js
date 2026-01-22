@@ -9,6 +9,8 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Particle } from '../../lib/Particle.js';
+import { MeshLine, MeshLineMaterial } from 'three.meshline';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export class Scene11 extends SceneTemplate {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -40,6 +42,22 @@ export class Scene11 extends SceneTemplate {
         this.ambientLight = null;
         this.directionalLight = null;
         
+        // エッジ表示設定
+        this.showEdges = true;  // エッジ表示の有効/無効
+        this.edgeColor = 0x888888;  // エッジの色（薄いグレー）
+        this.edgeLineWidth = 1;  // エッジの線幅
+        
+        // グリッド表示設定
+        this.showGridLines = false;  // グリッドの線を表示するか（デフォルト: false）
+        
+        // 床の平面
+        this.floorPlane = null;  // 床の塗りつぶし平面
+        
+        // 道のネットワーク
+        this.roadMaterial = null;
+        this.roadMesh = null;
+        this.roadColor = 0xffaa00;  // 道の色（オレンジ）
+        
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
@@ -64,6 +82,9 @@ export class Scene11 extends SceneTemplate {
         
         // 建物の範囲をカバーするグリッドを配置
         this.setupBuildingGrid();
+        
+        // 道のネットワークを読み込む
+        await this.loadRoadNetwork();
     }
     
     /**
@@ -214,20 +235,41 @@ export class Scene11 extends SceneTemplate {
         };
         
         // グリッドを初期化
-        this.showGridRuler3D = true;
-        this.initGridRuler3D({
-            center: center,
-            size: gridSize,
-            floorY: this.offsetY - 10,  // 地面より少し下に配置
-            floorSize: Math.max(gridSize.x, gridSize.z) * 1.2,  // 床のサイズ
-            floorDivisions: 40,
-            divX: 20,
-            divY: 10,
-            divZ: 20,
-            labelMax: 100,  // ラベルの最大値
-            color: 0xffffff,
-            opacity: 0.5
+        const floorY = this.offsetY - 10;  // 地面より少し下に配置
+        const floorSize = Math.max(gridSize.x, gridSize.z) * 1.2;  // 床のサイズ
+        
+        // グリッドの線を表示するかどうかでフラグを設定
+        this.showGridRuler3D = this.showGridLines;
+        
+        if (this.showGridLines) {
+            this.initGridRuler3D({
+                center: center,
+                size: gridSize,
+                floorY: floorY,
+                floorSize: floorSize,
+                floorDivisions: 40,
+                divX: 20,
+                divY: 10,
+                divZ: 20,
+                labelMax: 100,  // ラベルの最大値
+                color: 0xffffff,
+                opacity: 0.5
+            });
+        }
+        
+        // 床の塗りつぶし平面を追加
+        const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize);
+        const floorMaterial = new THREE.MeshStandardMaterial({
+            color: 0x333333,  // 暗いグレー
+            metalness: 0.1,
+            roughness: 0.9,
+            side: THREE.DoubleSide
         });
+        this.floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
+        this.floorPlane.rotation.x = -Math.PI / 2;  // XZ平面に配置
+        this.floorPlane.position.set(center.x, floorY, center.z);
+        this.floorPlane.receiveShadow = true;  // シャドウを受ける
+        this.scene.add(this.floorPlane);
         
         console.log('Scene11: Grid initialized for building bounds:', {
             center: center,
@@ -294,6 +336,17 @@ export class Scene11 extends SceneTemplate {
                                     child.material.roughness = 0.8;
                                 }
                             }
+                        }
+                        
+                        // エッジを追加
+                        if (this.showEdges && child.geometry) {
+                            const edgesGeometry = new THREE.EdgesGeometry(child.geometry);
+                            const edgesMaterial = new THREE.LineBasicMaterial({ 
+                                color: this.edgeColor,
+                                linewidth: this.edgeLineWidth
+                            });
+                            const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
+                            child.add(edges);
                         }
                     }
                 });
@@ -385,6 +438,168 @@ export class Scene11 extends SceneTemplate {
     }
     
     /**
+     * 道のネットワークのマテリアルを作成
+     */
+    createRoadMaterial() {
+        const roadMaterial = new MeshLineMaterial({
+            transparent: true,
+            lineWidth: 3,  // 道の幅
+            color: new THREE.Color(this.roadColor),
+            opacity: 0.8
+        });
+        
+        return roadMaterial;
+    }
+    
+    /**
+     * 道の色を変更
+     */
+    setRoadColor(color) {
+        this.roadColor = color;
+        if (this.roadMaterial) {
+            this.roadMaterial.color = new THREE.Color(color);
+        }
+    }
+    
+    /**
+     * 道のネットワークを読み込む
+     */
+    async loadRoadNetwork() {
+        try {
+            console.log('Scene11: Loading road network...');
+            
+            // ノードデータを読み込む
+            const nodeResponse = await fetch('/nw/Shinjuku_node.geojson');
+            const nodeData = await nodeResponse.json();
+            
+            // ノードIDと座標のマップを作成
+            const nodeMap = new Map();
+            nodeData.features.forEach((feature) => {
+                nodeMap.set(feature.properties.node_id, {
+                    coordinates: feature.geometry.coordinates,
+                    ordinal: feature.properties.ordinal || 0
+                });
+            });
+            
+            // リンクデータを読み込む
+            const linkResponse = await fetch('/nw/Shinjuku_link.geojson');
+            const linkData = await linkResponse.json();
+            
+            // メッシュラインの配列
+            const meshLines = [];
+            this.roadMaterial = this.createRoadMaterial();
+            
+            // 座標変換の基準点（建物の座標系に合わせる）
+            const positionScale = 0.01;  // 建物と同じスケール
+            const roadYOffset = this.offsetY + 1;  // 道を地面の少し上に配置
+            
+            // 最初の建物の中心座標を基準にする
+            if (!this.firstBuildingCenter) {
+                console.warn('Scene11: firstBuildingCenter is not set, using first node as reference');
+                const firstNode = nodeData.features[0];
+                if (firstNode) {
+                    this.firstBuildingCenter = new THREE.Vector3(
+                        firstNode.geometry.coordinates[0],
+                        0,
+                        firstNode.geometry.coordinates[1]
+                    );
+                }
+            }
+            
+            const baseCenter = this.firstBuildingCenter;
+            
+            if (!baseCenter) {
+                console.error('Scene11: Cannot determine base center for road network');
+                return;
+            }
+            
+            linkData.features.forEach((feature) => {
+                const coordinates = feature.geometry.coordinates;
+                
+                // ノードデータからstart_idとend_idの取得
+                const startNode = nodeMap.get(feature.properties.start_id);
+                const endNode = nodeMap.get(feature.properties.end_id);
+                
+                // 3次元のpointの配列を作成
+                const points = coordinates.map((point, index) => {
+                    let y = roadYOffset;
+                    
+                    // ノードのordinalを使用してY座標を設定
+                    if (startNode && endNode) {
+                        if (index === 0) {
+                            y = roadYOffset + startNode.ordinal * 0.1;
+                        } else if (index === coordinates.length - 1) {
+                            y = roadYOffset + endNode.ordinal * 0.1;
+                        } else {
+                            y = roadYOffset + (startNode.ordinal + endNode.ordinal) / 2 * 0.1;
+                        }
+                    } else if (startNode) {
+                        y = roadYOffset + startNode.ordinal * 0.1;
+                    } else if (endNode) {
+                        y = roadYOffset + endNode.ordinal * 0.1;
+                    }
+                    
+                    // 座標変換：GeoJSON座標を建物の座標系に変換
+                    let x, z;
+                    if (baseCenter) {
+                        x = (point[0] - baseCenter.x) * positionScale;
+                        z = -(point[1] - baseCenter.z) * positionScale;  // Z軸を反転
+                    } else {
+                        x = point[0] * positionScale;
+                        z = -point[1] * positionScale;
+                    }
+                    
+                    // 建物のオフセットを適用（firstBuildingCenterOffsetが設定されている場合）
+                    if (this.firstBuildingCenterOffset) {
+                        x += this.firstBuildingCenterOffset.x;
+                        z += this.firstBuildingCenterOffset.z;
+                    }
+                    
+                    return new THREE.Vector3(x, y, z);
+                });
+                
+                // pointの配列からMeshLineを作成
+                points.forEach((point, index) => {
+                    // 最後の点の場合は処理を終了
+                    if (index + 1 === points.length) return;
+                    
+                    // MeshLineを作成。2点間のMeshLineを別々に作成する
+                    const geometry = new THREE.BufferGeometry().setFromPoints([point, points[index + 1]]);
+                    const line = new MeshLine();
+                    line.setGeometry(geometry);
+                    
+                    // 2点間の距離を計算
+                    const distance = point.distanceTo(points[index + 1]);
+                    
+                    // MeshLineの頂点数を取得
+                    const numVerticesAfter = line.geometry.getAttribute('position').count;
+                    
+                    // 頂点数に基づいて distances 配列を生成しsetAttributeで頂点属性を追加
+                    const distances = new Float32Array(numVerticesAfter).fill(distance);
+                    line.setAttribute('uDistance', new THREE.BufferAttribute(distances, 1));
+                    
+                    // MeshLineの配列に追加
+                    meshLines.push(line.geometry);
+                });
+            });
+            
+            // MeshLineをマージ
+            if (meshLines.length > 0) {
+                const mergedGeometry = BufferGeometryUtils.mergeGeometries(meshLines);
+                const roadMesh = new THREE.Mesh(mergedGeometry, this.roadMaterial);
+                roadMesh.name = 'road';
+                this.roadMesh = roadMesh;
+                this.scene.add(roadMesh);
+                console.log(`Scene11: Road network loaded (${meshLines.length} segments)`);
+            } else {
+                console.warn('Scene11: No road segments found');
+            }
+        } catch (error) {
+            console.error('Scene11: Error loading road network:', error);
+        }
+    }
+    
+    /**
      * 更新処理（毎フレーム呼ばれる）
      */
     onUpdate(deltaTime) {
@@ -434,30 +649,15 @@ export class Scene11 extends SceneTemplate {
         
         const args = message.args || [];
         
-        // トラック5: 建物の表示/非表示を切り替え
         if (trackNumber === 5) {
+            // トラック5: 道の色を変更（velocity値で色を制御）
             const velocity = args[1] || 127.0;
-            const isVisible = velocity > 64;
-            
-            if (this.instancedBuildings) {
-                this.instancedBuildings.getMainMesh().visible = isVisible;
-                if (this.instancedBuildings.getWireframeMesh()) {
-                    this.instancedBuildings.getWireframeMesh().visible = isVisible;
-                }
-            }
-            
-            this.specialBuildings.forEach(building => {
-                building.visible = isVisible;
-            });
-        }
-    }
-    
-    /**
-     * トラック番号を処理
-     */
-    handleTrackNumber(trackNumber, message) {
-        // トラック5の処理は削除（建物が消えたり現れたりする問題を回避）
-        if (trackNumber === 6) {
+            // velocityを0-255の範囲で色に変換
+            const hue = (velocity / 255.0) * 360;  // 0-360度の色相
+            const color = new THREE.Color().setHSL(hue / 360, 1.0, 0.5);
+            this.setRoadColor(color.getHex());
+            console.log(`Scene11: Road color changed to ${color.getHexString()}`);
+        } else if (trackNumber === 6) {
             // トラック6: 物理演算ON/OFF
             this.physicsEnabled = !this.physicsEnabled;
             console.log(`Scene11: Physics ${this.physicsEnabled ? 'ON' : 'OFF'}`);
@@ -548,6 +748,31 @@ export class Scene11 extends SceneTemplate {
         if (this.directionalLight) {
             this.scene.remove(this.directionalLight);
             this.directionalLight = null;
+        }
+        
+        // 床の平面を削除
+        if (this.floorPlane) {
+            this.scene.remove(this.floorPlane);
+            if (this.floorPlane.geometry) {
+                this.floorPlane.geometry.dispose();
+            }
+            if (this.floorPlane.material) {
+                this.floorPlane.material.dispose();
+            }
+            this.floorPlane = null;
+        }
+        
+        // 道のネットワークを削除
+        if (this.roadMesh) {
+            this.scene.remove(this.roadMesh);
+            if (this.roadMesh.geometry) {
+                this.roadMesh.geometry.dispose();
+            }
+            if (this.roadMaterial) {
+                this.roadMaterial.dispose();
+            }
+            this.roadMesh = null;
+            this.roadMaterial = null;
         }
         
         // データをクリア

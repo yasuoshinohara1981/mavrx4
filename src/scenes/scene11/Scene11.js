@@ -11,6 +11,8 @@ import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Particle } from '../../lib/Particle.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { loadHdrCached } from '../../lib/hdrCache.js';
+import hdri from '../../assets/autumn_field_puresky_1k.hdr';
 
 export class Scene11 extends SceneTemplate {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -51,10 +53,19 @@ export class Scene11 extends SceneTemplate {
         // トラック1のエフェクトをデフォルトON（カメラ1のパーティクルに力を加える）
         this.trackEffects[1] = true;
         
+        // GridRuler3D削除フラグ（一度だけ削除するため）
+        this.gridRuler3DRemoved = false;
+        
         // カメラ1を常に使用floorY
         this.currentCameraIndex = 0;
         
-        // カメラ1の円周運動用
+        // カメラ1の歩行用
+        this.roadPath = [];  // 道のパス（3D座標の配列）
+        this.camera1WalkSpeed = 2.0;  // カメラ1の歩行速度（単位/秒、人間の歩行速度に近づける）
+        this.camera1WalkIndex = 0;  // 現在のパスインデックス
+        this.camera1WalkHeight = 50;  // カメラ1の高さ（人間の目線、cm単位、floorYからのオフセット、もっと低く）
+        
+        // カメラ1の円周運動用（非推奨、歩行に置き換え）
         this.cityCenter = null;  // 街の中心座標（建物群の中心）
         this.camera1OrbitRadius = 2000.0;  // カメラ1の円周運動の半径（近づける）
         this.camera1OrbitSpeed = 0.05;  // カメラ1の円周運動の速度（もっとゆっくりに）
@@ -76,12 +87,12 @@ export class Scene11 extends SceneTemplate {
         this.directionalLight = null;
         
         // エッジ表示設定
-        this.showEdges = true;  // エッジ表示の有効/無効
+        this.showEdges = false;  // エッジ表示の有効/無効
         this.edgeColor = 0x888888;  // エッジの色（薄いグレー）
         this.edgeLineWidth = 1;  // エッジの線幅
         
         // グリッド表示設定
-        this.showGridLines = false;  // グリッドの線を表示するか（デフォルト: false）
+        this.showGridLines = true;  // グリッドの線を表示するか（デフォルト: true、gキーでトグル）
         
         // 床の平面
         this.floorPlane = null;  // 床の塗りつぶし平面
@@ -101,6 +112,15 @@ export class Scene11 extends SceneTemplate {
     async setup() {
         await super.setup();
         
+        // 環境マップ（HDRI）を設定 - 金属質感のために必要
+        try {
+            const envMap = await loadHdrCached(hdri);
+            this.scene.environment = envMap;
+            this.scene.environmentIntensity = 0.5;
+        } catch (e) {
+            console.error('HDRI load failed:', e);
+        }
+        
         // カメラ1を常に使用
         this.currentCameraIndex = 0;
         
@@ -119,6 +139,21 @@ export class Scene11 extends SceneTemplate {
         // 建物の範囲をカバーするグリッドを配置
         this.setupBuildingGrid();
         
+        // GridRuler3Dを削除（縦のグリッドと赤い十字を削除するため）
+        if (this.gridRuler3D) {
+            this.gridRuler3D.dispose();
+            this.scene.remove(this.gridRuler3D.group);
+            this.gridRuler3D = null;
+        }
+        
+        // シーンをトラバースしてGridRuler3Dのグループを探して削除
+        this.scene.traverse((object) => {
+            if (object.name === 'GridRuler3D' || (object.parent && object.parent.name === 'GridRuler3D')) {
+                this.scene.remove(object);
+                if (object.dispose) object.dispose();
+            }
+        });
+        
         // 建物群のバウンディングボックスを計算（カメラ1の方向ランダマイズ用）
         this.calculateBuildingBounds();
         
@@ -127,6 +162,69 @@ export class Scene11 extends SceneTemplate {
         
         // 道のネットワークを読み込む（表示のみ、カメラ制御には使用しない）
         await this.loadRoadNetwork();
+        
+        // カメラの初期位置を設定（道のパスが読み込まれていない場合は街の中心に配置）
+        if (this.cameraParticles && this.cameraParticles[0]) {
+            if (this.roadPath && this.roadPath.length > 0) {
+                // 道のパスが読み込まれている場合、最初の位置に設定
+                const startPoint = this.roadPath[0];
+                this.cameraParticles[0].position.set(
+                    startPoint.x,
+                    this.floorY + this.camera1WalkHeight,
+                    startPoint.z
+                );
+                this.camera1WalkIndex = 0;
+            } else if (this.cityCenter) {
+                // 道のパスが読み込まれていない場合、街の中心に配置
+                // 建物の範囲内に確実に配置するため、バウンディングボックスを計算
+                const box = new THREE.Box3();
+                this.specialBuildings.forEach(building => {
+                    building.updateMatrixWorld(true);
+                    const buildingBox = new THREE.Box3().setFromObject(building);
+                    box.union(buildingBox);
+                });
+                
+                if (!box.isEmpty()) {
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    // 建物の範囲内、中心から少し離れた位置に配置（建物が見えるように）
+                    // 建物のサイズに応じてオフセットを調整
+                    const offsetX = Math.min(size.x * 0.1, 20);  // 最大20単位、建物に近づける
+                    const offsetZ = Math.min(size.z * 0.1, 20);
+                    
+                    const cameraPos = new THREE.Vector3(
+                        center.x + offsetX,
+                        this.floorY + this.camera1WalkHeight,
+                        center.z + offsetZ
+                    );
+                    
+                    this.cameraParticles[0].position.set(
+                        cameraPos.x,
+                        cameraPos.y,
+                        cameraPos.z
+                    );
+                    
+                    // デバッグ用：カメラの位置をログ出力
+                    console.log('Camera position:', cameraPos);
+                    console.log('City center:', center);
+                    console.log('Building size:', size);
+                } else {
+                    // バウンディングボックスが空の場合は街の中心に配置
+                    this.cameraParticles[0].position.set(
+                        this.cityCenter.x,
+                        this.floorY + this.camera1WalkHeight,
+                        this.cityCenter.z
+                    );
+                }
+            } else {
+                // どちらもない場合、原点に配置
+                this.cameraParticles[0].position.set(
+                    0,
+                    this.floorY + this.camera1WalkHeight,
+                    0
+                );
+            }
+        }
     }
     
     /**
@@ -288,19 +386,13 @@ export class Scene11 extends SceneTemplate {
             const defaultCenter = new THREE.Vector3(0, 0, 0);
             const floorY = this.floorY;
             
-            // 床の塗りつぶし平面を追加
-            const floorGeometry = new THREE.PlaneGeometry(defaultFloorSize, defaultFloorSize);
-            const floorMaterial = new THREE.MeshStandardMaterial({
-                color: 0x333333,  // 暗いグレー
-                metalness: 0.1,
-                roughness: 0.9,
-                side: THREE.DoubleSide
-            });
-            this.floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
-            this.floorPlane.rotation.x = -Math.PI / 2;  // XZ平面に配置
-            this.floorPlane.position.set(defaultCenter.x, floorY, defaultCenter.z);
-            this.floorPlane.receiveShadow = true;  // シャドウを受ける
-            this.scene.add(this.floorPlane);
+            // 床のグリッドを追加（斜めの線を避けるためGridHelperを使用）
+            // GridHelperはデフォルトでXZ平面（水平面）に配置されるので回転不要
+            const divisions = Math.ceil(defaultFloorSize / 100);
+            const gridHelper = new THREE.GridHelper(defaultFloorSize, divisions, 0x888888, 0x888888);
+            gridHelper.position.set(defaultCenter.x, floorY, defaultCenter.z);
+            this.floorPlane = gridHelper;
+            this.scene.add(gridHelper);
             return;
         }
         
@@ -324,9 +416,8 @@ export class Scene11 extends SceneTemplate {
             
             const floorGeometry = new THREE.PlaneGeometry(defaultFloorSize, defaultFloorSize);
             const floorMaterial = new THREE.MeshStandardMaterial({
-                color: 0x333333,
-                metalness: 0.1,
-                roughness: 0.9,
+                color: 0x888888,  // グレー
+                wireframe: true,  // ワイヤーフレーム表示
                 side: THREE.DoubleSide
             });
             this.floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
@@ -354,53 +445,55 @@ export class Scene11 extends SceneTemplate {
         if (isNaN(floorSize) || floorSize <= 0 || !isFinite(floorSize)) {
             const defaultFloorSize = 10000;
             
-            const floorGeometry = new THREE.PlaneGeometry(defaultFloorSize, defaultFloorSize);
-            const floorMaterial = new THREE.MeshStandardMaterial({
-                color: 0x333333,
-                metalness: 0.1,
-                roughness: 0.9,
-                side: THREE.DoubleSide
-            });
-            this.floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
-            this.floorPlane.rotation.x = -Math.PI / 2;
-            this.floorPlane.position.set(center.x || 0, floorY, center.z || 0);
-            this.floorPlane.receiveShadow = true;
-            this.scene.add(this.floorPlane);
+            // 床のグリッドを追加（斜めの線を避けるためGridHelperを使用）
+            // GridHelperはデフォルトでXZ平面（水平面）に配置されるので回転不要
+            const divisions = Math.ceil(defaultFloorSize / 100);
+            const gridHelper = new THREE.GridHelper(defaultFloorSize, divisions, 0x888888, 0x888888);
+            gridHelper.position.set(center.x || 0, floorY, center.z || 0);
+            this.floorPlane = gridHelper;
+            this.scene.add(gridHelper);
             return;
         }
         
         // グリッドの線を表示するかどうかでフラグを設定
-        this.showGridRuler3D = this.showGridLines;
+        this.showGridRuler3D = false;  // GridRuler3Dを無効化（縦のグリッドと赤い十字を削除）
         
-        if (this.showGridLines) {
-            this.initGridRuler3D({
-                center: center,
-                size: gridSize,
-                floorY: floorY,
-                floorSize: floorSize,
-                floorDivisions: 40,
-                divX: 20,
-                divY: 10,
-                divZ: 20,
-                labelMax: 100,  // ラベルの最大値
-                color: 0xffffff,
-                opacity: 0.5
-            });
+        // 既存のGridRuler3Dを削除（縦のグリッドと赤い十字を削除するため）
+        if (this.gridRuler3D) {
+            this.gridRuler3D.dispose();
+            this.scene.remove(this.gridRuler3D.group);
+            this.gridRuler3D = null;
         }
         
-        // 床の塗りつぶし平面を追加
-        const floorGeometry = new THREE.PlaneGeometry(floorSize, floorSize);
-        const floorMaterial = new THREE.MeshStandardMaterial({
-            color: 0x333333,  // 暗いグレー
-            metalness: 0.1,
-            roughness: 0.9,
-            side: THREE.DoubleSide
-        });
-        this.floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
-        this.floorPlane.rotation.x = -Math.PI / 2;  // XZ平面に配置
-        this.floorPlane.position.set(center.x, floorY, center.z);
-        this.floorPlane.receiveShadow = true;  // シャドウを受ける
-        this.scene.add(this.floorPlane);
+        // GridRuler3Dは無効化（縦のグリッドと赤い十字が表示されるため）
+        // if (this.showGridLines) {
+        //     // labelMaxを都市のサイズに合わせて動的に設定
+        //     const maxSize = Math.max(gridSize.x, gridSize.y, gridSize.z);
+        //     const labelMax = Math.ceil(maxSize / 100) * 100;  // 100の倍数に切り上げ
+        //     
+        //     this.initGridRuler3D({
+        //         center: center,
+        //         size: gridSize,
+        //         floorY: floorY,
+        //         floorSize: floorSize,
+        //         floorDivisions: 40,
+        //         divX: 2,  // 分割数をさらに減らして赤い十字を減らす
+        //         divY: 2,
+        //         divZ: 2,
+        //         labelMax: labelMax,  // 都市のサイズに合わせて動的に設定
+        //         color: 0xffffff,
+        //         opacity: 0.5
+        //     });
+        // }
+        
+        // 床のグリッドを追加（斜めの線を避けるためGridHelperを使用）
+        // GridHelperはデフォルトでXZ平面（水平面）に配置されるので回転不要
+        const floorGridSize = Math.max(floorSize, 1000);  // 最小サイズを確保
+        const divisions = Math.ceil(floorGridSize / 100);  // 100単位ごとに分割
+        const gridHelper = new THREE.GridHelper(floorGridSize, divisions, 0x888888, 0x888888);
+        gridHelper.position.set(center.x, floorY, center.z);
+        this.floorPlane = gridHelper;  // 後で削除できるように保存
+        this.scene.add(gridHelper);
     }
     
     /**
@@ -474,10 +567,23 @@ export class Scene11 extends SceneTemplate {
                     // MTLがない場合でもOBJは読み込めるので続行
                 }
                 
-                // OBJファイルを読み込む
-                model = await objLoader.loadAsync(objPath);
+                // OBJファイルを読み込む（404エラーはOBJLoaderでキャッチされる）
+                try {
+                    model = await objLoader.loadAsync(objPath);
+                } catch (objError) {
+                    // OBJファイルが存在しない、または404エラーの場合はスキップ
+                    skippedCount++;
+                    continue;
+                }
                 
                 if (!model) {
+                    skippedCount++;
+                    continue;
+                }
+                
+                // モデルがHTML（404エラーページ）でないかチェック
+                // OBJLoaderがHTMLを返した場合、model.childrenが空または不正な形式になる
+                if (model.children.length === 0) {
                     skippedCount++;
                     continue;
                 }
@@ -519,28 +625,32 @@ export class Scene11 extends SceneTemplate {
                         child.castShadow = true;
                         child.receiveShadow = true;
                         
-                        // マテリアルを調整（シンプルな金属質感）
+                        // マテリアルをMeshStandardMaterialに変換（黒っぽい金属質感）
                         if (child.material) {
                             if (Array.isArray(child.material)) {
-                                child.material.forEach(mat => {
-                                    // テクスチャを無効化
-                                    mat.map = null;
-                                    mat.normalMap = null;
-                                    mat.bumpMap = null;
-                                    // 金属質感
-                                    mat.color = new THREE.Color(0x4a4a4a);
-                                    mat.metalness = 1.0;
-                                    mat.roughness = 0.1;
-                                });
+                                const newMaterials = [];
+                                for (let i = 0; i < child.material.length; i++) {
+                                    const oldMat = child.material[i];
+                                    const newMat = new THREE.MeshStandardMaterial({
+                                        color: new THREE.Color(0x1a1a1a),  // 黒っぽい色
+                                        metalness: 1.0,
+                                        roughness: 0.05,  // より滑らかに
+                                        envMapIntensity: 2.0  // 環境マップの強度を上げる
+                                    });
+                                    newMaterials.push(newMat);
+                                    if (oldMat.dispose) oldMat.dispose();
+                                }
+                                child.material = newMaterials;
                             } else {
-                                // テクスチャを無効化
-                                child.material.map = null;
-                                child.material.normalMap = null;
-                                child.material.bumpMap = null;
-                                // 金属質感
-                                child.material.color = new THREE.Color(0x4a4a4a);
-                                child.material.metalness = 1.0;
-                                child.material.roughness = 0.1;
+                                const oldMat = child.material;
+                                const newMat = new THREE.MeshStandardMaterial({
+                                    color: new THREE.Color(0x1a1a1a),  // 黒っぽい色
+                                    metalness: 1.0,
+                                    roughness: 0.05,  // より滑らかに
+                                    envMapIntensity: 2.0  // 環境マップの強度を上げる
+                                });
+                                if (oldMat.dispose) oldMat.dispose();
+                                child.material = newMat;
                             }
                         }
                         
@@ -675,11 +785,9 @@ export class Scene11 extends SceneTemplate {
                     this.firstBuildingCenterOffset = new THREE.Vector3(-center.x, 0, -center.z);
                 }
                 
-                // Y座標：建物の底面をfloorYに合わせる（基本的に底面の高さは殆ど一緒なので、シンプルに）
-                // 建物の中心から底面までの距離を計算
-                const bottomOffset = center.y - min.y;  // 中心から底面までの距離
-                // 底面がfloorYに来るように調整
-                const yPosition = this.floorY + bottomOffset;
+                // Y座標：建物の底面をfloorYに合わせる
+                // 各建物の底面（min.y）を直接floorYに合わせる
+                const yPosition = this.floorY - min.y;
                 
                 // 全ての建物：最初の建物のcenterオフセット + 相対位置
                 model.position.set(
@@ -692,10 +800,10 @@ export class Scene11 extends SceneTemplate {
                 this.scene.add(model);
                 this.specialBuildings.push(model);
                 
-                // 物理演算用のParticleインスタンスを作成（建物の中心位置）
+                // 物理演算用のParticleインスタンスを作成（建物の位置）
                 const particle = new Particle(
                     this.firstBuildingCenterOffset.x + relativeX,
-                    yPosition,  // 建物の中心位置
+                    yPosition,  // 建物のY位置（底面がfloorYに合わせた位置）
                     this.firstBuildingCenterOffset.z + relativeZ
                 );
                 particle.friction = 0.98;  // 摩擦を強めに設定
@@ -777,6 +885,9 @@ export class Scene11 extends SceneTemplate {
             const meshLines = [];
             this.roadMaterial = this.createRoadMaterial();
             
+            // 道のパスを保存（カメラの歩行用）
+            this.roadPath = [];
+            
             // 座標変換の基準点（建物の座標系に合わせる）
             const positionScale = 0.01;  // 建物と同じスケール
             const roadYOffset = this.offsetY + 1;  // 道を地面の少し上に配置
@@ -844,6 +955,9 @@ export class Scene11 extends SceneTemplate {
                     return new THREE.Vector3(x, y, z);
                 });
                 
+                // 道のパスに追加（カメラの歩行用）
+                this.roadPath.push(...points);
+                
                 // pointの配列からMeshLineを作成
                 points.forEach((point, index) => {
                     // 最後の点の場合は処理を終了
@@ -877,13 +991,16 @@ export class Scene11 extends SceneTemplate {
                 this.roadMesh = roadMesh;
                 this.scene.add(roadMesh);
             }
+            
+            // カメラの初期位置を道のパスの最初の位置に設定（loadRoadNetwork内では設定しない）
+            // setup()の最後で統一して設定するため、ここでは設定しない
         } catch (error) {
             // Error loading road network
         }
     }
     
     /**
-     * カメラの位置を更新（カメラ1は街の中心を見る）
+     * カメラの位置を更新
      */
     updateCamera() {
         if (this.cameraParticles[this.currentCameraIndex]) {
@@ -904,7 +1021,103 @@ export class Scene11 extends SceneTemplate {
     
     
     /**
-     * カメラ1を円周運動させる
+     * カメラ1を道の上を歩かせる
+     */
+    updateCamera1Walk(deltaTime) {
+        // 道のパスが読み込まれていない場合、街の中心に近い位置にカメラを配置
+        if (!this.roadPath || this.roadPath.length === 0) {
+            if (this.cityCenter && this.cameraParticles && this.cameraParticles[0]) {
+                // 街の中心にカメラを配置
+                this.cameraParticles[0].position.set(
+                    this.cityCenter.x,
+                    this.floorY + this.camera1WalkHeight,
+                    this.cityCenter.z
+                );
+            }
+            return;
+        }
+        
+        if (!this.cameraParticles || !this.cameraParticles[0]) {
+            return;
+        }
+        
+        // 現在のパスインデックスを更新
+        const distance = this.camera1WalkSpeed * deltaTime;  // 速度を単位/秒に変換（deltaTimeは秒単位）
+        
+        // 現在の位置から次のポイントまでの距離を計算
+        let currentIndex = Math.floor(this.camera1WalkIndex);
+        if (currentIndex >= this.roadPath.length - 1) {
+            // パスの終端に達したら最初に戻る
+            this.camera1WalkIndex = 0;
+            currentIndex = 0;
+        }
+        
+        const currentPoint = this.roadPath[currentIndex];
+        const nextIndex = Math.min(currentIndex + 1, this.roadPath.length - 1);
+        const nextPoint = this.roadPath[nextIndex];
+        
+        // 現在のセグメントの長さを計算
+        const segmentLength = currentPoint.distanceTo(nextPoint);
+        
+        // セグメント内での進捗を計算
+        const segmentProgress = this.camera1WalkIndex - currentIndex;
+        const segmentDistance = segmentProgress * segmentLength;
+        
+        // 進む距離をセグメントに適用
+        let remainingDistance = distance;
+        let newIndex = this.camera1WalkIndex;
+        
+        while (remainingDistance > 0 && newIndex < this.roadPath.length - 1) {
+            const idx = Math.floor(newIndex);
+            const nextIdx = Math.min(idx + 1, this.roadPath.length - 1);
+            const p1 = this.roadPath[idx];
+            const p2 = this.roadPath[nextIdx];
+            const segLen = p1.distanceTo(p2);
+            
+            const localProgress = newIndex - idx;
+            const remainingInSegment = (1 - localProgress) * segLen;
+            
+            if (remainingDistance <= remainingInSegment) {
+                // 現在のセグメント内で完結
+                newIndex += remainingDistance / segLen;
+                remainingDistance = 0;
+            } else {
+                // 次のセグメントに進む
+                newIndex = nextIdx;
+                remainingDistance -= remainingInSegment;
+            }
+        }
+        
+        // パスの終端に達したら最初に戻る
+        if (newIndex >= this.roadPath.length - 1) {
+            newIndex = 0;
+        }
+        
+        this.camera1WalkIndex = newIndex;
+        
+        // 現在の位置を補間で計算
+        const idx = Math.floor(this.camera1WalkIndex);
+        const nextIdx = Math.min(idx + 1, this.roadPath.length - 1);
+        const t = this.camera1WalkIndex - idx;
+        
+        const p1 = this.roadPath[idx];
+        const p2 = this.roadPath[nextIdx];
+        
+        // 位置を補間
+        const x = p1.x + (p2.x - p1.x) * t;
+        const z = p1.z + (p2.z - p1.z) * t;
+        const y = this.floorY + this.camera1WalkHeight;  // 人間の目線の高さ
+        
+        // カメラパーティクル1の位置を設定
+        this.cameraParticles[0].position.set(x, y, z);
+        // 速度と力をリセット（物理演算の影響を無効化）
+        this.cameraParticles[0].velocity.set(0, 0, 0);
+        this.cameraParticles[0].force.set(0, 0, 0);
+        this.cameraParticles[0].acceleration.set(0, 0, 0);
+    }
+    
+    /**
+     * カメラ1を円周運動させる（非推奨、歩行に置き換え）
      */
     updateCamera1Orbit(deltaTime) {
         if (!this.cityCenter || !this.cameraParticles || !this.cameraParticles[0]) {
@@ -934,32 +1147,31 @@ export class Scene11 extends SceneTemplate {
      * 更新処理（毎フレーム呼ばれる）
      */
     onUpdate(deltaTime) {
+        // GridRuler3Dを確実に削除（縦のグリッドと赤い十字を削除するため、毎フレームチェック）
+        if (this.scene) {
+            // GridRuler3Dインスタンスを削除
+            if (this.gridRuler3D) {
+                this.gridRuler3D.dispose();
+                if (this.gridRuler3D.group) {
+                    this.scene.remove(this.gridRuler3D.group);
+                }
+                this.gridRuler3D = null;
+            }
+            
+            // シーンをトラバースしてGridRuler3Dのグループを探して削除
+            this.scene.traverse((object) => {
+                if (object.name === 'GridRuler3D' || (object.parent && object.parent.name === 'GridRuler3D')) {
+                    this.scene.remove(object);
+                    if (object.dispose) object.dispose();
+                }
+            });
+        }
+        
         // 時間を更新
         this.time += deltaTime;
         
-        // カメラパーティクル1の物理演算を無効化（円周運動を使うため）
-        if (this.cameraParticles && this.cameraParticles[0]) {
-            this.cameraParticles[0].enableMovement = false;
-        }
-        
         // 親クラスの更新処理を先に呼ぶ
         super.onUpdate(deltaTime);
-        
-        // カメラ1を円周運動させる
-        this.updateCamera1Orbit(deltaTime);
-        
-        // カメラがグリッドより下に行かないように制限
-        if (this.floorY !== null && this.cameraParticles && this.cameraParticles[0]) {
-            const cameraPos = this.cameraParticles[0].getPosition();
-            const minY = this.floorY + 50;
-            if (cameraPos.y < minY) {
-                cameraPos.y = minY;
-                this.cameraParticles[0].position.y = minY;
-                if (this.cameraParticles[0].velocity.y < 0) {
-                    this.cameraParticles[0].velocity.y = 0;
-                }
-            }
-        }
         
         // カメラの位置を更新
         this.updateCamera();
@@ -989,6 +1201,7 @@ export class Scene11 extends SceneTemplate {
         
         // 建物のコールアウト表示を更新
         this.updateBuildingCallout();
+
     }
     
     /**
@@ -1030,16 +1243,7 @@ export class Scene11 extends SceneTemplate {
             return;
         }
         
-        // トラック1: カメラ1のパーティクルに力を加える（カメラ切り替えはしない）
-        if (trackNumber === 1) {
-            // カメラ1固定で、そのカメラパーティクルにランダムな力を加える
-            if (this.cameraParticles && this.cameraParticles[0]) {
-                this.cameraParticles[0].applyRandomForce();
-            }
-            // ランダマイズは削除（円周運動のみ）
-            return;  // 処理済み（カメラ切り替えを防ぐ）
-        }
-        
+        // トラック1はhandleTrackNumberで処理（他のシーン同様にswitchCameraRandom()を呼ぶ）
         // 他のトラックは親クラスの処理を呼ぶ
         super.handleOSC(message);
     }
@@ -1050,14 +1254,9 @@ export class Scene11 extends SceneTemplate {
     handleTrackNumber(trackNumber, message) {
         const args = message.args || [];
         
+        // トラック1: カメラをランダムに切り替え（他のシーン同様）
         if (trackNumber === 1) {
-            // トラック1: カメラ1のパーティクルに力を加える（カメラ切り替えはしない）
-            // カメラ1固定で、そのカメラパーティクルにランダムな力を加える
-            if (this.cameraParticles && this.cameraParticles[0]) {
-                this.cameraParticles[0].applyRandomForce();
-            }
-            // ランダマイズは削除（円周運動のみ）
-            // super.handleTrackNumber()は呼ばない（カメラ切り替えを防ぐため）
+            this.switchCameraRandom();
             return;
         }
         

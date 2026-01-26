@@ -50,8 +50,8 @@ export class Scene11 extends SceneTemplate {
         this.buildingCalloutEndTime = 0;  // コールアウト表示終了時刻
         this.buildingCalloutDuration = 2000;  // 各建物のコールアウト表示時間（ms）
         
-        // トラック1のエフェクトをデフォルトON（カメラ1のパーティクルに力を加える）
-        this.trackEffects[1] = true;
+        // トラック1のエフェクトをデフォルトOFF（カメラ1のパーティクルに力を加える）
+        this.trackEffects[1] = false;
         
         // GridRuler3D削除フラグ（一度だけ削除するため）
         this.gridRuler3DRemoved = false;
@@ -60,10 +60,12 @@ export class Scene11 extends SceneTemplate {
         this.currentCameraIndex = 0;
         
         // カメラ1の歩行用
-        this.roadPath = [];  // 道のパス（3D座標の配列）
-        this.camera1WalkSpeed = 2.0;  // カメラ1の歩行速度（単位/秒、人間の歩行速度に近づける）
+        this.roadPath = [];  // 道のパス（3D座標の配列）- 未使用
+        this.buildingWalkPath = null;  // 建物群の周りを歩くパス（自動生成）
+        this.walkPathLine = null;  // 歩行パスの赤いライン
+        this.camera1WalkSpeed = 5.0;  // カメラ1の歩行速度（単位/秒、早歩き）
         this.camera1WalkIndex = 0;  // 現在のパスインデックス
-        this.camera1WalkHeight = 50;  // カメラ1の高さ（人間の目線、cm単位、floorYからのオフセット、もっと低く）
+        this.camera1WalkHeight = 20;  // カメラ1の高さ（人間の目線、建物に近い低い位置）
         
         // カメラ1の円周運動用（非推奨、歩行に置き換え）
         this.cityCenter = null;  // 街の中心座標（建物群の中心）
@@ -100,7 +102,7 @@ export class Scene11 extends SceneTemplate {
         // 道のネットワーク
         this.roadMaterial = null;
         this.roadMesh = null;
-        this.roadColor = 0xffaa00;  // 道の色（オレンジ）
+        this.roadColor = 0xff0000;  // 道の色（赤）
         
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -110,6 +112,7 @@ export class Scene11 extends SceneTemplate {
      * セットアップ処理（シーン切り替え時に呼ばれる）
      */
     async setup() {
+        console.log('=== Scene11 setup() START ===');
         await super.setup();
         
         // 環境マップ（HDRI）を設定 - 金属質感のために必要
@@ -163,66 +166,29 @@ export class Scene11 extends SceneTemplate {
         // 道のネットワークを読み込む（表示のみ、カメラ制御には使用しない）
         await this.loadRoadNetwork();
         
-        // カメラの初期位置を設定（道のパスが読み込まれていない場合は街の中心に配置）
+        // 建物群の周りを歩くパスを生成
+        this.generateBuildingWalkPath();
+        
+        // カメラの初期位置を設定（建物群の周りを歩くパスの最初の位置）
         if (this.cameraParticles && this.cameraParticles[0]) {
-            if (this.roadPath && this.roadPath.length > 0) {
-                // 道のパスが読み込まれている場合、最初の位置に設定
-                const startPoint = this.roadPath[0];
+            if (this.buildingWalkPath && this.buildingWalkPath.length > 0) {
+                // 建物群の周りを歩くパスの最初の位置に設定
+                const startPoint = this.buildingWalkPath[0];
                 this.cameraParticles[0].position.set(
                     startPoint.x,
                     this.floorY + this.camera1WalkHeight,
                     startPoint.z
                 );
                 this.camera1WalkIndex = 0;
-            } else if (this.cityCenter) {
-                // 道のパスが読み込まれていない場合、街の中心に配置
-                // 建物の範囲内に確実に配置するため、バウンディングボックスを計算
-                const box = new THREE.Box3();
-                this.specialBuildings.forEach(building => {
-                    building.updateMatrixWorld(true);
-                    const buildingBox = new THREE.Box3().setFromObject(building);
-                    box.union(buildingBox);
-                });
-                
-                if (!box.isEmpty()) {
-                    const center = box.getCenter(new THREE.Vector3());
-                    const size = box.getSize(new THREE.Vector3());
-                    // 建物の範囲内、中心から少し離れた位置に配置（建物が見えるように）
-                    // 建物のサイズに応じてオフセットを調整
-                    const offsetX = Math.min(size.x * 0.1, 20);  // 最大20単位、建物に近づける
-                    const offsetZ = Math.min(size.z * 0.1, 20);
-                    
-                    const cameraPos = new THREE.Vector3(
-                        center.x + offsetX,
-                        this.floorY + this.camera1WalkHeight,
-                        center.z + offsetZ
-                    );
-                    
-                    this.cameraParticles[0].position.set(
-                        cameraPos.x,
-                        cameraPos.y,
-                        cameraPos.z
-                    );
-                    
-                    // デバッグ用：カメラの位置をログ出力
-                    console.log('Camera position:', cameraPos);
-                    console.log('City center:', center);
-                    console.log('Building size:', size);
-                } else {
-                    // バウンディングボックスが空の場合は街の中心に配置
-                    this.cameraParticles[0].position.set(
-                        this.cityCenter.x,
-                        this.floorY + this.camera1WalkHeight,
-                        this.cityCenter.z
-                    );
-                }
+                console.log('Camera initial position (from buildingWalkPath):', startPoint);
             } else {
-                // どちらもない場合、原点に配置
+                // パスがない場合は原点に配置
                 this.cameraParticles[0].position.set(
                     0,
                     this.floorY + this.camera1WalkHeight,
                     0
                 );
+                console.log('Camera initial position: origin');
             }
         }
     }
@@ -521,6 +487,7 @@ export class Scene11 extends SceneTemplate {
      * Project PLATEAUのOBJデータを読み込む
      */
     async loadSpecialBuildings() {
+        console.log('=== loadSpecialBuildings() START ===');
         // LOD2のOBJファイルを読み込む（テクスチャ付き、より詳細）
         const lod2BasePath = '/assets/533946_2/LOD2';
         
@@ -530,13 +497,24 @@ export class Scene11 extends SceneTemplate {
         // 読み込みカウンター
         let loadedCount = 0;
         let skippedCount = 0;
-        const maxLoadCount = 29;  // LOD2には29個のフォルダがある（全て読み込む）
         
-        // 順次読み込みに戻す（確実に全て読み込むため）
-        // LOD2の全フォルダを順次読み込む（フォルダ名は533946001から始まる）
-        for (let i = 1; i <= maxLoadCount; i++) {
-            const folder = `533946${String(i).padStart(3, '0')}`;
-            
+        // 実際のLOD2フォルダ名リスト（不連続な番号）
+        const lod2Folders = [
+            '533946001', '533946002', '533946003', '533946004',
+            '533946011', '533946012', '533946013', '533946014',
+            '533946021', '533946022', '533946023', '533946024',
+            '533946102', '533946104',
+            '533946111', '533946112', '533946113', '533946114',
+            '533946121', '533946123', '533946124',
+            '533946202', '533946204',
+            '533946211', '533946212', '533946213', '533946214',
+            '533946221', '533946223'
+        ];
+        
+        // LOD2の全フォルダを順次読み込む
+        console.log('Loading LOD2 folders:', lod2Folders.length, 'folders');
+        for (const folder of lod2Folders) {
+            console.log('Loading folder:', folder);
             const objPath = `${lod2BasePath}/${folder}/${folder}_bldg_6677.obj`;
             const mtlPath = `${lod2BasePath}/${folder}/materials.mtl`;
             
@@ -907,8 +885,14 @@ export class Scene11 extends SceneTemplate {
             const baseCenter = this.firstBuildingCenter;
             
             if (!baseCenter) {
+                console.log('No baseCenter for road network');
                 return;
             }
+            
+            console.log('=== Road Network Debug ===');
+            console.log('firstBuildingCenter:', this.firstBuildingCenter);
+            console.log('firstBuildingCenterOffset:', this.firstBuildingCenterOffset);
+            console.log('First GeoJSON coord sample:', linkData.features[0]?.geometry?.coordinates?.[0]);
             
             linkData.features.forEach((feature) => {
                 const coordinates = feature.geometry.coordinates;
@@ -994,8 +978,15 @@ export class Scene11 extends SceneTemplate {
             
             // カメラの初期位置を道のパスの最初の位置に設定（loadRoadNetwork内では設定しない）
             // setup()の最後で統一して設定するため、ここでは設定しない
+            
+            console.log('=== Road Path Generated ===');
+            console.log('roadPath length:', this.roadPath.length);
+            if (this.roadPath.length > 0) {
+                console.log('roadPath first point:', this.roadPath[0]);
+                console.log('roadPath last point:', this.roadPath[this.roadPath.length - 1]);
+            }
         } catch (error) {
-            // Error loading road network
+            console.log('Error loading road network:', error);
         }
     }
     
@@ -1021,92 +1012,90 @@ export class Scene11 extends SceneTemplate {
     
     
     /**
-     * カメラ1を道の上を歩かせる
+     * カメラ1を建物群の周りを歩かせる
      */
     updateCamera1Walk(deltaTime) {
-        // 道のパスが読み込まれていない場合、街の中心に近い位置にカメラを配置
-        if (!this.roadPath || this.roadPath.length === 0) {
-            if (this.cityCenter && this.cameraParticles && this.cameraParticles[0]) {
-                // 街の中心にカメラを配置
-                this.cameraParticles[0].position.set(
-                    this.cityCenter.x,
-                    this.floorY + this.camera1WalkHeight,
-                    this.cityCenter.z
-                );
-            }
-            return;
-        }
-        
         if (!this.cameraParticles || !this.cameraParticles[0]) {
             return;
         }
         
+        // 建物群のバウンディングボックスがない場合は計算
+        if (!this.buildingWalkPath) {
+            this.generateBuildingWalkPath();
+        }
+        
+        // パスがない場合は何もしない
+        if (!this.buildingWalkPath || this.buildingWalkPath.length === 0) {
+            return;
+        }
+        
         // 現在のパスインデックスを更新
-        const distance = this.camera1WalkSpeed * deltaTime;  // 速度を単位/秒に変換（deltaTimeは秒単位）
+        const distance = this.camera1WalkSpeed * deltaTime;
         
         // 現在の位置から次のポイントまでの距離を計算
         let currentIndex = Math.floor(this.camera1WalkIndex);
-        if (currentIndex >= this.roadPath.length - 1) {
+        if (currentIndex >= this.buildingWalkPath.length - 1) {
             // パスの終端に達したら最初に戻る
             this.camera1WalkIndex = 0;
             currentIndex = 0;
         }
         
-        const currentPoint = this.roadPath[currentIndex];
-        const nextIndex = Math.min(currentIndex + 1, this.roadPath.length - 1);
-        const nextPoint = this.roadPath[nextIndex];
+        const currentPoint = this.buildingWalkPath[currentIndex];
+        const nextIndex = Math.min(currentIndex + 1, this.buildingWalkPath.length - 1);
+        const nextPoint = this.buildingWalkPath[nextIndex];
         
         // 現在のセグメントの長さを計算
         const segmentLength = currentPoint.distanceTo(nextPoint);
         
         // セグメント内での進捗を計算
-        const segmentProgress = this.camera1WalkIndex - currentIndex;
-        const segmentDistance = segmentProgress * segmentLength;
-        
-        // 進む距離をセグメントに適用
-        let remainingDistance = distance;
-        let newIndex = this.camera1WalkIndex;
-        
-        while (remainingDistance > 0 && newIndex < this.roadPath.length - 1) {
-            const idx = Math.floor(newIndex);
-            const nextIdx = Math.min(idx + 1, this.roadPath.length - 1);
-            const p1 = this.roadPath[idx];
-            const p2 = this.roadPath[nextIdx];
-            const segLen = p1.distanceTo(p2);
+        if (segmentLength > 0.001) {  // ゼロ除算防止
+            let remainingDistance = distance;
+            let newIndex = this.camera1WalkIndex;
             
-            const localProgress = newIndex - idx;
-            const remainingInSegment = (1 - localProgress) * segLen;
-            
-            if (remainingDistance <= remainingInSegment) {
-                // 現在のセグメント内で完結
-                newIndex += remainingDistance / segLen;
-                remainingDistance = 0;
-            } else {
-                // 次のセグメントに進む
-                newIndex = nextIdx;
-                remainingDistance -= remainingInSegment;
+            while (remainingDistance > 0 && newIndex < this.buildingWalkPath.length - 1) {
+                const idx = Math.floor(newIndex);
+                const nextIdx = Math.min(idx + 1, this.buildingWalkPath.length - 1);
+                const p1 = this.buildingWalkPath[idx];
+                const p2 = this.buildingWalkPath[nextIdx];
+                const segLen = p1.distanceTo(p2);
+                
+                if (segLen < 0.001) {
+                    newIndex = nextIdx;
+                    continue;
+                }
+                
+                const localProgress = newIndex - idx;
+                const remainingInSegment = (1 - localProgress) * segLen;
+                
+                if (remainingDistance <= remainingInSegment) {
+                    newIndex += remainingDistance / segLen;
+                    remainingDistance = 0;
+                } else {
+                    newIndex = nextIdx;
+                    remainingDistance -= remainingInSegment;
+                }
             }
+            
+            // パスの終端に達したら最初に戻る
+            if (newIndex >= this.buildingWalkPath.length - 1) {
+                newIndex = 0;
+            }
+            
+            this.camera1WalkIndex = newIndex;
         }
-        
-        // パスの終端に達したら最初に戻る
-        if (newIndex >= this.roadPath.length - 1) {
-            newIndex = 0;
-        }
-        
-        this.camera1WalkIndex = newIndex;
         
         // 現在の位置を補間で計算
         const idx = Math.floor(this.camera1WalkIndex);
-        const nextIdx = Math.min(idx + 1, this.roadPath.length - 1);
+        const nextIdx = Math.min(idx + 1, this.buildingWalkPath.length - 1);
         const t = this.camera1WalkIndex - idx;
         
-        const p1 = this.roadPath[idx];
-        const p2 = this.roadPath[nextIdx];
+        const p1 = this.buildingWalkPath[idx];
+        const p2 = this.buildingWalkPath[nextIdx];
         
         // 位置を補間
         const x = p1.x + (p2.x - p1.x) * t;
         const z = p1.z + (p2.z - p1.z) * t;
-        const y = this.floorY + this.camera1WalkHeight;  // 人間の目線の高さ
+        const y = this.floorY + this.camera1WalkHeight;
         
         // カメラパーティクル1の位置を設定
         this.cameraParticles[0].position.set(x, y, z);
@@ -1114,6 +1103,134 @@ export class Scene11 extends SceneTemplate {
         this.cameraParticles[0].velocity.set(0, 0, 0);
         this.cameraParticles[0].force.set(0, 0, 0);
         this.cameraParticles[0].acceleration.set(0, 0, 0);
+    }
+    
+    /**
+     * 街の中を歩くパスを生成（実際の道路データを使用）
+     */
+    generateBuildingWalkPath() {
+        // 建物群のバウンディングボックスを計算してログ出力
+        if (this.specialBuildings.length > 0) {
+            const buildingBox = new THREE.Box3();
+            this.specialBuildings.forEach(building => {
+                building.updateMatrixWorld(true);
+                buildingBox.union(new THREE.Box3().setFromObject(building));
+            });
+            const buildingCenter = buildingBox.getCenter(new THREE.Vector3());
+            const buildingSize = buildingBox.getSize(new THREE.Vector3());
+            console.log('=== Building Bounding Box ===');
+            console.log('Building center:', buildingCenter);
+            console.log('Building size:', buildingSize);
+            console.log('Building min:', buildingBox.min);
+            console.log('Building max:', buildingBox.max);
+        }
+        
+        // 道路データがある場合はそれを使用
+        if (this.roadPath && this.roadPath.length > 0) {
+            // roadPathをbuildingWalkPathにコピー
+            this.buildingWalkPath = this.roadPath.slice();
+            console.log('Walk path generated from road network:', this.buildingWalkPath.length, 'points');
+            console.log('First walk path point:', this.buildingWalkPath[0]);
+            return;
+        }
+        
+        // 道路データがない場合は建物群の周りを歩くフォールバック
+        if (this.specialBuildings.length === 0) {
+            return;
+        }
+        
+        // 全ての建物を含むバウンディングボックスを計算
+        const box = new THREE.Box3();
+        this.specialBuildings.forEach(building => {
+            building.updateMatrixWorld(true);
+            const buildingBox = new THREE.Box3().setFromObject(building);
+            box.union(buildingBox);
+        });
+        
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        
+        // 建物群の周りを歩くパスを生成（長方形のパス、建物に近い位置）
+        const margin = 10;
+        const halfX = size.x / 2 - margin;
+        const halfZ = size.z / 2 - margin;
+        
+        this.buildingWalkPath = [];
+        const segments = 20;
+        
+        for (let i = 0; i <= segments; i++) {
+            const t = i / segments;
+            this.buildingWalkPath.push(new THREE.Vector3(
+                center.x - halfX + halfX * 2 * t, 0, center.z + halfZ
+            ));
+        }
+        for (let i = 1; i <= segments; i++) {
+            const t = i / segments;
+            this.buildingWalkPath.push(new THREE.Vector3(
+                center.x + halfX, 0, center.z + halfZ - halfZ * 2 * t
+            ));
+        }
+        for (let i = 1; i <= segments; i++) {
+            const t = i / segments;
+            this.buildingWalkPath.push(new THREE.Vector3(
+                center.x + halfX - halfX * 2 * t, 0, center.z - halfZ
+            ));
+        }
+        for (let i = 1; i < segments; i++) {
+            const t = i / segments;
+            this.buildingWalkPath.push(new THREE.Vector3(
+                center.x - halfX, 0, center.z - halfZ + halfZ * 2 * t
+            ));
+        }
+        
+        console.log('Building walk path generated (fallback):', this.buildingWalkPath.length, 'points');
+    }
+    
+    /**
+     * 歩行パスを赤いラインで描画
+     */
+    drawWalkPathLine() {
+        // 既存のラインがあれば削除
+        if (this.walkPathLine) {
+            this.scene.remove(this.walkPathLine);
+            this.walkPathLine.geometry.dispose();
+            this.walkPathLine.material.dispose();
+            this.walkPathLine = null;
+        }
+        
+        if (!this.buildingWalkPath || this.buildingWalkPath.length < 2) {
+            return;
+        }
+        
+        // パスの頂点を配列に変換（ループを閉じるために最初の点も追加）
+        const points = [];
+        this.buildingWalkPath.forEach(p => {
+            points.push(p.x, this.floorY + 5, p.z);  // 少し浮かせて見やすく
+        });
+        // ループを閉じる
+        const firstPoint = this.buildingWalkPath[0];
+        points.push(firstPoint.x, this.floorY + 5, firstPoint.z);
+        
+        // MeshLineで描画（太い線が描ける）
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+        
+        const line = new MeshLine();
+        line.setGeometry(geometry);
+        
+        const material = new MeshLineMaterial({
+            color: 0xff0000,  // 赤色
+            lineWidth: 5,     // 太めの線
+            resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        this.walkPathLine = new THREE.Mesh(line, material);
+        this.scene.add(this.walkPathLine);
+        
+        console.log('Walk path line created (red)');
     }
     
     /**
@@ -1169,6 +1286,9 @@ export class Scene11 extends SceneTemplate {
         
         // 時間を更新
         this.time += deltaTime;
+        
+        // カメラ1を道の上を歩かせる（カメラ1固定）
+        this.updateCamera1Walk(deltaTime);
         
         // 親クラスの更新処理を先に呼ぶ
         super.onUpdate(deltaTime);
@@ -1254,9 +1374,9 @@ export class Scene11 extends SceneTemplate {
     handleTrackNumber(trackNumber, message) {
         const args = message.args || [];
         
-        // トラック1: カメラをランダムに切り替え（他のシーン同様）
+        // トラック1: カメラ1固定（道の上を歩くため、切り替えしない）
         if (trackNumber === 1) {
-            this.switchCameraRandom();
+            // カメラ切り替えを無効化（カメラ1で歩行を継続）
             return;
         }
         

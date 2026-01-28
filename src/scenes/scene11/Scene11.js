@@ -19,1263 +19,368 @@ export class Scene11 extends SceneTemplate {
         super(renderer, camera, sharedResourceManager);
         this.title = 'mathym | Scene11 - 街';
         this.sceneNumber = 11;
-        this.kitNo = 11;  // キット番号を設定
+        this.kitNo = 11;
         
         // 建物の設定
-        this.buildings = [];  // 個別の建物（CPUパーティクル）
-        this.instancedBuildings = null;  // インスタンシング用の建物マネージャー
-        this.numSimpleBuildings = 4900;  // シンプルな建物（Box）の数（5000 - 100 = 4900）
-        this.specialBuildings = [];  // 特殊な形状の建物（3Dモデル）
-        this.buildingParticles = [];  // 各建物の物理演算用Particleインスタンス
-        this.firstBuildingCenter = null;  // 最初の建物の中心座標（相対位置計算用）
-        this.firstBuildingCenterOffset = null;  // 最初の建物のcenterオフセット（全建物の基準位置）
-        this.totalBuildingCount = 0;  // 総建物数（HUD表示用）
+        this.specialBuildings = [];
+        this.demObjects = [];
+        this.buildingParticles = [];
+        this.firstBuildingCenter = null;
+        this.totalBuildingCount = 0;
         
         // トラック5用：建物コールアウト表示
-        this.buildingCalloutIndex = 0;  // 現在表示中の建物インデックス
-        this.buildingCalloutActive = false;  // コールアウト表示中かどうか
-        this.buildingCalloutEndTime = 0;  // コールアウト表示終了時刻
-        this.buildingCalloutDuration = 2000;  // 各建物のコールアウト表示時間（ms）
-        this.buildingCalloutCache = new Map();  // 建物のバウンディングボックスをキャッシュ
+        this.buildingCalloutIndex = 0;
+        this.buildingCalloutActive = false;
+        this.buildingCalloutEndTime = 0;
+        this.buildingCalloutDuration = 2000;
+        this.buildingCalloutCache = new Map();
         
-        // パフォーマンス計測用
-        this.performanceStats = {
-            frameCount: 0,
-            lastLogTime: Date.now(),
-            updateTimes: [],
-            renderTimes: [],
-            drawCalloutTimes: []
-        };  // 現在表示中の建物インデックス
-        this.buildingCalloutActive = false;  // コールアウト表示中かどうか
-        this.buildingCalloutEndTime = 0;  // コールアウト表示終了時刻
-        this.buildingCalloutDuration = 2000;  // 各建物のコールアウト表示時間（ms）
+        // エフェクト状態管理
+        this.trackEffects[1] = true;
+        this.trackEffects[2] = true;
+        this.trackEffects[3] = true;
+        this.trackEffects[4] = true;
         
-        // トラック1のエフェクトをデフォルトOFF（カメラ1のパーティクルに力を加える）
-        this.trackEffects[1] = false;
-        
-        // GridRuler3D削除フラグ（一度だけ削除するため）
-        this.gridRuler3DRemoved = false;
-        
-        // カメラ1を常に使用floorY
         this.currentCameraIndex = 0;
-        
-        // カメラ1の歩行用
-        this.roadPath = [];  // 道のパス（3D座標の配列）- 未使用
-        this.buildingWalkPath = null;  // 建物群の周りを歩くパス（自動生成）
-        this.walkPathLine = null;  // 歩行パスの赤いライン
-        this.camera1WalkSpeed = 5.0;  // カメラ1の歩行速度（単位/秒、早歩き）
-        this.camera1WalkIndex = 0;  // 現在のパスインデックス
-        this.camera1WalkHeight = 20;  // カメラ1の高さ（人間の目線、建物に近い低い位置）
-        
-        // カメラ1の円周運動用（非推奨、歩行に置き換え）
-        this.cityCenter = null;  // 街の中心座標（建物群の中心）
-        this.camera1OrbitRadius = 2000.0;  // カメラ1の円周運動の半径（近づける）
-        this.camera1OrbitSpeed = 0.05;  // カメラ1の円周運動の速度（もっとゆっくりに）
-        this.camera1OrbitAngle = 0;  // カメラ1の円周運動の角度
-        this.camera1OrbitHeight = -300.0;  // カメラ1のY座標（もっと下に）
+        this.camera1WalkHeight = 2.0;
         
         // 建物の生成範囲
-        this.spawnRadius = 5000.0;  // 範囲を広げて間隔を確保
+        this.spawnRadius = 100.0;  
         this.groundY = 0;
-        this.offsetY = -520;  // Y座標のオフセット（調整用、建物を少し下げる）
-        this.floorY = this.offsetY - 200;  // グリッドのY座標（カメラ制限用、建物の底面もこれに合わせる、大分下げる）
+        this.floorY = -0.1;
         
         // 物理演算設定
-        this.gravity = new THREE.Vector3(0, -9.8, 0);  // 重力
-        this.physicsEnabled = false;  // 物理演算の有効/無効
+        this.gravity = new THREE.Vector3(0, -0.098, 0);
+        this.physicsEnabled = false;
         
-        // ライト
         this.ambientLight = null;
         this.directionalLight = null;
         
-        // エッジ表示設定
-        this.showEdges = false;  // エッジ表示の有効/無効
-        this.edgeColor = 0x888888;  // エッジの色（薄いグレー）
-        this.edgeLineWidth = 1;  // エッジの線幅
-        
-        // グリッド表示設定
-        this.showGridLines = true;  // グリッドの線を表示するか（デフォルト: true、gキーでトグル）
-        
-        // 床の平面
-        this.floorPlane = null;  // 床の塗りつぶし平面
-        
-        // 道のネットワーク
-        this.roadMaterial = null;
-        this.roadMesh = null;
-        this.roadColor = 0xff0000;  // 道の色（赤）
-        
-        // スクリーンショット用テキスト
-        this.setScreenshotText(this.title);
+        this.showBuildings = true;
+        this.roadColor = 0xff0000;
     }
     
-    /**
-     * セットアップ処理（シーン切り替え時に呼ばれる）
-     */
     async setup() {
         console.log('=== Scene11 setup() START ===');
+        
+        // カメラの描画距離を大幅に伸ばす
+        if (this.camera) {
+            this.camera.far = 100000;
+            this.camera.updateProjectionMatrix();
+        }
+
         await super.setup();
         
-        // 環境マップ（HDRI）を設定 - 金属質感のために必要
+        // 環境マップ（HDRI）を設定
         try {
             const envMap = await loadHdrCached(hdri);
             this.scene.environment = envMap;
-            this.scene.environmentIntensity = 0.5;
+            this.scene.environmentIntensity = 1.0;
         } catch (e) {
             console.error('HDRI load failed:', e);
         }
         
-        // カメラ1を常に使用
         this.currentCameraIndex = 0;
-        
-        // ライトを設定
         this.setupLights();
         
-        // シンプルな建物（Box）をインスタンシングで作成
-        // this.createSimpleBuildings();  // 一旦コメントアウト
-        
-        // 特殊な形状の建物（3Dモデル）を読み込む
+        // 読み込み開始
         await this.loadSpecialBuildings();
+        await this.loadDEM();
         
-        // 建物数を更新（HUD表示用）
         this.updateBuildingCount();
-        
-        // 建物の範囲をカバーするグリッドを配置
         this.setupBuildingGrid();
-        
-        // GridRuler3Dを削除（縦のグリッドと赤い十字を削除するため）
-        if (this.gridRuler3D) {
-            this.gridRuler3D.dispose();
-            this.scene.remove(this.gridRuler3D.group);
-            this.gridRuler3D = null;
-        }
-        
-        // シーンをトラバースしてGridRuler3Dのグループを探して削除
-        this.scene.traverse((object) => {
-            if (object.name === 'GridRuler3D' || (object.parent && object.parent.name === 'GridRuler3D')) {
-                this.scene.remove(object);
-                if (object.dispose) object.dispose();
-            }
-        });
-        
-        // 建物群のバウンディングボックスを計算（カメラ1の方向ランダマイズ用）
         this.calculateBuildingBounds();
-        
-        // カメラパーティクルの境界を設定（グリッドより下に行かないように）
-        this.setupCameraParticleBoundaries();
-        
-        // 道のネットワークを読み込む（表示のみ、カメラ制御には使用しない）
-        await this.loadRoadNetwork();
-        
-        // 建物群の周りを歩くパスを生成
         this.generateBuildingWalkPath();
         
-        // カメラの初期位置を設定（建物群の周りを歩くパスの最初の位置）
+        // カメラの初期位置を強制的に設定
         if (this.cameraParticles && this.cameraParticles[0]) {
-            if (this.buildingWalkPath && this.buildingWalkPath.length > 0) {
-                // 建物群の周りを歩くパスの最初の位置に設定
-                const startPoint = this.buildingWalkPath[0];
-                this.cameraParticles[0].position.set(
-                    startPoint.x,
-                    this.floorY + this.camera1WalkHeight,
-                    startPoint.z
-                );
-                this.camera1WalkIndex = 0;
-                console.log('Camera initial position (from buildingWalkPath):', startPoint);
-            } else {
-                // パスがない場合は原点に配置
-                this.cameraParticles[0].position.set(
-                    0,
-                    this.floorY + this.camera1WalkHeight,
-                    0
-                );
-                console.log('Camera initial position: origin');
-            }
+            const initPos = new THREE.Vector3(20, 20, 20);
+            this.cameraParticles[0].position.copy(initPos);
+            this.cameraParticles[0].velocity.set(0, 0, 0);
+            this.cameraParticles[0].acceleration.set(0, 0, 0);
+            
+            this.camera.position.copy(initPos);
+            this.camera.lookAt(0, 0, 0);
         }
     }
-    
+
     /**
-     * カメラパーティクルの境界を設定（グリッドより下に行かないように）
+     * カメラパーティクルの距離パラメータを設定
+     */
+    setupCameraParticleDistance(cameraParticle) {
+        // スケール 0.01 に合わせた距離設定
+        cameraParticle.maxDistance = 150.0;
+        cameraParticle.minDistance = 20.0;
+        cameraParticle.maxDistanceReset = 100.0;
+    }
+
+    /**
+     * カメラパーティクルの境界を設定
      */
     setupCameraParticleBoundaries() {
-        // floorYはコンストラクタで設定済み
-        if (!this.floorY) {
-            // floorYが設定されていない場合はスキップ
-            return;
-        }
-        
-        // カメラの最小Y座標をグリッドより少し上に設定
-        const cameraMinY = this.floorY + 50;  // グリッドより50上
-        
-        // 全てのカメラパーティクルに境界を設定
+        if (this.floorY === undefined) return;
+        const cameraMinY = this.floorY + 1.0; 
         this.cameraParticles.forEach(cp => {
             if (cp) {
-                // 既存のboxMin/boxMaxがある場合は、Y座標のみ更新
-                if (cp.boxMin && cp.boxMax) {
-                    cp.boxMin.y = Math.max(cp.boxMin.y, cameraMinY);
-                } else {
-                    // boxMin/boxMaxがない場合は、広い範囲で設定（Y座標のみ制限）
-                    const largeSize = 10000.0;
-                    cp.boxMin = new THREE.Vector3(-largeSize, cameraMinY, -largeSize);
-                    cp.boxMax = new THREE.Vector3(largeSize, largeSize, largeSize);
-                }
+                const limitSize = 500.0;
+                cp.boxMin = new THREE.Vector3(-limitSize, cameraMinY, -limitSize);
+                cp.boxMax = new THREE.Vector3(limitSize, limitSize, limitSize);
             }
         });
-        
     }
     
-    /**
-     * ライトを設定
-     */
     setupLights() {
-        // 環境光（少し控えめに）
-        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         this.scene.add(this.ambientLight);
         
-        // 指向性ライト（メインライト）
-        this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-        this.directionalLight.position.set(1000, 2000, 1000);
+        this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        this.directionalLight.position.set(20, 50, 20);
         this.directionalLight.castShadow = true;
         
-        // fillLightは削除（のっぺり感を減らすため）
-        
-        // シャドウマップの設定（範囲を広げて全建物にシャドウが出るように）
-        this.directionalLight.shadow.mapSize.width = 2048;  // 解像度を下げてパフォーマンス改善
+        this.directionalLight.shadow.mapSize.width = 2048;
         this.directionalLight.shadow.mapSize.height = 2048;
-        this.directionalLight.shadow.camera.near = 0.5;
-        this.directionalLight.shadow.camera.far = 10000;  // 遠くまで見えるように
-        this.directionalLight.shadow.camera.left = -5000;  // 範囲を広げる
-        this.directionalLight.shadow.camera.right = 5000;
-        this.directionalLight.shadow.camera.top = 5000;
-        this.directionalLight.shadow.camera.bottom = -5000;
+        this.directionalLight.shadow.camera.near = 0.1;
+        this.directionalLight.shadow.camera.far = 500;
+        this.directionalLight.shadow.camera.left = -200;
+        this.directionalLight.shadow.camera.right = 200;
+        this.directionalLight.shadow.camera.top = 200;
+        this.directionalLight.shadow.camera.bottom = -200;
         
         this.scene.add(this.directionalLight);
         
-        // レンダラーのシャドウマップを有効化
+        const pointLight = new THREE.PointLight(0xffffff, 1.0);
+        pointLight.position.set(-20, 30, -20);
+        this.scene.add(pointLight);
+        
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     }
     
-    /**
-     * シンプルな建物（Box）をインスタンシングで作成
-     */
-    createSimpleBuildings() {
-        // 基準となるジオメトリ（1x1x1のBox、スケールでサイズを変える）
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshStandardMaterial({
-            color: 0x333333,  // 濃いグレー
-            metalness: 0.2,
-            roughness: 0.8,
-            wireframe: false
-        });
-        
-        // ワイヤーフレーム用のマテリアル（オプション）
-        const wireframeMaterial = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            wireframe: true,
-            transparent: true,
-            opacity: 0.3,
-            depthTest: true,
-            depthWrite: false,
-            side: THREE.DoubleSide
-        });
-        
-        // InstancedMeshManagerを作成
-        this.instancedBuildings = new InstancedMeshManager(
-            this.scene,
-            geometry,
-            material,
-            this.numSimpleBuildings,
-            {
-                wireframeMaterial: wireframeMaterial,
-                wireframeRenderOrder: 1
-            }
-        );
-        
-        // 建物の配置データ
-        this.buildingData = [];
-        
-        // ランダムに建物を配置
-        for (let i = 0; i < this.numSimpleBuildings; i++) {
-            // 位置をランダムに決定（円形の範囲内）
-            const angle = Math.random() * Math.PI * 2;
-            const radius = Math.random() * this.spawnRadius;
-            const x = Math.cos(angle) * radius;
-            const z = Math.sin(angle) * radius;
-            
-            // 建物のサイズをランダムに決定（PLATEAUの建物と整合性を取るため少し大きく）
-            const width = 50 + Math.random() * 150;  // 50-200
-            const depth = 50 + Math.random() * 150;  // 50-200
-            const height = 50 + Math.random() * 300;  // 50-350
-            
-            // 位置（Y座標は地面の高さ + 建物の高さの半分）
-            const y = this.groundY + height / 2.0;
-            const position = new THREE.Vector3(x, y, z);
-            
-            // スケール
-            const scale = new THREE.Vector3(width, height, depth);
-            
-            // 回転（Y軸周りにランダムに回転）
-            const rotation = new THREE.Euler(0, Math.random() * Math.PI * 2, 0);
-            
-            // インスタンスに設定
-            this.instancedBuildings.setMatrixAt(i, position, rotation, scale);
-            
-            // データを保存（後で更新する場合に使用）
-            this.buildingData.push({
-                position: position,
-                scale: scale,
-                rotation: rotation
-            });
-        }
-        
-        // 更新をマーク
-        this.instancedBuildings.markNeedsUpdate();
-    }
-    
-    /**
-     * 建物数を更新（HUD表示用）
-     */
     updateBuildingCount() {
-        const instancedCount = this.instancedBuildings ? this.instancedBuildings.getCount() : 0;
-        const specialCount = this.specialBuildings.length;
-        this.totalBuildingCount = instancedCount + specialCount;
+        this.totalBuildingCount = this.specialBuildings.length;
         this.setParticleCount(this.totalBuildingCount);
     }
     
-    /**
-     * 建物の範囲をカバーするグリッドを配置
-     */
     setupBuildingGrid() {
-        if (this.specialBuildings.length === 0) {
-            // デフォルト値で床を作成
-            const defaultFloorSize = 10000;  // デフォルトの床サイズ
-            const defaultCenter = new THREE.Vector3(0, 0, 0);
-            const floorY = this.floorY;
-            
-            // 床のグリッドを追加（斜めの線を避けるためGridHelperを使用）
-            // GridHelperはデフォルトでXZ平面（水平面）に配置されるので回転不要
-            const divisions = Math.ceil(defaultFloorSize / 100);
-            const gridHelper = new THREE.GridHelper(defaultFloorSize, divisions, 0x888888, 0x888888);
-            gridHelper.position.set(defaultCenter.x, floorY, defaultCenter.z);
-            this.floorPlane = gridHelper;
-            this.scene.add(gridHelper);
-            return;
-        }
+        this.showGridRuler3D = false;
+        if (this.specialBuildings.length === 0) return;
         
-        // 全ての建物を含むバウンディングボックスを計算
         const box = new THREE.Box3();
-        
         this.specialBuildings.forEach(building => {
             building.updateMatrixWorld(true);
-            const buildingBox = new THREE.Box3().setFromObject(building);
-            box.union(buildingBox);
+            box.union(new THREE.Box3().setFromObject(building));
         });
         
         const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        
-        // サイズが無効な場合はデフォルト値を使用
-        if (isNaN(size.x) || isNaN(size.y) || isNaN(size.z) || 
-            size.x <= 0 || size.y <= 0 || size.z <= 0) {
-            const defaultFloorSize = 10000;
-            const floorY = this.floorY;
-            
-            const floorGeometry = new THREE.PlaneGeometry(defaultFloorSize, defaultFloorSize);
-            const floorMaterial = new THREE.MeshStandardMaterial({
-                color: 0x888888,  // グレー
-                wireframe: true,  // ワイヤーフレーム表示
-                side: THREE.DoubleSide
-            });
-            this.floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
-            this.floorPlane.rotation.x = -Math.PI / 2;
-            this.floorPlane.position.set(0, floorY, 0);
-            this.floorPlane.receiveShadow = true;
-            this.scene.add(this.floorPlane);
-            return;
-        }
-        
-        // グリッドのパラメータを設定
-        // 建物の範囲に少し余白を追加
-        const padding = 100;  // 余白
-        const gridSize = {
-            x: size.x + padding * 2,
-            y: size.y + padding * 2,
-            z: size.z + padding * 2
-        };
-        
-        // グリッドを初期化
-        const floorY = this.floorY;  // コンストラクタで設定済み
-        const floorSize = Math.max(gridSize.x, gridSize.z) * 1.2;  // 床のサイズ
-        
-        // floorSizeが無効な場合はデフォルト値を使用
-        if (isNaN(floorSize) || floorSize <= 0 || !isFinite(floorSize)) {
-            const defaultFloorSize = 10000;
-            
-            // 床のグリッドを追加（斜めの線を避けるためGridHelperを使用）
-            // GridHelperはデフォルトでXZ平面（水平面）に配置されるので回転不要
-            const divisions = Math.ceil(defaultFloorSize / 100);
-            const gridHelper = new THREE.GridHelper(defaultFloorSize, divisions, 0x888888, 0x888888);
-            gridHelper.position.set(center.x || 0, floorY, center.z || 0);
-            this.floorPlane = gridHelper;
-            this.scene.add(gridHelper);
-            return;
-        }
-        
-        // グリッドの線を表示するかどうかでフラグを設定
-        this.showGridRuler3D = false;  // GridRuler3Dを無効化（縦のグリッドと赤い十字を削除）
-        
-        // 既存のGridRuler3Dを削除（縦のグリッドと赤い十字を削除するため）
-        if (this.gridRuler3D) {
-            this.gridRuler3D.dispose();
-            this.scene.remove(this.gridRuler3D.group);
-            this.gridRuler3D = null;
-        }
-        
-        // GridRuler3Dは無効化（縦のグリッドと赤い十字が表示されるため）
-        // if (this.showGridLines) {
-        //     // labelMaxを都市のサイズに合わせて動的に設定
-        //     const maxSize = Math.max(gridSize.x, gridSize.y, gridSize.z);
-        //     const labelMax = Math.ceil(maxSize / 100) * 100;  // 100の倍数に切り上げ
-        //     
-        //     this.initGridRuler3D({
-        //         center: center,
-        //         size: gridSize,
-        //         floorY: floorY,
-        //         floorSize: floorSize,
-        //         floorDivisions: 40,
-        //         divX: 2,  // 分割数をさらに減らして赤い十字を減らす
-        //         divY: 2,
-        //         divZ: 2,
-        //         labelMax: labelMax,  // 都市のサイズに合わせて動的に設定
-        //         color: 0xffffff,
-        //         opacity: 0.5
-        //     });
-        // }
-        
-        // 床のグリッドを追加（斜めの線を避けるためGridHelperを使用）
-        // GridHelperはデフォルトでXZ平面（水平面）に配置されるので回転不要
-        const floorGridSize = Math.max(floorSize, 1000);  // 最小サイズを確保
-        const divisions = Math.ceil(floorGridSize / 100);  // 100単位ごとに分割
-        const gridHelper = new THREE.GridHelper(floorGridSize, divisions, 0x888888, 0x888888);
+        const floorY = this.floorY;
+        const gridHelper = new THREE.GridHelper(1000, 10, 0x888888, 0x888888);
         gridHelper.position.set(center.x, floorY, center.z);
-        this.floorPlane = gridHelper;  // 後で削除できるように保存
-        this.scene.add(gridHelper);
+        this.floorPlane = gridHelper;
     }
     
-    /**
-     * 建物群のバウンディングボックスを計算（街の中心を取得）
-     */
     calculateBuildingBounds() {
-        if (this.specialBuildings.length === 0) {
-            return;
-        }
-        
+        if (this.specialBuildings.length === 0) return;
         const box = new THREE.Box3();
-        
         this.specialBuildings.forEach(building => {
             building.updateMatrixWorld(true);
-            const buildingBox = new THREE.Box3().setFromObject(building);
-            box.union(buildingBox);
+            box.union(new THREE.Box3().setFromObject(building));
         });
-        
-        // 街の中心を計算
         this.cityCenter = box.getCenter(new THREE.Vector3());
     }
     
-    /**
-     * 特殊な形状の建物（3Dモデル）を読み込む
-     * Project PLATEAUのOBJデータを読み込む
-     */
     async loadSpecialBuildings() {
         console.log('=== loadSpecialBuildings() START ===');
-        // LOD2のOBJファイルを読み込む（テクスチャ付き、より詳細）
         const lod2BasePath = '/assets/533946_2/LOD2';
-        
         const objLoader = new OBJLoader();
         const mtlLoader = new MTLLoader();
         
-        // 読み込みカウンター
-        let loadedCount = 0;
-        let skippedCount = 0;
-        
-        // 実際のLOD2フォルダ名リスト（不連続な番号）
         const lod2Folders = [
             '533946001', '533946002', '533946003', '533946004',
             '533946011', '533946012', '533946013', '533946014',
             '533946021', '533946022', '533946023', '533946024',
-            '533946102', '533946104',
+            '533946101', '533946102', '533946103', '533946104',
             '533946111', '533946112', '533946113', '533946114',
-            '533946121', '533946123', '533946124',
-            '533946202', '533946204',
+            '533946121', '533946122', '533946123', '533946124',
+            '533946201', '533946202', '533946203', '533946204',
             '533946211', '533946212', '533946213', '533946214',
-            '533946221', '533946223'
+            '533946221', '533946222', '533946223', '533946224'
         ];
         
-        // LOD2の全フォルダを順次読み込む
-        console.log('Loading LOD2 folders:', lod2Folders.length, 'folders');
         for (const folder of lod2Folders) {
-            console.log('Loading folder:', folder);
+            const id = folder;
             const objPath = `${lod2BasePath}/${folder}/${folder}_bldg_6677.obj`;
-            const mtlPath = `${lod2BasePath}/${folder}/materials.mtl`;
             
             try {
-                let model = null;
-                
-                // MTLファイルがある場合は先に読み込む（テクスチャパスも設定）
-                // テクスチャは読み込まない（パフォーマンス改善のため）
                 try {
-                    // MTLファイルのパスを設定（テクスチャの読み込み用）
                     mtlLoader.setPath(`${lod2BasePath}/${folder}/`);
                     const materials = await mtlLoader.loadAsync('materials.mtl');
                     materials.preload();
-                    
-                    // テクスチャを無効化（パフォーマンス改善）
                     Object.keys(materials.materials).forEach(key => {
                         const mat = materials.materials[key];
-                        // テクスチャマップを全て無効化
-                        mat.map_Kd = null;
-                        mat.map_Ks = null;
-                        mat.map_Bump = null;
-                        mat.map_Normal = null;
+                        mat.map_Kd = null; mat.map_Ks = null; mat.map_Bump = null; mat.map_Normal = null;
                     });
-                    
                     objLoader.setMaterials(materials);
-                } catch (mtlError) {
-                    // MTLファイルがない場合はスキップ（OBJのみで読み込む）
-                    // MTLがない場合でもOBJは読み込めるので続行
+                } catch (e) {
+                    objLoader.setMaterials(null);
                 }
                 
-                // OBJファイルを読み込む（404エラーはOBJLoaderでキャッチされる）
-                try {
-                    model = await objLoader.loadAsync(objPath);
-                } catch (objError) {
-                    // OBJファイルが存在しない、または404エラーの場合はスキップ
-                    skippedCount++;
-                    continue;
-                }
+                const model = await objLoader.loadAsync(objPath);
+                if (!model || model.children.length === 0) continue;
                 
-                if (!model) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                // モデルがHTML（404エラーページ）でないかチェック
-                // OBJLoaderがHTMLを返した場合、model.childrenが空または不正な形式になる
-                if (model.children.length === 0) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                // モデルが有効かどうかを確認（geometryが存在するか、NaN値がないか）
-                let hasValidGeometry = false;
-                let hasNaNValues = false;
-                
-                model.traverse((child) => {
-                    if (child.isMesh && child.geometry) {
-                        const position = child.geometry.attributes.position;
-                        if (position && position.count > 0) {
-                            // NaN値がないかチェック（最初の100個だけチェックして高速化）
-                            const positions = position.array;
-                            for (let j = 0; j < Math.min(100, positions.length); j++) {
-                                if (isNaN(positions[j]) || !isFinite(positions[j])) {
-                                    hasNaNValues = true;
-                                    break;
-                                }
-                            }
-                            if (!hasNaNValues) {
-                                hasValidGeometry = true;
-                            }
-                        }
-                    }
-                });
-                
-                // NaN値があっても、geometryが存在すれば続行（バウンディングボックス計算時に再度チェック）
-                if (!hasValidGeometry) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                loadedCount++;
-                    
-                // モデルの設定
                 model.traverse((child) => {
                     if (child.isMesh) {
                         child.castShadow = true;
                         child.receiveShadow = true;
-                        
-                        // マテリアルをMeshStandardMaterialに変換（黒っぽい金属質感）
-                        if (child.material) {
-                            if (Array.isArray(child.material)) {
-                                const newMaterials = [];
-                                for (let i = 0; i < child.material.length; i++) {
-                                    const oldMat = child.material[i];
-                                    const newMat = new THREE.MeshStandardMaterial({
-                                        color: new THREE.Color(0x1a1a1a),  // 黒っぽい色
-                                        metalness: 1.0,
-                                        roughness: 0.05,  // より滑らかに
-                                        envMapIntensity: 2.0  // 環境マップの強度を上げる
-                                    });
-                                    newMaterials.push(newMat);
-                                    if (oldMat.dispose) oldMat.dispose();
-                                }
-                                child.material = newMaterials;
-                            } else {
-                                const oldMat = child.material;
-                                const newMat = new THREE.MeshStandardMaterial({
-                                    color: new THREE.Color(0x1a1a1a),  // 黒っぽい色
-                                    metalness: 1.0,
-                                    roughness: 0.05,  // より滑らかに
-                                    envMapIntensity: 2.0  // 環境マップの強度を上げる
-                                });
-                                if (oldMat.dispose) oldMat.dispose();
-                                child.material = newMat;
-                            }
-                        }
-                        
-                        // エッジを追加（geometryが有効な場合のみ）
-                        if (this.showEdges && child.geometry) {
-                            // geometryにNaN値がないかチェック
-                            const position = child.geometry.attributes.position;
-                            if (position && position.count > 0) {
-                                const positions = position.array;
-                                let hasNaN = false;
-                                for (let i = 0; i < Math.min(100, positions.length); i++) {
-                                    if (isNaN(positions[i]) || !isFinite(positions[i])) {
-                                        hasNaN = true;
-                                        break;
-                                    }
-                                }
-                                if (!hasNaN) {
-                                    try {
-                                        const edgesGeometry = new THREE.EdgesGeometry(child.geometry);
-                                        const edgesMaterial = new THREE.LineBasicMaterial({ 
-                                            color: this.edgeColor,
-                                            linewidth: this.edgeLineWidth
-                                        });
-                                        const edges = new THREE.LineSegments(edgesGeometry, edgesMaterial);
-                                        child.add(edges);
-                                    } catch (edgeError) {
-                                    }
-                                }
-                            }
-                        }
+                        child.material = new THREE.MeshStandardMaterial({
+                            color: new THREE.Color(0x1a1a1a),
+                            metalness: 1.0,
+                            roughness: 0.05,
+                            envMapIntensity: 2.0
+                        });
                     }
                 });
                 
-                // 座標の調整（Qiita記事参考：座標が中央から離れているので調整が必要）
-                // 参考: https://qiita.com/ProjectPLATEAU/items/a5a64d681045ea2f76b6
-                
-                // 回転前に元の座標（PLATEAU実座標）を取得
-                // モデルが正しく読み込まれているか確認
-                model.updateMatrixWorld(true);
-                
-                // geometryのNaN値をチェック（バウンディングボックス計算前に）
-                // ただし、NaN値があってもバウンディングボックス計算を試みる（エラーが出たらスキップ）
-                let geometryHasNaN = false;
-                try {
-                    model.traverse((child) => {
-                        if (child.isMesh && child.geometry) {
-                            const position = child.geometry.attributes.position;
-                            if (position) {
-                                const positions = position.array;
-                                for (let j = 0; j < Math.min(100, positions.length); j++) {  // 最初の100個だけチェック
-                                    if (isNaN(positions[j]) || !isFinite(positions[j])) {
-                                        geometryHasNaN = true;
-                                        return;
-                                    }
-                                }
-                            }
-                        }
-                    });
-                } catch (checkError) {
-                    geometryHasNaN = true;
-                }
-                
-                // NaN値があっても、バウンディングボックス計算を試みる
-                let boxBefore;
-                try {
-                    boxBefore = new THREE.Box3().setFromObject(model);
-                } catch (boxError) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                // バウンディングボックスが有効かどうかを確認
-                const boxSize = boxBefore.getSize(new THREE.Vector3());
-                if (isNaN(boxSize.x) || isNaN(boxSize.y) || isNaN(boxSize.z) ||
-                    boxSize.x <= 0 || boxSize.y <= 0 || boxSize.z <= 0) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                const originalCenter = boxBefore.getCenter(new THREE.Vector3());
-                
-                // 中心座標が有効かどうかを確認
-                if (isNaN(originalCenter.x) || isNaN(originalCenter.y) || isNaN(originalCenter.z)) {
-                    skippedCount++;
-                    continue;
-                }
-                
-                // 最初の建物の座標を基準として保存
-                if (this.specialBuildings.length === 0) {
-                    this.firstBuildingCenter = originalCenter.clone();
-                }
-                
-                // スケールを調整（記事では0.3推奨）
-                const modelScale = 1.0;
-                model.scale.set(modelScale, modelScale, modelScale);
-                
-                // 回転を調整（縦向きになっているのを修正）
-                model.rotation.x = -Math.PI / 2;  // X軸で-90度回転
-                
-                // 回転後にバウンディングボックスを計算（Y座標用）
+                // 座標調整
+                model.rotation.x = -Math.PI / 2;
                 model.updateMatrixWorld(true);
                 const box = new THREE.Box3().setFromObject(model);
-                
-                // バウンディングボックスが有効かどうかを確認
-                const size = box.getSize(new THREE.Vector3());
-                if (isNaN(size.x) || isNaN(size.y) || isNaN(size.z) ||
-                    size.x <= 0 || size.y <= 0 || size.z <= 0) {
-                    skippedCount++;
-                    continue;
-                }
-                
                 const center = box.getCenter(new THREE.Vector3());
-                const min = box.min;  // バウンディングボックスの最小値（底面）
                 
-                // 中心座標が有効かどうかを確認
-                if (isNaN(center.x) || isNaN(center.y) || isNaN(center.z) ||
-                    isNaN(min.x) || isNaN(min.y) || isNaN(min.z)) {
-                    skippedCount++;
-                    continue;
+                if (!this.firstBuildingCenter) {
+                    this.firstBuildingCenter = center.clone();
+                    console.log(`[Diagnostic-Anchor] Global Anchor Set:`, JSON.stringify(this.firstBuildingCenter));
                 }
                 
-                // PLATEAUの元の座標から相対位置を計算（位置関係を保つ）
-                // 座標をスケールダウンして画面内に収める
-                const positionScale = 0.01;  // 1/100にスケールダウン
-                const relativeX = (originalCenter.x - this.firstBuildingCenter.x) * positionScale;
-                const relativeZ = (originalCenter.z - this.firstBuildingCenter.z) * positionScale;
+                // ジオメトリのセンタリング
+                model.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        const localCenter = child.worldToLocal(center.clone());
+                        child.geometry.translate(-localCenter.x, -localCenter.y, -localCenter.z);
+                    }
+                });
                 
-                // 建物を配置
-                // 全ての建物を同じ座標系で配置（最初の建物のcenterオフセット + 相対位置）
-                if (this.specialBuildings.length === 0) {
-                    // 最初の建物：centerオフセットを保存
-                    this.firstBuildingCenterOffset = new THREE.Vector3(-center.x, 0, -center.z);
-                }
-                
-                // Y座標：建物の底面をfloorYに合わせる
-                // 各建物の底面（min.y）を直接floorYに合わせる
-                const yPosition = this.floorY - min.y;
-                
-                // 全ての建物：最初の建物のcenterオフセット + 相対位置
-                model.position.set(
-                    this.firstBuildingCenterOffset.x + relativeX,
-                    yPosition,
-                    this.firstBuildingCenterOffset.z + relativeZ
+                const positionScale = 0.01;
+                const finalPos = new THREE.Vector3(
+                    (center.x - this.firstBuildingCenter.x) * positionScale,
+                    (center.y - this.firstBuildingCenter.y) * positionScale,
+                    (center.z - this.firstBuildingCenter.z) * positionScale
                 );
                 
-                // シーンに追加（最初の建物も含めて全て同じ処理）
-                this.scene.add(model);
-                this.specialBuildings.push(model);
+                model.position.copy(finalPos);
+                model.scale.set(positionScale, positionScale, positionScale);
                 
-                // 物理演算用のParticleインスタンスを作成（建物の位置）
-                const particle = new Particle(
-                    this.firstBuildingCenterOffset.x + relativeX,
-                    yPosition,  // 建物のY位置（底面がfloorYに合わせた位置）
-                    this.firstBuildingCenterOffset.z + relativeZ
-                );
-                particle.friction = 0.98;  // 摩擦を強めに設定
-                particle.maxSpeed = 50.0;  // 最大速度
+                const particle = new Particle(finalPos.x, finalPos.y, finalPos.z);
+                particle.friction = 0.98;
+                particle.maxSpeed = 10.0;
                 this.buildingParticles.push(particle);
                 
+                this.scene.add(model);
+                this.specialBuildings.push(model);
+                console.log(`[Diagnostic-Building] ID: ${id}, Final Position:`, JSON.stringify(model.position));
+                
             } catch (error) {
-                skippedCount++;
-                // エラーが発生しても続行
+                console.error(`Error loading building ${id}:`, error);
             }
         }
-        
-        if (loadedCount === 0) {
-            console.error('Scene11: No buildings were loaded! Check file paths and console for errors.');
-        }
-        
-        // 建物数を更新（HUD表示用）
         this.updateBuildingCount();
     }
     
-    /**
-     * LOD2の建物を読み込む（テクスチャ付き、より詳細）
-     * パフォーマンスを考慮して、必要に応じて使用
-     */
-    async loadLOD2Buildings() {
-        const lod2BasePath = '/assets/533946_2/LOD2';
-        // LOD2の構造を確認して実装
-        // テクスチャも読み込む必要がある
-    }
-    
-    /**
-     * 道のネットワークのマテリアルを作成
-     */
-    createRoadMaterial() {
-        const roadMaterial = new MeshLineMaterial({
-            transparent: true,
-            lineWidth: 3,  // 道の幅
-            color: new THREE.Color(this.roadColor),
-            opacity: 0.8
-        });
+    async loadDEM() {
+        const demDir = '/assets/533946_2/dem/';
+        const demIds = [
+            '53394600', '53394601', '53394602', '53394603', '53394604',
+            '53394610', '53394611', '53394612', '53394613', '53394614',
+            '53394620', '53394621', '53394622', '53394623', '53394624'
+        ];
+        const loader = new OBJLoader();
         
-        return roadMaterial;
-    }
-    
-    /**
-     * 道の色を変更
-     */
-    setRoadColor(color) {
-        this.roadColor = color;
-        if (this.roadMaterial) {
-            this.roadMaterial.color = new THREE.Color(color);
-        }
-    }
-    
-    /**
-     * 道のネットワークを読み込む
-     */
-    async loadRoadNetwork() {
-        try {
-            
-            // ノードデータを読み込む
-            const nodeResponse = await fetch('/nw/Shinjuku_node.geojson');
-            const nodeData = await nodeResponse.json();
-            
-            // ノードIDと座標のマップを作成
-            const nodeMap = new Map();
-            nodeData.features.forEach((feature) => {
-                nodeMap.set(feature.properties.node_id, {
-                    coordinates: feature.geometry.coordinates,
-                    ordinal: feature.properties.ordinal || 0
-                });
-            });
-            
-            // リンクデータを読み込む
-            const linkResponse = await fetch('/nw/Shinjuku_link.geojson');
-            const linkData = await linkResponse.json();
-            
-            // メッシュラインの配列
-            const meshLines = [];
-            this.roadMaterial = this.createRoadMaterial();
-            
-            // 道のパスを保存（カメラの歩行用）
-            this.roadPath = [];
-            
-            // 座標変換の基準点（建物の座標系に合わせる）
-            const positionScale = 0.01;  // 建物と同じスケール
-            const roadYOffset = this.offsetY + 1;  // 道を地面の少し上に配置
-            
-            // 最初の建物の中心座標を基準にする
-            if (!this.firstBuildingCenter) {
-                const firstNode = nodeData.features[0];
-                if (firstNode) {
-                    this.firstBuildingCenter = new THREE.Vector3(
-                        firstNode.geometry.coordinates[0],
-                        0,
-                        firstNode.geometry.coordinates[1]
-                    );
+        for (const id of demIds) {
+            const url = `${demDir}${id}/${id}_dem_6677.obj`;
+            try {
+                const model = await loader.loadAsync(url);
+                if (!model) continue;
+                
+                model.rotation.x = -Math.PI / 2;
+                model.updateMatrixWorld(true);
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                
+                if (!this.firstBuildingCenter) {
+                    this.firstBuildingCenter = center.clone();
                 }
-            }
-            
-            const baseCenter = this.firstBuildingCenter;
-            
-            if (!baseCenter) {
-                console.log('No baseCenter for road network');
-                return;
-            }
-            
-            console.log('=== Road Network Debug ===');
-            console.log('firstBuildingCenter:', this.firstBuildingCenter);
-            console.log('firstBuildingCenterOffset:', this.firstBuildingCenterOffset);
-            console.log('First GeoJSON coord sample:', linkData.features[0]?.geometry?.coordinates?.[0]);
-            
-            linkData.features.forEach((feature) => {
-                const coordinates = feature.geometry.coordinates;
                 
-                // ノードデータからstart_idとend_idの取得
-                const startNode = nodeMap.get(feature.properties.start_id);
-                const endNode = nodeMap.get(feature.properties.end_id);
-                
-                // 3次元のpointの配列を作成
-                const points = coordinates.map((point, index) => {
-                    let y = roadYOffset;
-                    
-                    // ノードのordinalを使用してY座標を設定
-                    if (startNode && endNode) {
-                        if (index === 0) {
-                            y = roadYOffset + startNode.ordinal * 0.1;
-                        } else if (index === coordinates.length - 1) {
-                            y = roadYOffset + endNode.ordinal * 0.1;
-                        } else {
-                            y = roadYOffset + (startNode.ordinal + endNode.ordinal) / 2 * 0.1;
-                        }
-                    } else if (startNode) {
-                        y = roadYOffset + startNode.ordinal * 0.1;
-                    } else if (endNode) {
-                        y = roadYOffset + endNode.ordinal * 0.1;
+                model.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        const localCenter = child.worldToLocal(center.clone());
+                        child.geometry.translate(-localCenter.x, -localCenter.y, -localCenter.z);
+                        child.material = new THREE.MeshStandardMaterial({
+                            color: 0x444444, wireframe: true, transparent: true, opacity: 0.5
+                        });
                     }
-                    
-                    // 座標変換：GeoJSON座標を建物の座標系に変換
-                    let x, z;
-                    if (baseCenter) {
-                        x = (point[0] - baseCenter.x) * positionScale;
-                        z = -(point[1] - baseCenter.z) * positionScale;  // Z軸を反転
-                    } else {
-                        x = point[0] * positionScale;
-                        z = -point[1] * positionScale;
-                    }
-                    
-                    // 建物のオフセットを適用（firstBuildingCenterOffsetが設定されている場合）
-                    if (this.firstBuildingCenterOffset) {
-                        x += this.firstBuildingCenterOffset.x;
-                        z += this.firstBuildingCenterOffset.z;
-                    }
-                    
-                    return new THREE.Vector3(x, y, z);
                 });
                 
-                // 道のパスに追加（カメラの歩行用）
-                this.roadPath.push(...points);
+                const positionScale = 0.01;
+                const finalPos = new THREE.Vector3(
+                    (center.x - this.firstBuildingCenter.x) * positionScale,
+                    (center.y - this.firstBuildingCenter.y) * positionScale,
+                    (center.z - this.firstBuildingCenter.z) * positionScale
+                );
+                model.position.copy(finalPos);
+                model.scale.set(positionScale, positionScale, positionScale);
                 
-                // pointの配列からMeshLineを作成
-                points.forEach((point, index) => {
-                    // 最後の点の場合は処理を終了
-                    if (index + 1 === points.length) return;
-                    
-                    // MeshLineを作成。2点間のMeshLineを別々に作成する
-                    const geometry = new THREE.BufferGeometry().setFromPoints([point, points[index + 1]]);
-                    const line = new MeshLine();
-                    line.setGeometry(geometry);
-                    
-                    // 2点間の距離を計算
-                    const distance = point.distanceTo(points[index + 1]);
-                    
-                    // MeshLineの頂点数を取得
-                    const numVerticesAfter = line.geometry.getAttribute('position').count;
-                    
-                    // 頂点数に基づいて distances 配列を生成しsetAttributeで頂点属性を追加
-                    const distances = new Float32Array(numVerticesAfter).fill(distance);
-                    line.setAttribute('uDistance', new THREE.BufferAttribute(distances, 1));
-                    
-                    // MeshLineの配列に追加
-                    meshLines.push(line.geometry);
-                });
-            });
-            
-            // MeshLineをマージ
-            if (meshLines.length > 0) {
-                const mergedGeometry = BufferGeometryUtils.mergeGeometries(meshLines);
-                const roadMesh = new THREE.Mesh(mergedGeometry, this.roadMaterial);
-                roadMesh.name = 'road';
-                this.roadMesh = roadMesh;
-                this.scene.add(roadMesh);
-            }
-            
-            // カメラの初期位置を道のパスの最初の位置に設定（loadRoadNetwork内では設定しない）
-            // setup()の最後で統一して設定するため、ここでは設定しない
-            
-            console.log('=== Road Path Generated ===');
-            console.log('roadPath length:', this.roadPath.length);
-            if (this.roadPath.length > 0) {
-                console.log('roadPath first point:', this.roadPath[0]);
-                console.log('roadPath last point:', this.roadPath[this.roadPath.length - 1]);
-            }
-        } catch (error) {
-            console.log('Error loading road network:', error);
+                this.scene.add(model);
+                this.demObjects.push(model);
+                console.log(`[Diagnostic-DEM] ID: ${id}, Final Position:`, JSON.stringify(model.position));
+            } catch (e) {}
         }
     }
-    
+
+    toggleEffect(trackNumber) {
+        // 全てのトラックエフェクトを有効化（親クラスの処理を呼ぶ）
+        super.toggleEffect(trackNumber);
+    }
+
+    /**
+     * カメラをランダムに切り替える（親クラスの処理をそのまま使用）
+     */
+    switchCameraRandom() {
+        super.switchCameraRandom();
+    }
+
+    /**
+     * カメラにランダムな力を加える（親クラスの処理をそのまま使用）
+     */
+    updateCameraForce() {
+        super.updateCameraForce();
+    }
+
     /**
      * カメラの位置を更新
      */
     updateCamera() {
-        if (this.cameraParticles[this.currentCameraIndex]) {
-            const cameraPos = this.cameraParticles[this.currentCameraIndex].getPosition();
-            this.camera.position.copy(cameraPos);
-            
-            // カメラ1は街の中心を見る
-            if (this.currentCameraIndex === 0 && this.cityCenter) {
-                this.camera.lookAt(this.cityCenter);
-            } else {
-                // デフォルトは原点を見る
-                this.camera.lookAt(0, 0, 0);
-            }
-            
-            this.camera.matrixWorldNeedsUpdate = false;
-        }
+        // 親クラスの updateCamera() をそのまま使用
+        super.updateCamera();
     }
-    
-    
-    /**
-     * カメラ1を建物群の周りを歩かせる
-     */
-    updateCamera1Walk(deltaTime) {
-        if (!this.cameraParticles || !this.cameraParticles[0]) {
-            return;
-        }
-        
-        // 建物群のバウンディングボックスがない場合は計算
-        if (!this.buildingWalkPath) {
-            this.generateBuildingWalkPath();
-        }
-        
-        // パスがない場合は何もしない
-        if (!this.buildingWalkPath || this.buildingWalkPath.length === 0) {
-            return;
-        }
-        
-        // 現在のパスインデックスを更新
-        const distance = this.camera1WalkSpeed * deltaTime;
-        
-        // 現在の位置から次のポイントまでの距離を計算
-        let currentIndex = Math.floor(this.camera1WalkIndex);
-        if (currentIndex >= this.buildingWalkPath.length - 1) {
-            // パスの終端に達したら最初に戻る
-            this.camera1WalkIndex = 0;
-            currentIndex = 0;
-        }
-        
-        const currentPoint = this.buildingWalkPath[currentIndex];
-        const nextIndex = Math.min(currentIndex + 1, this.buildingWalkPath.length - 1);
-        const nextPoint = this.buildingWalkPath[nextIndex];
-        
-        // 現在のセグメントの長さを計算
-        const segmentLength = currentPoint.distanceTo(nextPoint);
-        
-        // セグメント内での進捗を計算
-        if (segmentLength > 0.001) {  // ゼロ除算防止
-            let remainingDistance = distance;
-            let newIndex = this.camera1WalkIndex;
-            
-            while (remainingDistance > 0 && newIndex < this.buildingWalkPath.length - 1) {
-                const idx = Math.floor(newIndex);
-                const nextIdx = Math.min(idx + 1, this.buildingWalkPath.length - 1);
-                const p1 = this.buildingWalkPath[idx];
-                const p2 = this.buildingWalkPath[nextIdx];
-                const segLen = p1.distanceTo(p2);
-                
-                if (segLen < 0.001) {
-                    newIndex = nextIdx;
-                    continue;
-                }
-                
-                const localProgress = newIndex - idx;
-                const remainingInSegment = (1 - localProgress) * segLen;
-                
-                if (remainingDistance <= remainingInSegment) {
-                    newIndex += remainingDistance / segLen;
-                    remainingDistance = 0;
-                } else {
-                    newIndex = nextIdx;
-                    remainingDistance -= remainingInSegment;
-                }
-            }
-            
-            // パスの終端に達したら最初に戻る
-            if (newIndex >= this.buildingWalkPath.length - 1) {
-                newIndex = 0;
-            }
-            
-            this.camera1WalkIndex = newIndex;
-        }
-        
-        // 現在の位置を補間で計算
-        const idx = Math.floor(this.camera1WalkIndex);
-        const nextIdx = Math.min(idx + 1, this.buildingWalkPath.length - 1);
-        const t = this.camera1WalkIndex - idx;
-        
-        const p1 = this.buildingWalkPath[idx];
-        const p2 = this.buildingWalkPath[nextIdx];
-        
-        // 位置を補間
-        const x = p1.x + (p2.x - p1.x) * t;
-        const z = p1.z + (p2.z - p1.z) * t;
-        const y = this.floorY + this.camera1WalkHeight;
-        
-        // カメラパーティクル1の位置を設定
-        this.cameraParticles[0].position.set(x, y, z);
-        // 速度と力をリセット（物理演算の影響を無効化）
-        this.cameraParticles[0].velocity.set(0, 0, 0);
-        this.cameraParticles[0].force.set(0, 0, 0);
-        this.cameraParticles[0].acceleration.set(0, 0, 0);
-    }
-    
-    /**
-     * 街の中を歩くパスを生成（実際の道路データを使用）
-     */
-    generateBuildingWalkPath() {
-        // 建物群のバウンディングボックスを計算してログ出力
-        if (this.specialBuildings.length > 0) {
-            const buildingBox = new THREE.Box3();
-            this.specialBuildings.forEach(building => {
-                building.updateMatrixWorld(true);
-                buildingBox.union(new THREE.Box3().setFromObject(building));
-            });
-            const buildingCenter = buildingBox.getCenter(new THREE.Vector3());
-            const buildingSize = buildingBox.getSize(new THREE.Vector3());
-            console.log('=== Building Bounding Box ===');
-            console.log('Building center:', buildingCenter);
-            console.log('Building size:', buildingSize);
-            console.log('Building min:', buildingBox.min);
-            console.log('Building max:', buildingBox.max);
-        }
-        
-        // 道路データがある場合はそれを使用
-        if (this.roadPath && this.roadPath.length > 0) {
-            // roadPathをbuildingWalkPathにコピー
-            this.buildingWalkPath = this.roadPath.slice();
-            console.log('Walk path generated from road network:', this.buildingWalkPath.length, 'points');
-            console.log('First walk path point:', this.buildingWalkPath[0]);
-            return;
-        }
-        
-        // 道路データがない場合は建物群の周りを歩くフォールバック
-        if (this.specialBuildings.length === 0) {
-            return;
-        }
-        
-        // 全ての建物を含むバウンディングボックスを計算
-        const box = new THREE.Box3();
-        this.specialBuildings.forEach(building => {
-            building.updateMatrixWorld(true);
-            const buildingBox = new THREE.Box3().setFromObject(building);
-            box.union(buildingBox);
-        });
-        
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        
-        // 建物群の周りを歩くパスを生成（長方形のパス、建物に近い位置）
-        const margin = 10;
-        const halfX = size.x / 2 - margin;
-        const halfZ = size.z / 2 - margin;
-        
-        this.buildingWalkPath = [];
-        const segments = 20;
-        
-        for (let i = 0; i <= segments; i++) {
-            const t = i / segments;
-            this.buildingWalkPath.push(new THREE.Vector3(
-                center.x - halfX + halfX * 2 * t, 0, center.z + halfZ
-            ));
-        }
-        for (let i = 1; i <= segments; i++) {
-            const t = i / segments;
-            this.buildingWalkPath.push(new THREE.Vector3(
-                center.x + halfX, 0, center.z + halfZ - halfZ * 2 * t
-            ));
-        }
-        for (let i = 1; i <= segments; i++) {
-            const t = i / segments;
-            this.buildingWalkPath.push(new THREE.Vector3(
-                center.x + halfX - halfX * 2 * t, 0, center.z - halfZ
-            ));
-        }
-        for (let i = 1; i < segments; i++) {
-            const t = i / segments;
-            this.buildingWalkPath.push(new THREE.Vector3(
-                center.x - halfX, 0, center.z - halfZ + halfZ * 2 * t
-            ));
-        }
-        
-        console.log('Building walk path generated (fallback):', this.buildingWalkPath.length, 'points');
-    }
-    
-    /**
-     * 歩行パスを赤いラインで描画
-     */
-    drawWalkPathLine() {
-        // 既存のラインがあれば削除
-        if (this.walkPathLine) {
-            this.scene.remove(this.walkPathLine);
-            this.walkPathLine.geometry.dispose();
-            this.walkPathLine.material.dispose();
-            this.walkPathLine = null;
-        }
-        
-        if (!this.buildingWalkPath || this.buildingWalkPath.length < 2) {
-            return;
-        }
-        
-        // パスの頂点を配列に変換（ループを閉じるために最初の点も追加）
-        const points = [];
-        this.buildingWalkPath.forEach(p => {
-            points.push(p.x, this.floorY + 5, p.z);  // 少し浮かせて見やすく
-        });
-        // ループを閉じる
-        const firstPoint = this.buildingWalkPath[0];
-        points.push(firstPoint.x, this.floorY + 5, firstPoint.z);
-        
-        // MeshLineで描画（太い線が描ける）
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-        
-        const line = new MeshLine();
-        line.setGeometry(geometry);
-        
-        const material = new MeshLineMaterial({
-            color: 0xff0000,  // 赤色
-            lineWidth: 5,     // 太めの線
-            resolution: new THREE.Vector2(window.innerWidth, window.innerHeight),
-            sizeAttenuation: true,
-            transparent: true,
-            opacity: 0.8
-        });
-        
-        this.walkPathLine = new THREE.Mesh(line, material);
-        this.scene.add(this.walkPathLine);
-        
-        console.log('Walk path line created (red)');
-    }
-    
-    /**
-     * カメラ1を円周運動させる（非推奨、歩行に置き換え）
-     */
-    updateCamera1Orbit(deltaTime) {
-        if (!this.cityCenter || !this.cameraParticles || !this.cameraParticles[0]) {
-            if (!this.cityCenter) {
-            }
-            return;
-        }
-        
-        // 角度を更新
-        this.camera1OrbitAngle += this.camera1OrbitSpeed * deltaTime;
-        
-        // 円周上の位置を計算
-        const x = this.cityCenter.x + Math.cos(this.camera1OrbitAngle) * this.camera1OrbitRadius;
-        const z = this.cityCenter.z + Math.sin(this.camera1OrbitAngle) * this.camera1OrbitRadius;
-        const y = this.camera1OrbitHeight;  // Y座標は0に近い値（街の中心のY座標ではなく固定値）
-        
-        // カメラパーティクル1の位置を設定
-        this.cameraParticles[0].position.set(x, y, z);
-        // 速度と力をリセット（物理演算の影響を無効化）
-        this.cameraParticles[0].velocity.set(0, 0, 0);
-        this.cameraParticles[0].force.set(0, 0, 0);
-        this.cameraParticles[0].acceleration.set(0, 0, 0);
-        
-    }
-    
-    /**
-     * 更新処理（毎フレーム呼ばれる）
-     */
+
     onUpdate(deltaTime) {
-        // GridRuler3Dを確実に削除（縦のグリッドと赤い十字を削除するため、毎フレームチェック）
+        if (!this._lastCamLog || Date.now() - this._lastCamLog > 1000) {
+            console.log(`[Diagnostic-Camera] Pos: (${this.camera.position.x.toFixed(2)}, ${this.camera.position.y.toFixed(2)}, ${this.camera.position.z.toFixed(2)})`);
+            this._lastCamLog = Date.now();
+        }
+
+        if (!this._keyDebugInitialized) {
+            window.addEventListener('keydown', (e) => {
+                if (e.key.toLowerCase() === 'b') this.handleKeyPress('b');
+            });
+            this._keyDebugInitialized = true;
+        }
+
         if (this.scene) {
-            // GridRuler3Dインスタンスを削除
             if (this.gridRuler3D) {
                 this.gridRuler3D.dispose();
-                if (this.gridRuler3D.group) {
-                    this.scene.remove(this.gridRuler3D.group);
-                }
+                if (this.gridRuler3D.group) this.scene.remove(this.gridRuler3D.group);
                 this.gridRuler3D = null;
             }
-            
-            // シーンをトラバースしてGridRuler3Dのグループを探して削除
             this.scene.traverse((object) => {
                 if (object.name === 'GridRuler3D' || (object.parent && object.parent.name === 'GridRuler3D')) {
                     this.scene.remove(object);
@@ -1284,174 +389,91 @@ export class Scene11 extends SceneTemplate {
             });
         }
         
-        // 時間を更新
         this.time += deltaTime;
         
-        // カメラ1を道の上を歩かせる（カメラ1固定）
-        this.updateCamera1Walk(deltaTime);
-        
-        // 親クラスの更新処理を先に呼ぶ
-        super.onUpdate(deltaTime);
-        
-        // カメラの位置を更新
-        this.updateCamera();
-        
-        // 物理演算が有効な場合、建物を更新
         if (this.physicsEnabled && this.buildingParticles.length > 0) {
             for (let i = 0; i < this.buildingParticles.length; i++) {
                 const particle = this.buildingParticles[i];
                 const building = this.specialBuildings[i];
-                
                 if (!particle || !building) continue;
-                
-                particle.addForce(this.gravity);
+                particle.addForce(this.gravity || new THREE.Vector3(0, -0.098, 0));
                 particle.update();
-                
                 const pos = particle.getPosition();
                 if (pos.y < this.groundY) {
                     pos.y = this.groundY;
                     particle.velocity.y *= -0.5;
-                    particle.velocity.x *= 0.8;
-                    particle.velocity.z *= 0.8;
                 }
-                
                 building.position.copy(pos);
             }
         }
         
-        // 建物のコールアウト表示を更新
         this.updateBuildingCallout();
-
+        this.updateCamera();
     }
     
-    /**
-     * OSCメッセージの処理（SceneBase.handleOSC()をオーバーライド）
-     */
+    handleKeyPress(key) {
+        if (super.handleKeyPress) super.handleKeyPress(key);
+        const k = key.toLowerCase();
+        if (k === 'b') {
+            this.showBuildings = !this.showBuildings;
+            this.specialBuildings.forEach(b => b.visible = this.showBuildings);
+        }
+    }
+
     handleOSC(message) {
-        // /phase/メッセージを処理（/phase/ または /phase の両方に対応）
         if (message.address === '/phase/' || message.address === '/phase') {
             const args = message.args || [];
-            if (args.length > 0) {
-                const phaseValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
-                if (!isNaN(phaseValue)) {
-                    this.phase = Math.floor(phaseValue);  // integerとして保存
-                }
-            }
-            return;  // 処理済み
-        }
-        
-        // /actual_tick/メッセージを処理（/actual_tick/ または /actual_tick の両方に対応）
-        if (message.address === '/actual_tick/' || message.address === '/actual_tick' || message.address === '/tick/' || message.address === '/tick') {
-            const args = message.args || [];
-            if (args.length > 0) {
-                const tickValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
-                if (!isNaN(tickValue)) {
-                    this.actualTick = Math.floor(tickValue);  // integerとして保存
-                }
-            }
-            return;  // 処理済み
-        }
-        
-        // /kit/メッセージを処理（/kit/ または /kit の両方に対応）
-        // 注意: このメッセージはSceneManagerで処理されるため、ここでは処理しない
-        // SceneManagerでシーン切り替えが行われる
-        
-        const trackNumber = message.trackNumber;
-        
-        // trackEffectsの状態をチェック（オフの場合は処理をスキップ）
-        if (trackNumber >= 1 && trackNumber <= 9 && !this.trackEffects[trackNumber]) {
+            if (args.length > 0) this.phase = Math.floor(args[0]);
             return;
         }
-        
-        // トラック1はhandleTrackNumberで処理（他のシーン同様にswitchCameraRandom()を呼ぶ）
-        // 他のトラックは親クラスの処理を呼ぶ
+        if (message.address === '/actual_tick/' || message.address === '/actual_tick' || message.address === '/tick/' || message.address === '/tick') {
+            const args = message.args || [];
+            if (args.length > 0) this.actualTick = Math.floor(args[0]);
+            return;
+        }
+        if (message.trackNumber === 1) return;
+        if (message.trackNumber >= 1 && message.trackNumber <= 9 && !this.trackEffects[message.trackNumber]) return;
         super.handleOSC(message);
     }
     
-    /**
-     * OSCメッセージの処理
-     */
     handleTrackNumber(trackNumber, message) {
-        const args = message.args || [];
-        
-        // トラック1: カメラ1固定（道の上を歩くため、切り替えしない）
-        if (trackNumber === 1) {
-            // カメラ切り替えを無効化（カメラ1で歩行を継続）
-            return;
-        }
-        
-        // 他のトラックは通常通り処理
+        if (trackNumber === 1) return;
         super.handleTrackNumber(trackNumber, message);
-        
         if (trackNumber === 5) {
-            // トラック5: 建物情報をコールアウト表示
-            const velocity = args[1] || 127.0;
-            // velocity値に応じてコールアウト表示を開始/継続
-            if (velocity > 0) {
-                this.startBuildingCallout();
-            }
-            // 道の色変更は削除（建物情報表示に変更）
+            if ((message.args || [])[1] > 0) this.startBuildingCallout();
         } else if (trackNumber === 6) {
-            // トラック6: 物理演算ON/OFF
             this.physicsEnabled = !this.physicsEnabled;
         } else if (trackNumber === 7) {
-            // トラック7: 中心から放射状に爆発
-            this.applyExplosionForce(new THREE.Vector3(0, 0, 0), 1000.0, 50.0);
+            this.applyExplosionForce(new THREE.Vector3(0, 0, 0), 10.0, 5.0);
         }
     }
     
-    /**
-     * 建物コールアウト表示を開始
-     */
     startBuildingCallout() {
-        if (this.specialBuildings.length === 0) {
-            return;
-        }
-        
+        if (this.specialBuildings.length === 0) return;
         this.buildingCalloutActive = true;
         this.buildingCalloutIndex = 0;
         this.buildingCalloutEndTime = Date.now() + this.buildingCalloutDuration;
     }
     
-    /**
-     * 建物コールアウト表示を更新
-     */
     updateBuildingCallout() {
-        if (!this.buildingCalloutActive) {
-            return;
-        }
-        
-        const currentTime = Date.now();
-        
-        // 現在の建物の表示時間が終了したら次の建物へ
-        if (currentTime >= this.buildingCalloutEndTime) {
+        if (!this.buildingCalloutActive) return;
+        if (Date.now() >= this.buildingCalloutEndTime) {
             this.buildingCalloutIndex++;
-            
-            // 全ての建物を表示し終えたら終了
             if (this.buildingCalloutIndex >= this.specialBuildings.length) {
                 this.buildingCalloutActive = false;
                 this.buildingCalloutIndex = 0;
-                return;
+            } else {
+                this.buildingCalloutEndTime = Date.now() + this.buildingCalloutDuration;
             }
-            
-            // 次の建物の表示時間を設定
-            this.buildingCalloutEndTime = currentTime + this.buildingCalloutDuration;
         }
     }
     
-    /**
-     * 建物のコールアウトを描画
-     */
     drawBuildingCallout(building, index) {
         if (!this.hud || !this.hud.ctx) return;
-        
         const ctx = this.hud.ctx;
         const canvas = this.hud.canvas;
-        
-        // バウンディングボックスをキャッシュから取得（なければ計算してキャッシュ）
         let cachedData = this.buildingCalloutCache.get(building);
         if (!cachedData) {
-            // 初回のみ計算（重たい処理）
             building.updateMatrixWorld(true);
             const box = new THREE.Box3().setFromObject(building);
             const center = box.getCenter(new THREE.Vector3());
@@ -1459,231 +481,103 @@ export class Scene11 extends SceneTemplate {
             cachedData = { center, size };
             this.buildingCalloutCache.set(building, cachedData);
         }
-        
-        const center = cachedData.center;
-        const size = cachedData.size;
-        
-        // 建物の中心位置を2D座標に変換（毎フレーム必要）
-        const buildingCenter3D = center.clone();
-        buildingCenter3D.project(this.camera);
-        
-        // 画面座標に変換
+        const { center, size } = cachedData;
+        const buildingCenter3D = center.clone().project(this.camera);
         const centerScreenX = (buildingCenter3D.x * 0.5 + 0.5) * canvas.width;
         const centerScreenY = (buildingCenter3D.y * -0.5 + 0.5) * canvas.height;
-        
-        // 画面外の場合は描画しない
-        if (centerScreenX < 0 || centerScreenX > canvas.width || 
-            centerScreenY < 0 || centerScreenY > canvas.height ||
-            buildingCenter3D.z > 1.0) {
-            return;
-        }
-        
-        // 建物の上端の3D位置を計算
-        const buildingTop3D = new THREE.Vector3(center.x, center.y + size.y / 2, center.z);
-        buildingTop3D.project(this.camera);
-        
-        // 建物の上端の画面座標
+        if (centerScreenX < 0 || centerScreenX > canvas.width || centerScreenY < 0 || centerScreenY > canvas.height || buildingCenter3D.z > 1.0) return;
+        const buildingTop3D = new THREE.Vector3(center.x, center.y + size.y / 2, center.z).project(this.camera);
         const startX = (buildingTop3D.x * 0.5 + 0.5) * canvas.width;
         const startY = (buildingTop3D.y * -0.5 + 0.5) * canvas.height;
-        
-        // 画面の位置に応じてコールアウトの方向を自動決定
-        const screenCenterX = canvas.width / 2;
-        const useRight = centerScreenX >= screenCenterX;
-        
-        // 角度を調整
-        const distanceFromCenter = Math.abs(centerScreenX - screenCenterX) / screenCenterX;
-        const minAngle = Math.PI / 2;
-        const maxAngle = Math.PI * 0.85;
-        const diagonalAngle = minAngle + (maxAngle - minAngle) * distanceFromCenter;
-        
+        const useRight = centerScreenX >= canvas.width / 2;
+        const diagonalAngle = Math.PI / 2 + (Math.PI * 0.35) * (Math.abs(centerScreenX - canvas.width / 2) / (canvas.width / 2));
         const diagonalDirX = useRight ? Math.cos(diagonalAngle) : -Math.cos(diagonalAngle);
         const diagonalDirY = -Math.sin(diagonalAngle);
-        
-        // 斜めの線の長さ
-        const diagonalLength = 80.0;
-        const end1X = startX + diagonalDirX * diagonalLength;
-        const end1Y = startY + diagonalDirY * diagonalLength;
-        
-        // 水平線
-        const horizontalLength = 200.0;
-        const end2X = end1X + horizontalLength;
-        const end2Y = end1Y;
-        
-        // 線を描画
+        const end1X = startX + diagonalDirX * 80;
+        const end1Y = startY + diagonalDirY * 80;
+        const end2X = end1X + 200;
         ctx.save();
         ctx.lineWidth = 2;
         ctx.strokeStyle = 'rgba(255, 0, 0, 0.78)';
-        
         ctx.beginPath();
         ctx.moveTo(startX, startY);
         ctx.lineTo(end1X, end1Y);
-        ctx.moveTo(end1X, end1Y);
-        ctx.lineTo(end2X, end2Y);
+        ctx.lineTo(end2X, end1Y);
         ctx.stroke();
-        
-        // テキストを描画
-        ctx.fillStyle = 'rgba(255, 255, 255, 1.0)';
+        ctx.fillStyle = 'white';
         ctx.font = '16px monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'bottom';
-        
-        const lineHeight = 20;
         const textX = end2X + 10;
-        let textY = end2Y - 120;
-        
-        // カメラからの距離を計算
-        const cameraPos = this.camera.position;
-        const distance = center.distanceTo(cameraPos);
-        
-        // 建物情報を表示
+        let textY = end1Y - 120;
         ctx.fillText('BUILDING INFO', textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`ID: ${index + 1}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`X: ${center.x.toFixed(2)}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`Y: ${center.y.toFixed(2)}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`Z: ${center.z.toFixed(2)}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`W: ${size.x.toFixed(2)}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`H: ${size.y.toFixed(2)}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`D: ${size.z.toFixed(2)}`, textX, textY);
-        textY += lineHeight;
-        ctx.fillText(`DST: ${distance.toFixed(2)}`, textX, textY);
-        
+        ctx.fillText(`ID: ${index + 1}`, textX, textY + 20);
+        ctx.fillText(`X: ${center.x.toFixed(2)}`, textX, textY + 40);
+        ctx.fillText(`Y: ${center.y.toFixed(2)}`, textX, textY + 60);
+        ctx.fillText(`Z: ${center.z.toFixed(2)}`, textX, textY + 80);
+        ctx.fillText(`DST: ${center.distanceTo(this.camera.position).toFixed(2)}`, textX, textY + 100);
         ctx.restore();
     }
     
-    /**
-     * 描画処理（オーバーライド）
-     */
     render() {
-        // SceneBaseのrenderメソッドを使用
         super.render();
-        
-        // 建物のコールアウトを描画（HUDの後に描画）
         if (this.buildingCalloutActive && this.hud && this.hud.ctx) {
             const building = this.specialBuildings[this.buildingCalloutIndex];
-            if (building) {
-                this.drawBuildingCallout(building, this.buildingCalloutIndex);
-            }
+            if (building) this.drawBuildingCallout(building, this.buildingCalloutIndex);
         }
     }
     
-    /**
-     * 爆発の力を適用（中心点から放射状に力を加える）
-     */
     applyExplosionForce(center, radius, strength) {
         for (let i = 0; i < this.buildingParticles.length; i++) {
             const particle = this.buildingParticles[i];
-            const building = this.specialBuildings[i];
-            
-            if (!particle || !building) continue;
-            
+            if (!particle) continue;
             const pos = particle.getPosition();
             const direction = new THREE.Vector3().subVectors(pos, center);
             const distance = direction.length();
-            
             if (distance < radius && distance > 0) {
-                // 距離に応じた力の減衰
                 const forceMagnitude = strength * (1.0 - distance / radius);
-                direction.normalize().multiplyScalar(forceMagnitude);
-                particle.addForce(direction);
-                
-                // 物理演算を有効化（爆発時は自動的にON）
+                particle.addForce(direction.normalize().multiplyScalar(forceMagnitude));
                 this.physicsEnabled = true;
             }
         }
     }
     
-    /**
-     * リセット処理
-     */
     reset() {
         super.reset();
-        
-        // 時間をリセット
         this.time = 0.0;
-        
-        // 物理演算をリセット
         this.physicsEnabled = false;
-        for (let i = 0; i < this.buildingParticles.length; i++) {
-            const particle = this.buildingParticles[i];
-            if (particle) {
-                particle.reset();
-            }
-        }
+        this.buildingParticles.forEach(p => p.reset());
     }
     
-    /**
-     * クリーンアップ処理
-     */
     dispose() {
-        // インスタンシング用の建物を破棄
-        if (this.instancedBuildings) {
-            this.instancedBuildings.dispose();
-            this.instancedBuildings = null;
-        }
-        
-        // 特殊な建物を破棄
-        this.specialBuildings.forEach(building => {
-            this.scene.remove(building);
-            building.traverse((child) => {
-                if (child.isMesh) {
-                    if (child.geometry) child.geometry.dispose();
-                    if (child.material) {
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(mat => mat.dispose());
-                        } else {
-                            child.material.dispose();
-                        }
+        this.specialBuildings.forEach(b => {
+            this.scene.remove(b);
+            b.traverse(c => {
+                if (c.isMesh) {
+                    if (c.geometry) c.geometry.dispose();
+                    if (c.material) {
+                        if (Array.isArray(c.material)) c.material.forEach(m => m.dispose());
+                        else c.material.dispose();
                     }
                 }
             });
         });
         this.specialBuildings = [];
-        
-        // ライトを削除
-        if (this.ambientLight) {
-            this.scene.remove(this.ambientLight);
-            this.ambientLight = null;
-        }
-        if (this.directionalLight) {
-            this.scene.remove(this.directionalLight);
-            this.directionalLight = null;
-        }
-        
-        // 床の平面を削除
-        if (this.floorPlane) {
-            this.scene.remove(this.floorPlane);
-            if (this.floorPlane.geometry) {
-                this.floorPlane.geometry.dispose();
-            }
-            if (this.floorPlane.material) {
-                this.floorPlane.material.dispose();
-            }
-            this.floorPlane = null;
-        }
-        
-        // 道のネットワークを削除
-        if (this.roadMesh) {
-            this.scene.remove(this.roadMesh);
-            if (this.roadMesh.geometry) {
-                this.roadMesh.geometry.dispose();
-            }
-            if (this.roadMaterial) {
-                this.roadMaterial.dispose();
-            }
-            this.roadMesh = null;
-            this.roadMaterial = null;
-        }
-        
-        // データをクリア
-        this.buildingData = [];
-        
+        this.demObjects.forEach(o => {
+            this.scene.remove(o);
+            o.traverse(c => {
+                if (c.isMesh) {
+                    if (c.geometry) c.geometry.dispose();
+                    if (c.material) c.material.dispose();
+                }
+            });
+        });
+        this.demObjects = [];
+        if (this.ambientLight) this.scene.remove(this.ambientLight);
+        if (this.directionalLight) this.scene.remove(this.directionalLight);
         super.dispose();
+    }
+    
+    generateBuildingWalkPath() {
+        // フォールバック用のダミー実装
+        this.buildingWalkPath = [new THREE.Vector3(0,0,0)];
     }
 }

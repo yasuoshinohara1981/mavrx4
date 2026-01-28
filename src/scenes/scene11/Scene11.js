@@ -63,14 +63,19 @@ export class Scene11 extends SceneTemplate {
 
         // 汎用ノイズテクスチャの生成（バンプマップ用）
         this.noiseTexture = this.generateNoiseTexture();
+        if (this.noiseTexture) {
+            // 内部行列を初期化してエラーを防ぐ
+            this.noiseTexture.matrix = new THREE.Matrix3();
+        }
 
         // プレイヤーパーティクルの初期化（初期高度をさらに低く設定）
         this.player = new PlayerParticle(0, 1.5, 0);
 
-        // プレイヤー可視化用のデバッグオブジェクト（少し小さくして地面に埋まりにくくする）
+        // プレイヤー可視化用のデバッグオブジェクト（非表示に設定）
         const playerGeo = new THREE.SphereGeometry(5, 32, 32);
         const playerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
         this.playerMesh = new THREE.Mesh(playerGeo, playerMat);
+        this.playerMesh.visible = false; // 最初から非表示
         this.scene.add(this.playerMesh);
 
         // プレイヤー周囲を照らす赤いライト
@@ -334,11 +339,16 @@ export class Scene11 extends SceneTemplate {
                     mtlLoader.setPath(`${lod2BasePath}/${folder}/`);
                     const materials = await mtlLoader.loadAsync('materials.mtl');
                     materials.preload();
+                    
                     // 写真テクスチャの使用フラグに応じて読み込みを制御
+                    // falseの場合はテクスチャ情報を抹消して読み込み負荷を最小限にする
                     if (!this.useBuildingTextures) {
                         Object.keys(materials.materials).forEach(key => {
                             const mat = materials.materials[key];
-                            mat.map_Kd = null; mat.map_Ks = null; mat.map_Bump = null; mat.map_Normal = null;
+                            mat.map_Kd = null;
+                            mat.map_Ks = null;
+                            mat.map_Bump = null;
+                            mat.map_Normal = null;
                         });
                     }
                     objLoader.setMaterials(materials);
@@ -346,6 +356,7 @@ export class Scene11 extends SceneTemplate {
                     objLoader.setMaterials(null);
                 }
                 
+                // OBJ読み込み
                 const model = await objLoader.loadAsync(objPath);
                 if (!model || model.children.length === 0) continue;
                 
@@ -354,34 +365,39 @@ export class Scene11 extends SceneTemplate {
                         child.castShadow = true;
                         child.receiveShadow = true;
                         
-                        // 【最終解決策】マテリアルを新規作成せず、プロパティを直接書き換える
-                        // これがテクスチャ行列やUVチャンネルの不整合を避ける唯一の確実な方法
-                        const m = child.material;
+                        const oldMat = child.material;
                         
-                        // 質感の調整
-                        if (m.color) {
-                            m.color.set(this.useBuildingTextures ? 0xffffff : 0x222222);
+                        if (!this.useBuildingTextures) {
+                            // 【究極の浄化】テクスチャを知らない新品のマテリアルに差し替え
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: 0x222222,
+                                metalness: 0.0,
+                                roughness: 0.7,
+                                envMapIntensity: 0.5,
+                                map: null, // 明示的にnull
+                                normalMap: null,
+                                specMap: null
+                            });
+                            // 古いマテリアル（写真付き）はメモリから解放
+                            if (oldMat.dispose) oldMat.dispose();
+                        } else {
+                            // オンなら本来の色（白）に戻す（テクスチャはそのまま活かす）
+                            if (oldMat.color) oldMat.color.set(0xffffff);
                         }
-                        
-                        // MeshPhongMaterialなどの場合でもMeshStandardMaterialに近いプロパティを設定
-                        m.metalness = 0.0;
-                        m.roughness = 0.7;
-                        
-                        // バンプマップ（自作ノイズ）の追加
+
+                        // 自作バンプマップ（凹凸）を追加
+                        const m = child.material;
                         if (this.noiseTexture) {
                             m.bumpMap = this.noiseTexture;
                             m.bumpScale = 3.0;
+                            if (!m.bumpMap.matrix) m.bumpMap.matrix = new THREE.Matrix3();
                         }
 
-                        // 写真テクスチャの表示制御
-                        if (!this.useBuildingTextures) {
-                            m.map = null;
-                        }
-                        
+                        // マテリアルの更新を強制（シェーダーの再コンパイルを促す）
                         m.needsUpdate = true;
                     }
                 });
-                
+
                 // 座標調整
                 model.rotation.x = -Math.PI / 2;
                 model.updateMatrixWorld(true);
@@ -421,7 +437,7 @@ export class Scene11 extends SceneTemplate {
                         child.geometry.translate(-localCenter.x, -localCenter.y, -localCenter.z);
                     }
                 });
-                
+
                 const positionScale = 1.0;  // 0.1 → 1.0 に変更（さらに10倍大きく）
                 const finalPos = new THREE.Vector3(
                     (center.x - this.firstBuildingCenter.x) * positionScale,
@@ -594,8 +610,8 @@ export class Scene11 extends SceneTemplate {
             // 常にプレイヤーを観る
             this.camera.lookAt(playerPos.x, playerPos.y, playerPos.z);
             
-            // 他のカメラからは見えるようにする
-            if (this.playerMesh) this.playerMesh.visible = true;
+            // 他のカメラからも非表示を維持
+            if (this.playerMesh) this.playerMesh.visible = false;
         }
         
         this.camera.up.set(0, 1, 0);

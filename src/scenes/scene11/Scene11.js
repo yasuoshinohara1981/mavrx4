@@ -10,6 +10,7 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Particle } from '../../lib/Particle.js';
 import { PlayerParticle } from '../../lib/PlayerParticle.js';
+import { Scene11_CircleEffect } from './Scene11_CircleEffect.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadHdrCached } from '../../lib/hdrCache.js';
@@ -70,6 +71,9 @@ export class Scene11 extends SceneTemplate {
 
         // プレイヤーパーティクルの初期化（初期高度をさらに低く設定）
         this.player = new PlayerParticle(0, 1.5, 0);
+
+        // トラック6用：Circleエフェクト
+        this.circleEffects = [];
 
         // プレイヤー可視化用のデバッグオブジェクト（非表示に設定）
         const playerGeo = new THREE.SphereGeometry(5, 32, 32);
@@ -665,6 +669,16 @@ export class Scene11 extends SceneTemplate {
         
         this.updateBuildingCallout();
         
+        // Circleエフェクトの更新
+        this.circleEffects = this.circleEffects.filter(effect => {
+            effect.update();
+            if (effect.isFinished) {
+                effect.dispose(this.scene);
+                return false;
+            }
+            return true;
+        });
+        
         // プレイヤーの更新
         if (this.player) {
             this.player.update();
@@ -712,7 +726,10 @@ export class Scene11 extends SceneTemplate {
             const duration = args[2] || this.buildingCalloutDuration;
             if (velocity > 0) this.startBuildingCallout(duration);
         } else if (trackNumber === 6) {
-            this.physicsEnabled = !this.physicsEnabled;
+            const args = message.args || [];
+            const velocity = args[1] || 127;
+            const duration = args[2] || 1000;
+            this.triggerCircleEffect(velocity, duration);
         } else if (trackNumber === 7) {
             this.applyExplosionForce(new THREE.Vector3(0, 0, 0), 10.0, 5.0);
         }
@@ -733,6 +750,21 @@ export class Scene11 extends SceneTemplate {
             startTime: Date.now(),
             duration: duration
         });
+    }
+
+    /**
+     * トラック6：Circleエフェクトを開始
+     */
+    triggerCircleEffect(velocity, durationMs) {
+        if (!this.player) return;
+        
+        const playerPos = this.player.getPosition();
+        // 地面に配置
+        const center = new THREE.Vector3(playerPos.x, this.groundY, playerPos.z);
+        
+        const effect = new Scene11_CircleEffect(center, velocity, durationMs);
+        effect.createThreeObjects(this.scene);
+        this.circleEffects.push(effect);
     }
     
     updateBuildingCallout() {
@@ -837,6 +869,10 @@ export class Scene11 extends SceneTemplate {
         this.time = 0.0;
         this.physicsEnabled = false;
         this.buildingParticles.forEach(p => p.reset());
+        
+        // Circleエフェクトをリセット
+        this.circleEffects.forEach(e => e.dispose(this.scene));
+        this.circleEffects = [];
     }
     
     dispose() {
@@ -863,6 +899,11 @@ export class Scene11 extends SceneTemplate {
             });
         });
         this.demObjects = [];
+        
+        // Circleエフェクトを破棄
+        this.circleEffects.forEach(e => e.dispose(this.scene));
+        this.circleEffects = [];
+
         if (this.ambientLight) this.scene.remove(this.ambientLight);
         if (this.directionalLight) this.scene.remove(this.directionalLight);
         super.dispose();

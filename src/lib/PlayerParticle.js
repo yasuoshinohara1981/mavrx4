@@ -10,13 +10,13 @@ export class PlayerParticle extends Particle {
     constructor(x = 0, y = 0, z = 0) {
         super(x, y, z);
         
-        this.maxSpeed = 0.8;    // 2.0 → 0.8（さらに半分以下、超ゆっくり）
-        this.maxForce = 0.05;   // 0.1 → 0.05
-        this.friction = 0.05;   // 摩擦を増やして慣性を抑える
+        this.maxSpeed = 0.3;    // 0.8 → 0.3（さらに大幅に減速、超スロー散歩）
+        this.maxForce = 0.02;   // 0.05 → 0.02
+        this.friction = 0.1;    // 0.05 → 0.1（さらに摩擦を増やしてピタッと止まるように）
         
-        // 移動範囲の制限（もっと低く！目線の高さ）
-        this.boxMin = new THREE.Vector3(-10000, 1.5, -10000); // 最低1.5m
-        this.boxMax = new THREE.Vector3(10000, 8, 10000);    // 最高8m
+        // 移動範囲の制限（極限まで地面に近づける）
+        this.boxMin = new THREE.Vector3(-10000, 1.0, -10000); // 最低1.0m（ほぼ足元）
+        this.boxMax = new THREE.Vector3(10000, 3.0, 10000);   // 最高3.0m（目線の高さ）
         
         // ノイズ用パラメータ
         this.noiseTime = Math.random() * 1000;
@@ -37,7 +37,7 @@ export class PlayerParticle extends Particle {
         } else {
             this.target.set(
                 (Math.random() - 0.5) * 5000,
-                2 + Math.random() * 5,
+                1.0 + Math.random() * 2.0, // 1m〜3mの間
                 (Math.random() - 0.5) * 5000
             );
         }

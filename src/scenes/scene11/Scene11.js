@@ -58,8 +58,14 @@ export class Scene11 extends SceneTemplate {
         this.showBuildings = true;
         this.roadColor = 0xff0000;
 
+        // 写真テクスチャを表示するかどうかのフラグ
+        this.useBuildingTextures = false; // 重いので一時的にオフに設定
+
+        // 汎用ノイズテクスチャの生成（バンプマップ用）
+        this.noiseTexture = this.generateNoiseTexture();
+
         // プレイヤーパーティクルの初期化（初期高度をさらに低く設定）
-        this.player = new PlayerParticle(0, 3, 0);
+        this.player = new PlayerParticle(0, 1.5, 0);
 
         // プレイヤー可視化用のデバッグオブジェクト（少し小さくして地面に埋まりにくくする）
         const playerGeo = new THREE.SphereGeometry(5, 32, 32);
@@ -107,7 +113,7 @@ export class Scene11 extends SceneTemplate {
         
         // プレイヤーの初期位置をリセット（オブジェクト移動後に合わせる）
         if (this.player) {
-            this.player.position.set(0, 3, 0); // 5 → 3（さらに地面に近づける）
+            this.player.position.set(0, 1.5, 0); // 3 → 1.5（さらに地面に近づける）
             this.player.velocity.set(0, 0, 0);
             this.player.updateTarget(); // 新しい中心付近でターゲット再設定
         }
@@ -283,9 +289,9 @@ export class Scene11 extends SceneTemplate {
             // 少しマージンを持たせる
             this.player.boxMin.copy(this.buildingOnlyBounds.min);
             this.player.boxMax.copy(this.buildingOnlyBounds.max);
-            // 高度はさらに低く維持
-            this.player.boxMin.y = 1.5;
-            this.player.boxMax.y = 8;
+            // 高度はさらに低く維持（1.5m〜3m）
+            this.player.boxMin.y = 1.0;
+            this.player.boxMax.y = 3.0;
             
             console.log("Player movement restricted to building bounds:", this.buildingOnlyBounds);
         }
@@ -328,10 +334,13 @@ export class Scene11 extends SceneTemplate {
                     mtlLoader.setPath(`${lod2BasePath}/${folder}/`);
                     const materials = await mtlLoader.loadAsync('materials.mtl');
                     materials.preload();
-                    Object.keys(materials.materials).forEach(key => {
-                        const mat = materials.materials[key];
-                        mat.map_Kd = null; mat.map_Ks = null; mat.map_Bump = null; mat.map_Normal = null;
-                    });
+                    // 写真テクスチャの使用フラグに応じて読み込みを制御
+                    if (!this.useBuildingTextures) {
+                        Object.keys(materials.materials).forEach(key => {
+                            const mat = materials.materials[key];
+                            mat.map_Kd = null; mat.map_Ks = null; mat.map_Bump = null; mat.map_Normal = null;
+                        });
+                    }
                     objLoader.setMaterials(materials);
                 } catch (e) {
                     objLoader.setMaterials(null);
@@ -344,12 +353,32 @@ export class Scene11 extends SceneTemplate {
                     if (child.isMesh) {
                         child.castShadow = true;
                         child.receiveShadow = true;
-                        child.material = new THREE.MeshStandardMaterial({
-                            color: new THREE.Color(0x1a1a1a),
-                            metalness: 1.0,
-                            roughness: 0.05,
-                            envMapIntensity: 2.0
-                        });
+                        
+                        // 【最終解決策】マテリアルを新規作成せず、プロパティを直接書き換える
+                        // これがテクスチャ行列やUVチャンネルの不整合を避ける唯一の確実な方法
+                        const m = child.material;
+                        
+                        // 質感の調整
+                        if (m.color) {
+                            m.color.set(this.useBuildingTextures ? 0xffffff : 0x222222);
+                        }
+                        
+                        // MeshPhongMaterialなどの場合でもMeshStandardMaterialに近いプロパティを設定
+                        m.metalness = 0.0;
+                        m.roughness = 0.7;
+                        
+                        // バンプマップ（自作ノイズ）の追加
+                        if (this.noiseTexture) {
+                            m.bumpMap = this.noiseTexture;
+                            m.bumpScale = 3.0;
+                        }
+
+                        // 写真テクスチャの表示制御
+                        if (!this.useBuildingTextures) {
+                            m.map = null;
+                        }
+                        
+                        m.needsUpdate = true;
                     }
                 });
                 
@@ -826,5 +855,41 @@ export class Scene11 extends SceneTemplate {
     generateBuildingWalkPath() {
         // フォールバック用のダミー実装
         this.buildingWalkPath = [new THREE.Vector3(0,0,0)];
+    }
+
+    /**
+     * バンプマップ用のノイズテクスチャを生成
+     */
+    generateNoiseTexture() {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        const imageData = ctx.createImageData(size, size);
+        const data = imageData.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+            // コントラストを強めるために、0か255に近い値が出やすいように調整
+            const rand = Math.random();
+            const val = rand > 0.5 ? 
+                Math.floor(200 + Math.random() * 55) : // 明るいグレー
+                Math.floor(Math.random() * 55);       // 暗いグレー
+            data[i] = val;     // R
+            data[i + 1] = val; // G
+            data[i + 2] = val; // B
+            data[i + 3] = 255; // A
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        // リピート回数を増やして、より細かいザラザラ感を出す
+        texture.repeat.set(20, 20);
+        
+        return texture;
     }
 }

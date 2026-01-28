@@ -90,11 +90,12 @@ export class Scene11 extends SceneTemplate {
         this.updateBuildingCount();
         this.setupBuildingGrid();
         this.calculateBuildingBounds();
+        this.centerAllObjects();  // 全オブジェクトの中心を0,0,0にずらす
         this.generateBuildingWalkPath();
         
-        // カメラの初期位置を強制的に設定（スケール0.1に合わせて調整）
+        // カメラの初期位置を強制的に設定（スケール1.0に合わせて調整）
         if (this.cameraParticles && this.cameraParticles[0]) {
-            const initPos = new THREE.Vector3(200, 200, 200);
+            const initPos = new THREE.Vector3(2000, 2000, 2000);
             this.cameraParticles[0].position.copy(initPos);
             this.cameraParticles[0].velocity.set(0, 0, 0);
             this.cameraParticles[0].acceleration.set(0, 0, 0);
@@ -106,18 +107,23 @@ export class Scene11 extends SceneTemplate {
 
     /**
      * カメラパーティクルの距離パラメータを設定
-     * Scene06と同様にboxMin/boxMaxも設定してカメラの移動範囲を制限
+     * 動きを重くするために摩擦を増やし、速度と力を制限
      */
     setupCameraParticleDistance(cameraParticle) {
-        // スケール 0.1 に合わせた距離設定（街全体が見える範囲）
-        cameraParticle.maxDistance = 1000.0;
-        cameraParticle.minDistance = 300.0;
-        cameraParticle.maxDistanceReset = 800.0;
+        // 物理パラメータの調整（重くする）
+        cameraParticle.friction = 0.05;    // 0.0001 → 0.05（大幅に増加）
+        cameraParticle.maxSpeed = 4.0;    // 8.0 → 4.0（半分に制限）
+        cameraParticle.maxForce = 0.5;    // 2.0 → 0.5（1/4に制限）
+
+        // スケール 1.0 に合わせた距離設定（街全体が見える範囲）
+        cameraParticle.maxDistance = 10000.0;
+        cameraParticle.minDistance = 3000.0;
+        cameraParticle.maxDistanceReset = 8000.0;
         
-        // カメラの移動範囲を制限するボックス（Scene06と同様のパターン）
-        const cameraBoxSize = 1000.0;  // 街のスケールに合わせた範囲
-        const cameraMinY = 50.0;       // 地面より少し上
-        const cameraMaxY = 800.0;      // 上限
+        // カメラの移動範囲を制限するボックス
+        const cameraBoxSize = 10000.0;  // 街のスケールに合わせた範囲
+        const cameraMinY = 500.0;       // 地面より少し上
+        const cameraMaxY = 8000.0;      // 上限
         cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, cameraMinY, -cameraBoxSize);
         cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, cameraMaxY, cameraBoxSize);
     }
@@ -178,7 +184,39 @@ export class Scene11 extends SceneTemplate {
             building.updateMatrixWorld(true);
             box.union(new THREE.Box3().setFromObject(building));
         });
+        // DEMオブジェクトも含める
+        this.demObjects.forEach(dem => {
+            dem.updateMatrixWorld(true);
+            box.union(new THREE.Box3().setFromObject(dem));
+        });
         this.cityCenter = box.getCenter(new THREE.Vector3());
+    }
+    
+    /**
+     * 全オブジェクトを中心が0,0,0になるようにずらす
+     */
+    centerAllObjects() {
+        if (!this.cityCenter) return;
+        
+        const offset = this.cityCenter.clone();
+        
+        // 全建物を移動
+        this.specialBuildings.forEach((building, i) => {
+            building.position.sub(offset);
+            // buildingParticlesも移動
+            if (this.buildingParticles[i]) {
+                const particlePos = this.buildingParticles[i].getPosition();
+                particlePos.sub(offset);
+            }
+        });
+        
+        // DEMオブジェクトも移動
+        this.demObjects.forEach(dem => {
+            dem.position.sub(offset);
+        });
+        
+        // cityCenterをリセット（もう原点が中心）
+        this.cityCenter.set(0, 0, 0);
     }
     
     async loadSpecialBuildings() {
@@ -204,6 +242,13 @@ export class Scene11 extends SceneTemplate {
             const objPath = `${lod2BasePath}/${folder}/${folder}_bldg_6677.obj`;
             
             try {
+                // ファイルが存在するか、かつHTMLが返ってきていないか事前にチェック
+                const response = await fetch(objPath, { method: 'HEAD' });
+                if (!response.ok || !response.headers.get('content-type')?.includes('text/plain') && !objPath.endsWith('.obj')) {
+                    // HEADリクエストが失敗するか、タイプがおかしい場合はスキップ
+                    continue;
+                }
+
                 try {
                     mtlLoader.setPath(`${lod2BasePath}/${folder}/`);
                     const materials = await mtlLoader.loadAsync('materials.mtl');
@@ -236,12 +281,33 @@ export class Scene11 extends SceneTemplate {
                 // 座標調整
                 model.rotation.x = -Math.PI / 2;
                 model.updateMatrixWorld(true);
+                
+                // バウンディングボックスの計算前にジオメトリを更新
+                let hasValidGeometry = false;
+                model.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        child.geometry.computeBoundingBox();
+                        const boundingBox = child.geometry.boundingBox;
+                        if (boundingBox && !isNaN(boundingBox.min.x)) {
+                            hasValidGeometry = true;
+                        }
+                    }
+                });
+                
+                if (!hasValidGeometry) {
+                    continue;
+                }
+                
                 const box = new THREE.Box3().setFromObject(model);
                 const center = box.getCenter(new THREE.Vector3());
                 
+                if (isNaN(center.x) || isNaN(center.y) || isNaN(center.z)) {
+                    console.warn(`[Scene11] Warning: NaN detected in building center calculation.`);
+                    continue;
+                }
+                
                 if (!this.firstBuildingCenter) {
                     this.firstBuildingCenter = center.clone();
-                    // console.log(`[Diagnostic-Anchor] Global Anchor Set:`, JSON.stringify(this.firstBuildingCenter));
                 }
                 
                 // ジオメトリのセンタリング
@@ -252,7 +318,7 @@ export class Scene11 extends SceneTemplate {
                     }
                 });
                 
-                const positionScale = 0.1;  // 0.01 → 0.1 に変更（10倍大きく）
+                const positionScale = 1.0;  // 0.1 → 1.0 に変更（さらに10倍大きく）
                 const finalPos = new THREE.Vector3(
                     (center.x - this.firstBuildingCenter.x) * positionScale,
                     (center.y - this.firstBuildingCenter.y) * positionScale,
@@ -290,13 +356,39 @@ export class Scene11 extends SceneTemplate {
         for (const id of demIds) {
             const url = `${demDir}${id}/${id}_dem_6677.obj`;
             try {
+                // ファイル存在チェック
+                const response = await fetch(url, { method: 'HEAD' });
+                if (!response.ok) continue;
+
                 const model = await loader.loadAsync(url);
                 if (!model) continue;
                 
                 model.rotation.x = -Math.PI / 2;
                 model.updateMatrixWorld(true);
+                
+                // バウンディングボックスの計算前にジオメトリを更新
+                let hasValidGeometry = false;
+                model.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        child.geometry.computeBoundingBox();
+                        const boundingBox = child.geometry.boundingBox;
+                        if (boundingBox && !isNaN(boundingBox.min.x)) {
+                            hasValidGeometry = true;
+                        }
+                    }
+                });
+                
+                if (!hasValidGeometry) {
+                    continue;
+                }
+                
                 const box = new THREE.Box3().setFromObject(model);
                 const center = box.getCenter(new THREE.Vector3());
+                
+                if (isNaN(center.x) || isNaN(center.y) || isNaN(center.z)) {
+                    console.warn(`[Scene11] Warning: NaN detected in DEM center calculation.`);
+                    continue;
+                }
                 
                 if (!this.firstBuildingCenter) {
                     this.firstBuildingCenter = center.clone();
@@ -312,7 +404,7 @@ export class Scene11 extends SceneTemplate {
                     }
                 });
                 
-                const positionScale = 0.1;  // 0.01 → 0.1 に変更（10倍大きく）
+                const positionScale = 1.0;  // 0.1 → 1.0 に変更（さらに10倍大きく）
                 const finalPos = new THREE.Vector3(
                     (center.x - this.firstBuildingCenter.x) * positionScale,
                     (center.y - this.firstBuildingCenter.y) * positionScale,

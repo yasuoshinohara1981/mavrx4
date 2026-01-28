@@ -34,12 +34,14 @@ export class Scene11_CircleEffect {
             transparent: true,
             opacity: 0.5,
             side: THREE.DoubleSide,
-            depthWrite: false
+            depthWrite: true, // 深度書き込みを有効にして建物に隠れるようにする
+            depthTest: true
         });
         this.innerCircle = new THREE.Mesh(geometry, innerMat);
         this.innerCircle.rotation.x = -Math.PI / 2; // 地面と平行
         this.innerCircle.position.copy(this.center);
-        this.innerCircle.position.y += 0.5; // 地面より少し上に配置してチラつき防止
+        this.innerCircle.position.y += 0.1; // 地面（Y=0）よりわずかに上に配置
+        this.innerCircle.renderOrder = 5; // 地形(0)より大きく、建物(デフォルト0だが不透明)との兼ね合い
         scene.add(this.innerCircle);
         
         // 外周の赤い線Circle（塗りなし、一回り大きい）
@@ -47,7 +49,8 @@ export class Scene11_CircleEffect {
             color: 0xff0000,
             transparent: true,
             opacity: 1.0,
-            depthWrite: false
+            depthWrite: true, // 深度書き込みを有効
+            depthTest: true
         });
         
         // 外周用のジオメトリ（EdgesGeometryで輪郭だけ抽出）
@@ -55,7 +58,8 @@ export class Scene11_CircleEffect {
         this.outerCircle = new THREE.LineSegments(edgesGeometry, outerMat);
         this.outerCircle.rotation.x = -Math.PI / 2;
         this.outerCircle.position.copy(this.center);
-        this.outerCircle.position.y += 0.6; // 内側よりさらに少し上に
+        this.outerCircle.position.y += 0.15; // 内側よりわずかに上に
+        this.outerCircle.renderOrder = 6; // 内側より手前
         scene.add(this.outerCircle);
     }
     

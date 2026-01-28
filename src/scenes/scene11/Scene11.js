@@ -382,11 +382,13 @@ export class Scene11 extends SceneTemplate {
                                 normalMap: null,
                                 specMap: null
                             });
+                            child.renderOrder = 10; // 建物は手前（エフェクトより手前）
                             // 古いマテリアル（写真付き）はメモリから解放
                             if (oldMat.dispose) oldMat.dispose();
                         } else {
                             // オンなら本来の色（白）に戻す（テクスチャはそのまま活かす）
                             if (oldMat.color) oldMat.color.set(0xffffff);
+                            child.renderOrder = 10;
                         }
 
                         // 自作バンプマップ（凹凸）を追加
@@ -529,6 +531,7 @@ export class Scene11 extends SceneTemplate {
                             transparent: true,
                             opacity: 0.6
                         });
+                        child.renderOrder = 0; // 地形は一番後ろ
                     }
                 });
                 

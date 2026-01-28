@@ -756,16 +756,23 @@ export class Scene11 extends SceneTemplate {
      * トラック6：Circleエフェクトを開始
      */
     triggerCircleEffect(velocity, durationMs) {
-        // 街の範囲内でランダムな位置を決定
-        const spawnRadius = 8000.0; // カメラの移動範囲程度に設定
-        const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * spawnRadius;
+        // 建物と地形の範囲（buildingOnlyBounds）内でランダムな位置を決定
+        let center = new THREE.Vector3(0, this.groundY, 0);
         
-        const center = new THREE.Vector3(
-            Math.cos(angle) * radius,
-            this.groundY,
-            Math.sin(angle) * radius
-        );
+        if (this.buildingOnlyBounds) {
+            const min = this.buildingOnlyBounds.min;
+            const max = this.buildingOnlyBounds.max;
+            
+            center.x = min.x + Math.random() * (max.x - min.x);
+            center.z = min.z + Math.random() * (max.z - min.z);
+        } else {
+            // フォールバック：半径8000ユニット
+            const spawnRadius = 8000.0;
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * spawnRadius;
+            center.x = Math.cos(angle) * radius;
+            center.z = Math.sin(angle) * radius;
+        }
         
         const effect = new Scene11_CircleEffect(center, velocity, durationMs);
         effect.createThreeObjects(this.scene);

@@ -61,7 +61,7 @@ export class Scene11 extends SceneTemplate {
     }
     
     async setup() {
-        console.log('=== Scene11 setup() START ===');
+        // console.log('=== Scene11 setup() START ===');
         
         // カメラの描画距離を大幅に伸ばす
         if (this.camera) {
@@ -92,9 +92,9 @@ export class Scene11 extends SceneTemplate {
         this.calculateBuildingBounds();
         this.generateBuildingWalkPath();
         
-        // カメラの初期位置を強制的に設定
+        // カメラの初期位置を強制的に設定（スケール0.1に合わせて調整）
         if (this.cameraParticles && this.cameraParticles[0]) {
-            const initPos = new THREE.Vector3(20, 20, 20);
+            const initPos = new THREE.Vector3(200, 200, 200);
             this.cameraParticles[0].position.copy(initPos);
             this.cameraParticles[0].velocity.set(0, 0, 0);
             this.cameraParticles[0].acceleration.set(0, 0, 0);
@@ -106,27 +106,20 @@ export class Scene11 extends SceneTemplate {
 
     /**
      * カメラパーティクルの距離パラメータを設定
+     * Scene06と同様にboxMin/boxMaxも設定してカメラの移動範囲を制限
      */
     setupCameraParticleDistance(cameraParticle) {
-        // スケール 0.01 に合わせた距離設定
-        cameraParticle.maxDistance = 150.0;
-        cameraParticle.minDistance = 20.0;
-        cameraParticle.maxDistanceReset = 100.0;
-    }
-
-    /**
-     * カメラパーティクルの境界を設定
-     */
-    setupCameraParticleBoundaries() {
-        if (this.floorY === undefined) return;
-        const cameraMinY = this.floorY + 1.0; 
-        this.cameraParticles.forEach(cp => {
-            if (cp) {
-                const limitSize = 500.0;
-                cp.boxMin = new THREE.Vector3(-limitSize, cameraMinY, -limitSize);
-                cp.boxMax = new THREE.Vector3(limitSize, limitSize, limitSize);
-            }
-        });
+        // スケール 0.1 に合わせた距離設定（街全体が見える範囲）
+        cameraParticle.maxDistance = 1000.0;
+        cameraParticle.minDistance = 300.0;
+        cameraParticle.maxDistanceReset = 800.0;
+        
+        // カメラの移動範囲を制限するボックス（Scene06と同様のパターン）
+        const cameraBoxSize = 1000.0;  // 街のスケールに合わせた範囲
+        const cameraMinY = 50.0;       // 地面より少し上
+        const cameraMaxY = 800.0;      // 上限
+        cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, cameraMinY, -cameraBoxSize);
+        cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, cameraMaxY, cameraBoxSize);
     }
     
     setupLights() {
@@ -189,7 +182,7 @@ export class Scene11 extends SceneTemplate {
     }
     
     async loadSpecialBuildings() {
-        console.log('=== loadSpecialBuildings() START ===');
+        // console.log('=== loadSpecialBuildings() START ===');
         const lod2BasePath = '/assets/533946_2/LOD2';
         const objLoader = new OBJLoader();
         const mtlLoader = new MTLLoader();
@@ -248,7 +241,7 @@ export class Scene11 extends SceneTemplate {
                 
                 if (!this.firstBuildingCenter) {
                     this.firstBuildingCenter = center.clone();
-                    console.log(`[Diagnostic-Anchor] Global Anchor Set:`, JSON.stringify(this.firstBuildingCenter));
+                    // console.log(`[Diagnostic-Anchor] Global Anchor Set:`, JSON.stringify(this.firstBuildingCenter));
                 }
                 
                 // ジオメトリのセンタリング
@@ -259,7 +252,7 @@ export class Scene11 extends SceneTemplate {
                     }
                 });
                 
-                const positionScale = 0.01;
+                const positionScale = 0.1;  // 0.01 → 0.1 に変更（10倍大きく）
                 const finalPos = new THREE.Vector3(
                     (center.x - this.firstBuildingCenter.x) * positionScale,
                     (center.y - this.firstBuildingCenter.y) * positionScale,
@@ -276,7 +269,7 @@ export class Scene11 extends SceneTemplate {
                 
                 this.scene.add(model);
                 this.specialBuildings.push(model);
-                console.log(`[Diagnostic-Building] ID: ${id}, Final Position:`, JSON.stringify(model.position));
+                // console.log(`[Diagnostic-Building] ID: ${id}, Final Position:`, JSON.stringify(model.position));
                 
             } catch (error) {
                 console.error(`Error loading building ${id}:`, error);
@@ -319,7 +312,7 @@ export class Scene11 extends SceneTemplate {
                     }
                 });
                 
-                const positionScale = 0.01;
+                const positionScale = 0.1;  // 0.01 → 0.1 に変更（10倍大きく）
                 const finalPos = new THREE.Vector3(
                     (center.x - this.firstBuildingCenter.x) * positionScale,
                     (center.y - this.firstBuildingCenter.y) * positionScale,
@@ -330,7 +323,7 @@ export class Scene11 extends SceneTemplate {
                 
                 this.scene.add(model);
                 this.demObjects.push(model);
-                console.log(`[Diagnostic-DEM] ID: ${id}, Final Position:`, JSON.stringify(model.position));
+                // console.log(`[Diagnostic-DEM] ID: ${id}, Final Position:`, JSON.stringify(model.position));
             } catch (e) {}
         }
     }
@@ -364,7 +357,7 @@ export class Scene11 extends SceneTemplate {
 
     onUpdate(deltaTime) {
         if (!this._lastCamLog || Date.now() - this._lastCamLog > 1000) {
-            console.log(`[Diagnostic-Camera] Pos: (${this.camera.position.x.toFixed(2)}, ${this.camera.position.y.toFixed(2)}, ${this.camera.position.z.toFixed(2)})`);
+            // console.log(`[Diagnostic-Camera] Pos: (${this.camera.position.x.toFixed(2)}, ${this.camera.position.y.toFixed(2)}, ${this.camera.position.z.toFixed(2)})`);
             this._lastCamLog = Date.now();
         }
 

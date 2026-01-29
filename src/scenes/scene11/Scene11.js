@@ -90,6 +90,9 @@ export class Scene11 extends SceneTemplate {
     async setup() {
         // console.log('=== Scene11 setup() START ===');
         
+        // スクリーンショット用テキストを更新
+        this.setScreenshotText(this.title);
+
         // カメラの描画距離を大幅に伸ばす
         if (this.camera) {
             this.camera.far = 100000;

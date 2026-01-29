@@ -105,7 +105,7 @@ export class Scene11 extends SceneTemplate {
         try {
             const envMap = await loadHdrCached(hdri);
             this.scene.environment = envMap;
-            this.scene.environmentIntensity = 1.0;
+            this.scene.environmentIntensity = 2.5; // 金属質感を強調するために強度アップ
         } catch (e) {
             console.error('HDRI load failed:', e);
         }
@@ -147,53 +147,97 @@ export class Scene11 extends SceneTemplate {
      * 役割を持たせた複数のカメラ設定を実装
      */
     setupCameraParticleDistance(cameraParticle, index = 0) {
-        // インデックスに応じて役割を分ける
-        const role = index % 4;
+        // インデックスに応じて役割を分ける（全8台対応）
+        const role = index % 8;
         
         if (role === 0) {
-            // 【ドローン】ビルの中を進む低空飛行
-            cameraParticle.friction = 0.02;
-            cameraParticle.maxSpeed = 20.0;
-            cameraParticle.maxForce = 8.0;
+            // 【カメラ1：ドローン】ビルの中を進む低空飛行
+            cameraParticle.friction = 0.01; // 摩擦を減らして滑らかに
+            cameraParticle.maxSpeed = 30.0; // 速度アップ
+            cameraParticle.maxForce = 10.0;
             cameraParticle.minDistance = 0.0;
             cameraParticle.maxDistance = 50000.0;
             
             const cameraBoxSize = 12000.0;
-            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, 50.0, -cameraBoxSize);
-            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 800.0, cameraBoxSize);
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -2000.0, -cameraBoxSize); // 地下に突き抜ける
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 2000.0, cameraBoxSize);
         } else if (role === 1) {
-            // 【俯瞰】空撮っぽいゆったりした映像
-            cameraParticle.friction = 0.05;
-            cameraParticle.maxSpeed = 10.0;
-            cameraParticle.maxForce = 2.0;
-            cameraParticle.minDistance = 5000.0;
-            cameraParticle.maxDistance = 20000.0;
+            // 【カメラ2：低空高速】ビルスレスレを駆け抜ける
+            cameraParticle.friction = 0.005; // 超低摩擦
+            cameraParticle.maxSpeed = 60.0; // 超高速
+            cameraParticle.maxForce = 15.0;
+            cameraParticle.minDistance = 100.0;
+            cameraParticle.maxDistance = 5000.0;
+            
+            const cameraBoxSize = 10000.0;
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -1000.0, -cameraBoxSize); // 地下に突き抜ける
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 1000.0, cameraBoxSize);
+        } else if (role === 2) {
+            // 【カメラ3：空撮・中層】街を見下ろす
+            cameraParticle.friction = 0.02;
+            cameraParticle.maxSpeed = 25.0;
+            cameraParticle.maxForce = 5.0;
+            cameraParticle.minDistance = 3000.0;
+            cameraParticle.maxDistance = 15000.0;
             
             const cameraBoxSize = 15000.0;
-            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, 3000.0, -cameraBoxSize);
-            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 8000.0, cameraBoxSize);
-        } else if (role === 2) {
-            // 【近接】ビルにかなり近づく
-            cameraParticle.friction = 0.03;
-            cameraParticle.maxSpeed = 15.0;
-            cameraParticle.maxForce = 5.0;
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -5000.0, -cameraBoxSize); // 大幅に広げる
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 10000.0, cameraBoxSize);
+        } else if (role === 3) {
+            // 【カメラ4：超高空】衛星視点っぽい広域俯瞰
+            cameraParticle.friction = 0.05;
+            cameraParticle.maxSpeed = 20.0;
+            cameraParticle.maxForce = 3.0;
+            cameraParticle.minDistance = 10000.0;
+            cameraParticle.maxDistance = 40000.0;
+            
+            const cameraBoxSize = 30000.0;
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -20000.0, -cameraBoxSize); // 上下反転レベル
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 30000.0, cameraBoxSize);
+        } else if (role === 4) {
+            // 【カメラ5：ビル群追跡】中低層を複雑に動く
+            cameraParticle.friction = 0.015;
+            cameraParticle.maxSpeed = 40.0;
+            cameraParticle.maxForce = 12.0;
             cameraParticle.minDistance = 500.0;
-            cameraParticle.maxDistance = 3000.0;
+            cameraParticle.maxDistance = 8000.0;
+            
+            const cameraBoxSize = 12000.0;
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -3000.0, -cameraBoxSize);
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 4000.0, cameraBoxSize);
+        } else if (role === 5) {
+            // 【カメラ6：シネマティック俯瞰】ゆっくり高度を下げていくような動き
+            cameraParticle.friction = 0.02;
+            cameraParticle.maxSpeed = 25.0;
+            cameraParticle.maxForce = 4.0;
+            cameraParticle.minDistance = 4000.0;
+            cameraParticle.maxDistance = 12000.0;
+            
+            const cameraBoxSize = 18000.0;
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -5000.0, -cameraBoxSize);
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 12000.0, cameraBoxSize);
+        } else if (role === 6) {
+            // 【カメラ7：ストリートレベル】ほぼ地面の高さ
+            cameraParticle.friction = 0.01;
+            cameraParticle.maxSpeed = 30.0;
+            cameraParticle.maxForce = 8.0;
+            cameraParticle.minDistance = 50.0;
+            cameraParticle.maxDistance = 2000.0;
             
             const cameraBoxSize = 8000.0;
-            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, 100.0, -cameraBoxSize);
-            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 1500.0, cameraBoxSize);
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -1000.0, -cameraBoxSize);
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 500.0, cameraBoxSize);
         } else {
-            // 【円周・追跡】バランス型
-            cameraParticle.friction = 0.01;
-            cameraParticle.maxSpeed = 25.0;
+            // 【カメラ8：バランス俯瞰】標準的な空撮
+            cameraParticle.friction = 0.015;
+            cameraParticle.maxSpeed = 35.0;
             cameraParticle.maxForce = 6.0;
             cameraParticle.minDistance = 2000.0;
             cameraParticle.maxDistance = 10000.0;
             
             const cameraBoxSize = 15000.0;
-            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, 500.0, -cameraBoxSize);
-            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 4000.0, cameraBoxSize);
+            cameraParticle.boxMin = new THREE.Vector3(-cameraBoxSize, -4000.0, -cameraBoxSize);
+            cameraParticle.boxMax = new THREE.Vector3(cameraBoxSize, 8000.0, cameraBoxSize);
         }
         
         cameraParticle.maxDistanceReset = cameraParticle.maxDistance * 0.8;
@@ -376,11 +420,15 @@ export class Scene11 extends SceneTemplate {
                         
                         if (!this.useBuildingTextures) {
                             // 【究極の浄化】テクスチャを知らない新品のマテリアルに差し替え
+                            // 色を暗いトーン内でランダマイズ（0x080808 〜 0x1a1a1a 程度）
+                            const grayVal = 0.05 + Math.random() * 0.05; // 0.05 〜 0.10
+                            const buildingColor = new THREE.Color(grayVal, grayVal, grayVal);
+                            
                             child.material = new THREE.MeshStandardMaterial({
-                                color: 0x222222,
-                                metalness: 0.0,
-                                roughness: 0.7,
-                                envMapIntensity: 0.5,
+                                color: buildingColor,
+                                metalness: 0.9, // 金属感を大幅にアップ
+                                roughness: 0.2, // 表面を滑らかにして反射を強調
+                                envMapIntensity: 2.0, // 環境マップの反射を強める
                                 map: null, // 明示的にnull
                                 normalMap: null,
                                 specMap: null

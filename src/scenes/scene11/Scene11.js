@@ -171,8 +171,8 @@ export class Scene11 extends SceneTemplate {
 
         const params = {
             focus: 500.0,
-            aperture: 0.00001,
-            maxblur: 0.01,
+            aperture: 0.00005, // 0.00001から変更（ボケを弱める）
+            maxblur: 0.005,    // 0.01から変更（ボケの最大値を下げる）
             width: window.innerWidth,
             height: window.innerHeight
         };

@@ -13,6 +13,9 @@ import { PlayerParticle } from '../../lib/PlayerParticle.js';
 import { Scene11_CircleEffect } from './Scene11_CircleEffect.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { loadHdrCached } from '../../lib/hdrCache.js';
 import hdri from '../../assets/autumn_field_puresky_1k.hdr';
 
@@ -59,15 +62,22 @@ export class Scene11 extends SceneTemplate {
         this.showBuildings = true;
         this.roadColor = 0xff0000;
 
-        // 写真テクスチャを表示するかどうかのフラグ
+        // エフェクト設定
         this.useBuildingTextures = false; // 重いので一時的にオフに設定
+        this.useBuildingBumpMap = false;  // バンプマップ（ザラザラ感）を使用するかどうかのフラグ
+        this.useDOF = false;              // 被写界深度（DOF）を使用するかどうかのフラグ
 
-        // 汎用ノイズテクスチャの生成（バンプマップ用）
-        this.noiseTexture = this.generateNoiseTexture();
-        if (this.noiseTexture) {
-            // 内部行列を初期化してエラーを防ぐ
-            this.noiseTexture.matrix = new THREE.Matrix3();
+        // バンプマップ用のノイズテクスチャ
+        this.noiseTexture = null;
+        if (this.useBuildingBumpMap) {
+            this.noiseTexture = this.generateNoiseTexture();
+            if (this.noiseTexture) {
+                this.noiseTexture.matrix = new THREE.Matrix3();
+            }
         }
+
+        // DOF用のパス
+        this.bokehPass = null;
 
         // プレイヤーパーティクルの初期化（初期高度をさらに低く設定）
         this.player = new PlayerParticle(0, 1.5, 0);
@@ -140,6 +150,38 @@ export class Scene11 extends SceneTemplate {
             this.camera.position.copy(initPos);
             this.camera.lookAt(0, 0, 0);
         }
+
+        // DOF（BokehPass）の初期化
+        if (this.useDOF) {
+            this.initDOF();
+        }
+    }
+
+    /**
+     * DOF（被写界深度）エフェクトを初期化
+     */
+    initDOF() {
+        if (this.bokehPass) return;
+
+        // EffectComposerがなければ作成（SceneBaseのcomposerを利用）
+        if (!this.composer) {
+            this.composer = new EffectComposer(this.renderer);
+            this.composer.addPass(new RenderPass(this.scene, this.camera));
+        }
+
+        const params = {
+            focus: 500.0,
+            aperture: 0.00001,
+            maxblur: 0.01,
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+        this.bokehPass = new BokehPass(this.scene, this.camera, params);
+        this.bokehPass.enabled = true;
+        this.composer.addPass(this.bokehPass);
+        
+        console.log("DOF (BokehPass) initialized.");
     }
 
     /**
@@ -362,6 +404,9 @@ export class Scene11 extends SceneTemplate {
         const objLoader = new OBJLoader();
         const mtlLoader = new MTLLoader();
         
+        // マテリアルのキャッシュ（カクつき防止）
+        const materialCache = new Map();
+        
         const lod2Folders = [
             '533946001', '533946002', '533946003', '533946004',
             '533946011', '533946012', '533946013', '533946014',
@@ -422,19 +467,33 @@ export class Scene11 extends SceneTemplate {
                             // 【究極の浄化】テクスチャを知らない新品のマテリアルに差し替え
                             // 色を暗いトーン内でランダマイズ（0x080808 〜 0x1a1a1a 程度）
                             const grayVal = 0.05 + Math.random() * 0.05; // 0.05 〜 0.10
-                            const buildingColor = new THREE.Color(grayVal, grayVal, grayVal);
+                            const grayKey = Math.floor(grayVal * 100); // キャッシュ用にキー化
                             
-                            child.material = new THREE.MeshStandardMaterial({
-                                color: buildingColor,
-                                metalness: 0.9, // 金属感を大幅にアップ
-                                roughness: 0.2, // 表面を滑らかにして反射を強調
-                                envMapIntensity: 2.0, // 環境マップの反射を強める
-                                map: null, // 明示的にnull
-                                normalMap: null,
-                                specMap: null
-                            });
-                            child.renderOrder = 10; // 建物は手前（エフェクトより手前）
-                            // 古いマテリアル（写真付き）はメモリから解放
+                            if (materialCache.has(grayKey)) {
+                                child.material = materialCache.get(grayKey);
+                            } else {
+                                const buildingColor = new THREE.Color(grayVal, grayVal, grayVal);
+                                const matParams = {
+                                    color: buildingColor,
+                                    metalness: 0.9,
+                                    roughness: 0.2,
+                                    envMapIntensity: 2.0,
+                                    map: null,
+                                    normalMap: null,
+                                    specMap: null
+                                };
+
+                                // バンプマップが有効なら追加
+                                if (this.useBuildingBumpMap && this.noiseTexture) {
+                                    matParams.bumpMap = this.noiseTexture;
+                                    matParams.bumpScale = 3.0;
+                                }
+
+                                child.material = new THREE.MeshStandardMaterial(matParams);
+                                materialCache.set(grayKey, child.material);
+                            }
+                            
+                            child.renderOrder = 10;
                             if (oldMat.dispose) oldMat.dispose();
                         } else {
                             // オンなら本来の色（白）に戻す（テクスチャはそのまま活かす）
@@ -442,16 +501,8 @@ export class Scene11 extends SceneTemplate {
                             child.renderOrder = 10;
                         }
 
-                        // 自作バンプマップ（凹凸）を追加
-                        const m = child.material;
-                        if (this.noiseTexture) {
-                            m.bumpMap = this.noiseTexture;
-                            m.bumpScale = 3.0;
-                            if (!m.bumpMap.matrix) m.bumpMap.matrix = new THREE.Matrix3();
-                        }
-
                         // マテリアルの更新を強制（シェーダーの再コンパイルを促す）
-                        m.needsUpdate = true;
+                        child.material.needsUpdate = true;
                     }
                 });
 
@@ -580,7 +631,8 @@ export class Scene11 extends SceneTemplate {
                             color: 0x444444, // グレーに統一
                             wireframe: true,
                             transparent: true,
-                            opacity: 0.6
+                            opacity: 0.6,
+                            side: THREE.FrontSide // 裏面を描画しない
                         });
                         child.renderOrder = 0; // 地形は一番後ろ
                     }
@@ -677,6 +729,9 @@ export class Scene11 extends SceneTemplate {
     }
 
     onUpdate(deltaTime) {
+        // カクつき対策：HUDの更新頻度を下げる、または重い処理を間引く
+        this._updateCounter = (this._updateCounter || 0) + 1;
+        
         if (!this._lastCamLog || Date.now() - this._lastCamLog > 1000) {
             // console.log(`[Diagnostic-Camera] Pos: (${this.camera.position.x.toFixed(2)}, ${this.camera.position.y.toFixed(2)}, ${this.camera.position.z.toFixed(2)})`);
             this._lastCamLog = Date.now();
@@ -689,19 +744,7 @@ export class Scene11 extends SceneTemplate {
             this._keyDebugInitialized = true;
         }
 
-        if (this.scene) {
-            if (this.gridRuler3D) {
-                this.gridRuler3D.dispose();
-                if (this.gridRuler3D.group) this.scene.remove(this.gridRuler3D.group);
-                this.gridRuler3D = null;
-            }
-            this.scene.traverse((object) => {
-                if (object.name === 'GridRuler3D' || (object.parent && object.parent.name === 'GridRuler3D')) {
-                    this.scene.remove(object);
-                    if (object.dispose) object.dispose();
-                }
-            });
-        }
+        // GridRuler3Dの毎フレーム監視は重いので削除
         
         this.time += deltaTime;
         
@@ -721,7 +764,15 @@ export class Scene11 extends SceneTemplate {
             }
         }
         
-        this.updateBuildingCallout();
+        // 2フレームに1回更新に間引く
+        if (this._updateCounter % 2 === 0) {
+            this.updateBuildingCallout();
+            
+            // 行列の更新をここで行う（drawBuildingCalloutでの重複を避ける）
+            this.specialBuildings.forEach(b => {
+                if (b.visible) b.updateMatrixWorld(true);
+            });
+        }
         
         // Circleエフェクトの更新
         this.circleEffects = this.circleEffects.filter(effect => {
@@ -739,11 +790,18 @@ export class Scene11 extends SceneTemplate {
             const playerPos = this.player.getPosition();
             
             // デバッグ用メッシュとライトの位置を更新
-            if (this.playerMesh) this.playerMesh.position.copy(playerPos);
+            if (this.playerMesh && this.playerMesh.visible) this.playerMesh.position.copy(playerPos);
             if (this.playerLight) this.playerLight.position.copy(playerPos);
         }
         
         this.updateCamera(); // 明示的に呼ぶ
+
+        // DOFの更新（フォーカスをプレイヤーに合わせるなど）
+        if (this.useDOF && this.bokehPass && this.player) {
+            const playerPos = this.player.getPosition();
+            const dist = this.camera.position.distanceTo(playerPos);
+            this.bokehPass.uniforms.focus.value = dist;
+        }
     }
     
     handleKeyPress(key) {
@@ -844,9 +902,22 @@ export class Scene11 extends SceneTemplate {
         if (!this.hud || !this.hud.ctx) return;
         const ctx = this.hud.ctx;
         const canvas = this.hud.canvas;
+        
+        // 画面外チェックを先に行う
+        // updateMatrixWorldは重いので、onUpdateで一括で行うか、ここでは省略を検討
+        // building.updateMatrixWorld(true); 
+        const worldPos = new THREE.Vector3();
+        building.getWorldPosition(worldPos);
+        const projected = worldPos.clone().project(this.camera);
+        
+        if (projected.z > 1.0 || Math.abs(projected.x) > 1.1 || Math.abs(projected.y) > 1.1) return;
+
+        // カメラとの距離チェック（近すぎると重い可能性があるため）
+        const dist = worldPos.distanceTo(this.camera.position);
+        if (dist < 10) return; 
+
         let cachedData = this.buildingCalloutCache.get(building);
         if (!cachedData) {
-            building.updateMatrixWorld(true);
             const box = new THREE.Box3().setFromObject(building);
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
@@ -857,7 +928,7 @@ export class Scene11 extends SceneTemplate {
         const buildingCenter3D = center.clone().project(this.camera);
         const centerScreenX = (buildingCenter3D.x * 0.5 + 0.5) * canvas.width;
         const centerScreenY = (buildingCenter3D.y * -0.5 + 0.5) * canvas.height;
-        if (centerScreenX < 0 || centerScreenX > canvas.width || centerScreenY < 0 || centerScreenY > canvas.height || buildingCenter3D.z > 1.0) return;
+        
         const buildingTop3D = new THREE.Vector3(center.x, center.y + size.y / 2, center.z).project(this.camera);
         const startX = (buildingTop3D.x * 0.5 + 0.5) * canvas.width;
         const startY = (buildingTop3D.y * -0.5 + 0.5) * canvas.height;
@@ -965,6 +1036,12 @@ export class Scene11 extends SceneTemplate {
             });
         });
         this.demObjects = [];
+        
+        // DOFの破棄
+        if (this.bokehPass) {
+            this.bokehPass.enabled = false;
+            this.bokehPass = null;
+        }
         
         // Circleエフェクトを破棄
         this.circleEffects.forEach(e => e.dispose(this.scene));

@@ -57,6 +57,8 @@ export class SceneBase {
         this.glitchEndTime = 0;  // エフェクト終了時刻（サスティン用）
         this.glitchKeyPressed = false;  // キーが押されているか
         
+        this.bokehPass = null; // 被写界深度（DOF）用のパス
+        
         // 表示設定
         this.SHOW_PARTICLES = false;
         this.SHOW_LINES = true;
@@ -591,6 +593,7 @@ export class SceneBase {
             if (this.composer && 
                 ((this.chromaticAberrationPass && this.chromaticAberrationPass.enabled) ||
                  (this.glitchPass && this.glitchPass.enabled) ||
+                 (this.bokehPass && this.bokehPass.enabled) ||
                  (this.bloomPass && this.bloomPass.enabled))) {
                 this.composer.render();
             } else {

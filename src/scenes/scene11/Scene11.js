@@ -65,7 +65,7 @@ export class Scene11 extends SceneTemplate {
         // エフェクト設定
         this.useBuildingTextures = false; // 重いので一時的にオフに設定
         this.useBuildingBumpMap = false;  // バンプマップ（ザラザラ感）を使用するかどうかのフラグ
-        this.useDOF = false;              // 被写界深度（DOF）を使用するかどうかのフラグ
+        this.useDOF = true;              // 被写界深度（DOF）を使用するかどうかのフラグ
 
         // バンプマップ用のノイズテクスチャ
         this.noiseTexture = null;

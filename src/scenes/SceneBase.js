@@ -580,6 +580,22 @@ export class SceneBase {
         
         // 色反転エフェクトが有効な場合はColorInversionのcomposerを使用
         if (this.colorInversion && this.colorInversion.isEnabled()) {
+            // トラック2が有効な時もDOFを効かせるため、bokehPassがあれば一時的に追加
+            const invComposer = this.colorInversion.composer;
+            const hasBokeh = this.bokehPass && this.bokehPass.enabled;
+            
+            if (invComposer && hasBokeh) {
+                // まだ追加されていなければ追加（RenderPassの次に入れたい）
+                if (!invComposer.passes.includes(this.bokehPass)) {
+                    // RenderPass(0) -> BokehPass(1) -> InversionPass(2) の順にしたい
+                    invComposer.passes.splice(1, 0, this.bokehPass);
+                }
+            } else if (invComposer && this.bokehPass) {
+                // 無効なら削除
+                const idx = invComposer.passes.indexOf(this.bokehPass);
+                if (idx !== -1) invComposer.passes.splice(idx, 1);
+            }
+
             // ColorInversionのcomposerがシーンをレンダリングして色反転を適用
             const rendered = this.colorInversion.render();
             if (!rendered) {

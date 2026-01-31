@@ -24,7 +24,7 @@ export class Scene11 extends SceneTemplate {
         super(renderer, camera, sharedResourceManager);
         this.title = 'mathym | aMb-Ray';
         this.sceneNumber = 11;
-        this.kitNo = 14;
+        this.kitNo = 20;
         
         // 建物の設定
         this.specialBuildings = [];
@@ -111,11 +111,17 @@ export class Scene11 extends SceneTemplate {
 
         await super.setup();
         
-        // 環境マップ（HDRI）を設定
+            // 環境マップ（HDRI）を設定
         try {
             const envMap = await loadHdrCached(hdri);
             this.scene.environment = envMap;
             this.scene.environmentIntensity = 2.5; // 金属質感を強調するために強度アップ
+            
+            // 3D空間としての夕焼け空（スカイスフィア）を作成
+            this.createSkysphere();
+
+            // 夕焼けの空気感を出すためにフォグを追加
+            this.scene.fog = new THREE.FogExp2(0x886644, 0.00015);
         } catch (e) {
             console.error('HDRI load failed:', e);
         }
@@ -171,8 +177,8 @@ export class Scene11 extends SceneTemplate {
 
         const params = {
             focus: 500.0,
-            aperture: 0.00005, // 0.00001から変更（ボケを弱める）
-            maxblur: 0.005,    // 0.01から変更（ボケの最大値を下げる）
+            aperture: 0.000002, // 0.000005からさらに絞ってピント範囲を拡大
+            maxblur: 0.0015,    // 0.003から半分にしてボケをより自然に
             width: window.innerWidth,
             height: window.innerHeight
         };
@@ -286,11 +292,12 @@ export class Scene11 extends SceneTemplate {
     }
     
     setupLights() {
-        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+        // ゴールデンアワーに合わせて柔らかい暖色系に変更
+        this.ambientLight = new THREE.AmbientLight(0x6688aa, 0.6); // 少し青みのある環境光
         this.scene.add(this.ambientLight);
         
-        this.directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        this.directionalLight.position.set(20, 50, 20);
+        this.directionalLight = new THREE.DirectionalLight(0xffdd88, 2.0); // 柔らかな黄金色
+        this.directionalLight.position.set(100, 40, 100); // 少し高めの位置から（夕方前）
         this.directionalLight.castShadow = true;
         
         this.directionalLight.shadow.mapSize.width = 2048;
@@ -304,7 +311,7 @@ export class Scene11 extends SceneTemplate {
         
         this.scene.add(this.directionalLight);
         
-        const pointLight = new THREE.PointLight(0xffffff, 1.0);
+        const pointLight = new THREE.PointLight(0xffaa44, 1.2); // 柔らかなオレンジ
         pointLight.position.set(-20, 30, -20);
         this.scene.add(pointLight);
         
@@ -796,6 +803,11 @@ export class Scene11 extends SceneTemplate {
         
         this.updateCamera(); // 明示的に呼ぶ
 
+        // スカイスフィアをカメラ位置に追従させる（常に中心に空があるように）
+        if (this.skysphere) {
+            this.skysphere.position.copy(this.camera.position);
+        }
+
         // DOFの更新（フォーカスをプレイヤーに合わせるなど）
         if (this.useDOF && this.bokehPass && this.player) {
             const playerPos = this.player.getPosition();
@@ -1042,6 +1054,17 @@ export class Scene11 extends SceneTemplate {
             this.bokehPass.enabled = false;
             this.bokehPass = null;
         }
+
+        // スカイスフィアの破棄
+        if (this.skysphere) {
+            this.scene.remove(this.skysphere);
+            if (this.skysphere.geometry) this.skysphere.geometry.dispose();
+            if (this.skysphere.material) {
+                if (this.skysphere.material.map) this.skysphere.material.map.dispose();
+                this.skysphere.material.dispose();
+            }
+            this.skysphere = null;
+        }
         
         // Circleエフェクトを破棄
         this.circleEffects.forEach(e => e.dispose(this.scene));
@@ -1055,6 +1078,52 @@ export class Scene11 extends SceneTemplate {
     generateBuildingWalkPath() {
         // フォールバック用のダミー実装
         this.buildingWalkPath = [new THREE.Vector3(0,0,0)];
+    }
+
+    /**
+     * 3D空間としての夕焼け空（スカイスフィア）を作成
+     */
+    createSkysphere() {
+        // 巨大な球体を作成（far planeの手前）
+        const geometry = new THREE.SphereGeometry(90000, 32, 32);
+        const texture = this.createSunsetGradient();
+        
+        // 内側を描画するように設定
+        const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            side: THREE.BackSide,
+            fog: false // 空自体はフォグの影響を受けないようにする
+        });
+
+        this.skysphere = new THREE.Mesh(geometry, material);
+        this.scene.add(this.skysphere);
+        
+        console.log("Skysphere created.");
+    }
+
+    /**
+     * 夕焼け風のグラデーションテクスチャを生成
+     */
+    createSunsetGradient() {
+        const size = 512;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        const gradient = ctx.createLinearGradient(0, 0, 0, size);
+        gradient.addColorStop(0.0, '#224488'); // 頂点：青みを残した紺
+        gradient.addColorStop(0.4, '#4488aa'); // 上空：爽やかな青
+        gradient.addColorStop(0.7, '#ffcc44'); // 地平線：黄金色のイエロー
+        gradient.addColorStop(0.9, '#ffaa44'); // 地平線付近：柔らかなオレンジ
+        gradient.addColorStop(1.0, '#884422'); // 地面付近：落ち着いた茶褐色
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, size, size);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        return texture;
     }
 
     /**

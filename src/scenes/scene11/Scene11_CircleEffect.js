@@ -28,9 +28,9 @@ export class Scene11_CircleEffect {
         // 共通のジオメトリ（1x1の円、スケールで大きさを変える）
         const geometry = new THREE.RingGeometry(0, 1, 64);
         
-        // 中心の赤塗りCircle（透明度50%）
+        // 中心の黄色塗りCircle（透明度50%）
         const innerMat = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
+            color: 0xffff00,
             transparent: true,
             opacity: 0.5,
             side: THREE.DoubleSide,
@@ -40,13 +40,13 @@ export class Scene11_CircleEffect {
         this.innerCircle = new THREE.Mesh(geometry, innerMat);
         this.innerCircle.rotation.x = -Math.PI / 2; // 地面と平行
         this.innerCircle.position.copy(this.center);
-        this.innerCircle.position.y += 0.1; // 地面（Y=0）よりわずかに上に配置
+        this.innerCircle.position.y = 0.01; // 地面（Y=0）のすぐ上に配置（Z-fighting防止）
         this.innerCircle.renderOrder = 5; // 地形(0)より大きく、建物(デフォルト0だが不透明)との兼ね合い
         scene.add(this.innerCircle);
         
-        // 外周の赤い線Circle（塗りなし、一回り大きい）
+        // 外周の黄色い線Circle（塗りなし、一回り大きい）
         const outerMat = new THREE.LineBasicMaterial({
-            color: 0xff0000,
+            color: 0xffff00,
             transparent: true,
             opacity: 1.0,
             depthWrite: true, // 深度書き込みを有効
@@ -58,7 +58,7 @@ export class Scene11_CircleEffect {
         this.outerCircle = new THREE.LineSegments(edgesGeometry, outerMat);
         this.outerCircle.rotation.x = -Math.PI / 2;
         this.outerCircle.position.copy(this.center);
-        this.outerCircle.position.y += 0.15; // 内側よりわずかに上に
+        this.outerCircle.position.y = 0.02; // 内側よりわずかに上に
         this.outerCircle.renderOrder = 6; // 内側より手前
         scene.add(this.outerCircle);
     }

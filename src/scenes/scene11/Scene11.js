@@ -22,9 +22,9 @@ import hdri from '../../assets/autumn_field_puresky_1k.hdr';
 export class Scene11 extends SceneTemplate {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera, sharedResourceManager);
-        this.title = 'mathym | aMb-Ray';
+        this.title = 'mathym | chp-pi413';
         this.sceneNumber = 11;
-        this.kitNo = 20;
+        this.kitNo = 33;
         
         // 建物の設定
         this.specialBuildings = [];
@@ -120,8 +120,8 @@ export class Scene11 extends SceneTemplate {
             // 3D空間としての夕焼け空（スカイスフィア）を作成
             this.createSkysphere();
 
-            // 夕焼けの空気感を出すためにフォグを追加
-            this.scene.fog = new THREE.FogExp2(0x886644, 0.00015);
+            // モノトーンの空気感を出すためにフォグをグレーに調整
+            this.scene.fog = new THREE.FogExp2(0x333333, 0.00015);
         } catch (e) {
             console.error('HDRI load failed:', e);
         }
@@ -292,12 +292,12 @@ export class Scene11 extends SceneTemplate {
     }
     
     setupLights() {
-        // ゴールデンアワーに合わせて柔らかい暖色系に変更
-        this.ambientLight = new THREE.AmbientLight(0x6688aa, 0.6); // 少し青みのある環境光
+        // モノトーンの背景に赤いライトでエッジを効かせる
+        this.ambientLight = new THREE.AmbientLight(0xff0000, 0.8); // 赤
         this.scene.add(this.ambientLight);
         
-        this.directionalLight = new THREE.DirectionalLight(0xffdd88, 2.0); // 柔らかな黄金色
-        this.directionalLight.position.set(100, 40, 100); // 少し高めの位置から（夕方前）
+        this.directionalLight = new THREE.DirectionalLight(0xff0000, 1.5); // 赤
+        this.directionalLight.position.set(100, 40, 100);
         this.directionalLight.castShadow = true;
         
         this.directionalLight.shadow.mapSize.width = 2048;
@@ -311,7 +311,7 @@ export class Scene11 extends SceneTemplate {
         
         this.scene.add(this.directionalLight);
         
-        const pointLight = new THREE.PointLight(0xffaa44, 1.2); // 柔らかなオレンジ
+        const pointLight = new THREE.PointLight(0xff0000, 1.0); // 赤
         pointLight.position.set(-20, 30, -20);
         this.scene.add(pointLight);
         
@@ -634,8 +634,8 @@ export class Scene11 extends SceneTemplate {
                         const localCenter = child.worldToLocal(center.clone());
                         child.geometry.translate(-localCenter.x, -localCenter.y, -localCenter.z);
                         
-                        child.material = new THREE.MeshStandardMaterial({
-                            color: 0x444444, // グレーに統一
+                        child.material = new THREE.MeshBasicMaterial({
+                            color: 0xffffff, // 純白
                             wireframe: true,
                             transparent: true,
                             opacity: 0.6,
@@ -1112,11 +1112,9 @@ export class Scene11 extends SceneTemplate {
         const ctx = canvas.getContext('2d');
 
         const gradient = ctx.createLinearGradient(0, 0, 0, size);
-        gradient.addColorStop(0.0, '#224488'); // 頂点：青みを残した紺
-        gradient.addColorStop(0.4, '#4488aa'); // 上空：爽やかな青
-        gradient.addColorStop(0.7, '#ffcc44'); // 地平線：黄金色のイエロー
-        gradient.addColorStop(0.9, '#ffaa44'); // 地平線付近：柔らかなオレンジ
-        gradient.addColorStop(1.0, '#884422'); // 地面付近：落ち着いた茶褐色
+        gradient.addColorStop(0.0, '#000000'); // 頂点：真っ黒
+        gradient.addColorStop(0.5, '#333333'); // 中間：濃いグレー
+        gradient.addColorStop(1.0, '#666666'); // 地面付近：明るいグレー
 
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, size, size);

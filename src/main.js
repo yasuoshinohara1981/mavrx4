@@ -18,7 +18,7 @@ import { SharedResourceManager } from './lib/SharedResourceManager.js';
 const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
 
 // デフォルトシーンのインデックス（0 = Scene01, 1 = Scene02, ...）
-const DEFAULT_SCENE_INDEX = 10;  // Scene11をデフォルトに設定
+const DEFAULT_SCENE_INDEX = 11;  // Scene12をデフォルトに設定
 
 // ============================================
 // 初期化
@@ -224,6 +224,16 @@ function handleKeyDown(e) {
             e.preventDefault();
             // Ctrl+0でScene10に切り替え（Scene10はインデックス9）
             sceneManager.switchScene(9);
+            return;
+        } else if (e.key === '-') {
+            e.preventDefault();
+            // Ctrl+-でScene11に切り替え（Scene11はインデックス10）
+            sceneManager.switchScene(10);
+            return;
+        } else if (e.key === '=') {
+            e.preventDefault();
+            // Ctrl+=でScene12に切り替え（Scene12はインデックス11）
+            sceneManager.switchScene(11);
             return;
         }
         // Ctrl押下中は他の処理をスキップ（数字キーがエフェクトとして処理されないように）

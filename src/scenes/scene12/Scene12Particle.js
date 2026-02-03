@@ -17,15 +17,15 @@ export class Scene12Particle extends Particle {
             Math.random() * Math.PI * 2
         );
         this.angularVelocity = new THREE.Vector3(
-            (Math.random() - 0.5) * 0.1,
-            (Math.random() - 0.5) * 0.1,
-            (Math.random() - 0.5) * 0.1
+            (Math.random() - 0.5) * 0.01, // 0.1から大幅に遅く
+            (Math.random() - 0.5) * 0.01,
+            (Math.random() - 0.5) * 0.01
         );
 
-        // 物理パラメータの微調整
-        this.maxSpeed = 10.0;
-        this.maxForce = 1.0;
-        this.friction = 0.01;
+        // 物理パラメータの微調整（爆発的な動きに対応できるよう大幅に強化）
+        this.maxSpeed = 200.0;
+        this.maxForce = 500.0;
+        this.friction = 0.02;
     }
 
     /**

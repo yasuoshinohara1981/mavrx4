@@ -352,6 +352,7 @@ export class Scene12 extends SceneBase {
             this.composer.addPass(this.ssaoPass);
         }
         if (this.useDOF) {
+            // 元の設定に戻す
             this.bokehPass = new BokehPass(this.scene, this.camera, {
                 focus: 500, aperture: 0.00001, maxblur: 0.005,
                 width: window.innerWidth, height: window.innerHeight
@@ -376,8 +377,22 @@ export class Scene12 extends SceneBase {
 
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
+        
+        // フォーカス更新の強化版：滑らかな追従（Lerp）を追加
         if (this.useDOF && this.bokehPass) {
-            this.bokehPass.uniforms.focus.value = this.camera.position.length();
+            // ターゲット位置（基本は原点だが、パーティクルの密集地帯を想定）
+            const targetPos = new THREE.Vector3(0, 0, 0);
+            
+            // カメラからターゲットまでの理想的な距離
+            const targetDistance = this.camera.position.distanceTo(targetPos);
+            
+            // 現在のフォーカス値
+            const currentFocus = this.bokehPass.uniforms.focus.value;
+            
+            // 急激な変化を抑えるための補間（Lerp）
+            // 0.1は追従速度。カメラ切り替え時も「スッ」とピントが合うようになる
+            const lerpFactor = 0.1; 
+            this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
         }
     }
 

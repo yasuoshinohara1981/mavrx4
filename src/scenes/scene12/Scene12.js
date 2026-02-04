@@ -53,6 +53,14 @@ export class Scene12 extends SceneBase {
         this.gravityForce = new THREE.Vector3(0, -0.8, 0);
         this.gravityTimer = 0;
         this.gravityInterval = 10.0; // 10秒周期
+
+        // 色の変化用
+        this.sphereColors = [];
+        this.targetColors = [];
+        for (let i = 0; i < this.sphereCount; i++) {
+            this.sphereColors.push(new THREE.Color(0x888888)); // 初期色（ライトグレー）
+            this.targetColors.push(new THREE.Color(0x888888));
+        }
         
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -184,6 +192,16 @@ export class Scene12 extends SceneBase {
         const mainMesh = this.instancedMeshManager.getMainMesh();
         mainMesh.castShadow = true;
         mainMesh.receiveShadow = true;
+        
+        // 個別色設定のための準備
+        const colorArray = new Float32Array(this.sphereCount * 3);
+        for (let i = 0; i < this.sphereCount; i++) {
+            colorArray[i * 3 + 0] = 1.0;
+            colorArray[i * 3 + 1] = 1.0;
+            colorArray[i * 3 + 2] = 1.0;
+        }
+        mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
+
         mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
             depthPacking: THREE.RGBADepthPacking,
             alphaTest: 0.5
@@ -352,6 +370,9 @@ export class Scene12 extends SceneBase {
             this.gravityTimer = 0;
             console.log(`Auto Gravity: ${this.useGravity ? 'ON' : 'OFF'}`);
         }
+
+        // actual_tickに基づいた色の変化
+        this.updateSphereColors(deltaTime);
 
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
@@ -523,6 +544,43 @@ export class Scene12 extends SceneBase {
                 if (effect.light) effect.light.intensity = effect.maxIntensity * (1.0 - Math.pow(progress, 0.5));
                 if (effect.mesh) effect.mesh.scale.setScalar(1.0 - progress);
             }
+        }
+    }
+
+    /**
+     * actual_tickに基づいてSphereの色を一つずつ白に変えていく
+     */
+    updateSphereColors(deltaTime) {
+        if (!this.instancedMeshManager) return;
+        const mainMesh = this.instancedMeshManager.getMainMesh();
+        if (!mainMesh.instanceColor) return;
+
+        // actualTick (0〜36864) を使って、どのSphereまで白くするか決める
+        // 300個のSphereを全期間で均等に割り振る
+        const totalTicks = 36864;
+        const whiteCount = Math.floor((this.actualTick / totalTicks) * this.sphereCount);
+
+        let needsUpdate = false;
+        const lerpSpeed = deltaTime * 2.0; // シレーっと変わる速度
+
+        for (let i = 0; i < this.sphereCount; i++) {
+            // 目標色の設定
+            if (i < whiteCount) {
+                this.targetColors[i].set(0xffffff); // 白
+            } else {
+                this.targetColors[i].set(0x888888); // 元のグレー
+            }
+
+            // 現在の色を目標色に近づける（線形補間）
+            if (!this.sphereColors[i].equals(this.targetColors[i])) {
+                this.sphereColors[i].lerp(this.targetColors[i], lerpSpeed);
+                mainMesh.setColorAt(i, this.sphereColors[i]);
+                needsUpdate = true;
+            }
+        }
+
+        if (needsUpdate) {
+            mainMesh.instanceColor.needsUpdate = true;
         }
     }
 

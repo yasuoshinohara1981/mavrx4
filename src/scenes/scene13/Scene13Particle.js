@@ -11,6 +11,19 @@ export class Scene13Particle extends Particle {
         this.radius = radius;
         this.scale = scale || new THREE.Vector3(radius, radius, radius);
         
+        // 【追加】個体差（パーソナリティ）パラメータ
+        // 同じ目標位置に向かっても「固まらない」ようにするためのオフセット
+        this.targetOffset = new THREE.Vector3(
+            (Math.random() - 0.5) * 300, // 100 -> 300 に拡大
+            (Math.random() - 0.5) * 300,
+            (Math.random() - 0.5) * 300
+        );
+        this.radiusOffset = 0.8 + Math.random() * 0.4; 
+        this.phaseOffset = Math.random() * Math.PI * 2; 
+        
+        // 螺旋モードでの担当高度を固定（0.0 〜 1.0）
+        this.spiralHeightFactor = Math.random();
+        
         // 回転パラメータ
         this.rotation = new THREE.Euler(
             Math.random() * Math.PI * 2,

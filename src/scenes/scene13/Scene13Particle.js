@@ -13,11 +13,16 @@ export class Scene13Particle extends Particle {
         
         // 【追加】個体差（パーソナリティ）パラメータ
         // 同じ目標位置に向かっても「固まらない」ようにするためのオフセット
+        // 球状の分布（Spherical Distribution）に変更して、引力モードでの四角い固まりを解消
+        const tOffsetTheta = Math.random() * Math.PI * 2;
+        const tOffsetPhi = Math.acos(2 * Math.random() - 1);
+        const tOffsetR = Math.pow(Math.random(), 0.5) * 250; // 分布半径
         this.targetOffset = new THREE.Vector3(
-            (Math.random() - 0.5) * 300, // 100 -> 300 に拡大
-            (Math.random() - 0.5) * 300,
-            (Math.random() - 0.5) * 300
+            tOffsetR * Math.sin(tOffsetPhi) * Math.cos(tOffsetTheta),
+            tOffsetR * Math.sin(tOffsetPhi) * Math.sin(tOffsetTheta),
+            tOffsetR * Math.cos(tOffsetPhi)
         );
+        
         this.radiusOffset = 0.8 + Math.random() * 0.4; 
         this.phaseOffset = Math.random() * Math.PI * 2; 
         

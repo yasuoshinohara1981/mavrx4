@@ -60,6 +60,10 @@ export class Scene13 extends SceneBase {
         this.modeTimer = 0;
         this.modeInterval = 10.0; // 10秒ごとにランダムに切り替え
         
+        // 色管理用
+        this.boxColors = new Float32Array(this.sphereCount * 3);
+        this.tempColor = new THREE.Color();
+        
         // モード定数
         this.MODE_DEFAULT = 0;   // 浮遊・中心引力
         this.MODE_GRAVITY = 1;   // 重力落下
@@ -165,15 +169,17 @@ export class Scene13 extends SceneBase {
      * Boxと物理演算の作成
      */
     createSpheres() {
+        // SphereからBoxに戻す
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const textures = this.generateFleshTextures();
         const boxMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, // マテリアルは純白
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 4.0, 
-            metalness: 0.6, 
-            roughness: 0.3, 
-            emissive: 0x000000, 
+            metalness: 0.5, // 金属感を復活させて「AKIRA」な重厚感を取り戻す
+            roughness: 0.3, // ツヤを戻して光の反射をカッコよく
+            emissive: 0x000000, // 余計な発光はカット
             emissiveIntensity: 0.0
         });
 
@@ -183,13 +189,12 @@ export class Scene13 extends SceneBase {
         mainMesh.receiveShadow = true;
         
         // 個別色設定のための準備
-        const colorArray = new Float32Array(this.sphereCount * 3);
         for (let i = 0; i < this.sphereCount; i++) {
-            colorArray[i * 3 + 0] = 1.0;
-            colorArray[i * 3 + 1] = 1.0;
-            colorArray[i * 3 + 2] = 1.0;
+            this.boxColors[i * 3 + 0] = 1.0; // R
+            this.boxColors[i * 3 + 1] = 1.0; // G
+            this.boxColors[i * 3 + 2] = 1.0; // B (全て白)
         }
-        mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3);
+        mainMesh.instanceColor = new THREE.InstancedBufferAttribute(this.boxColors, 3);
 
         mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
             depthPacking: THREE.RGBADepthPacking,
@@ -204,23 +209,22 @@ export class Scene13 extends SceneBase {
             const y = r * Math.sin(phi) * Math.sin(theta);
             const z = r * Math.cos(phi);
 
-            // 大きさのランダムバリエーションを強化
-            // 小さいBoxを増やし、大きいBoxを減らす調整
+            // 大きさのランダムバリエーション
+            // 最大値をさらに抑える調整
             const sizeRand = Math.random();
             let baseSize;
             if (sizeRand < 0.7) {
-                // 70%は小さめ (5〜15)
-                baseSize = 5 + Math.random() * 10;
+                // 70%は小さめ (5〜12)
+                baseSize = 5 + Math.random() * 7;
             } else if (sizeRand < 0.95) {
-                // 25%は中くらい (15〜25)
-                baseSize = 15 + Math.random() * 10;
+                // 25%は中くらい (12〜20)
+                baseSize = 12 + Math.random() * 8;
             } else {
-                // 5%だけ大きい (25〜35) - 最大サイズをさらに小さく (50->35)
-                baseSize = 25 + Math.random() * 10;
+                // 5%だけ大きい (20〜25) - 最大サイズをさらに縮小 (35->25)
+                baseSize = 20 + Math.random() * 5;
             }
 
             // 縦横比をさらに極端に（細長いものを増やす）
-            // 0.2〜3.0倍のバラツキを持たせる
             const scaleX = baseSize * (0.2 + Math.random() * 2.8);
             const scaleY = baseSize * (0.2 + Math.random() * 2.8);
             const scaleZ = baseSize * (0.2 + Math.random() * 2.8);
@@ -251,20 +255,20 @@ export class Scene13 extends SceneBase {
         colorCanvas.height = size;
         const cCtx = colorCanvas.getContext('2d');
         
-        // ベース：コンクリートのようなグレー
-        cCtx.fillStyle = '#9e9e9e'; 
+        // ベース：純白に変更（テクスチャがグレーだとBoxもグレーになるため）
+        cCtx.fillStyle = '#ffffff'; 
         cCtx.fillRect(0, 0, size, size);
 
-        // コンクリートの汚れや色ムラを追加
+        // コンクリートの汚れや色ムラを追加（白ベースなので薄めに）
         for (let i = 0; i < 60; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
             const r = 5 + Math.random() * 30;
             const grad = cCtx.createRadialGradient(x, y, 0, x, y, r);
             
-            const grayVal = 80 + Math.random() * 40;
-            grad.addColorStop(0, `rgba(${grayVal}, ${grayVal}, ${grayVal}, 0.3)`);
-            grad.addColorStop(1, 'rgba(158, 158, 158, 0)');
+            const grayVal = 200 + Math.random() * 40; // かなり明るいグレー
+            grad.addColorStop(0, `rgba(${grayVal}, ${grayVal}, ${grayVal}, 0.2)`);
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
             cCtx.fillStyle = grad;
             cCtx.beginPath();
             cCtx.arc(x, y, r, 0, Math.PI * 2);
@@ -453,15 +457,16 @@ export class Scene13 extends SceneBase {
                 if (this.currentMode === this.MODE_SPIRAL) {
                     const side = (idx % 2 === 0) ? 1 : -1;
                     const rotationSpeed = 1.5;
-                    const radius = 250 * p.radiusOffset; 
-                    const angle = (this.time * rotationSpeed) + (p.position.y * 0.01) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.1);
+                    const radius = 350 * p.radiusOffset; // 250 -> 350 少し広げて2本を強調
+                    // 0.01 -> 0.003 に変更して、巻き数を減らす（ゆったりした螺旋へ）
+                    const angle = (this.time * rotationSpeed) + (p.position.y * 0.003) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.05);
                     const targetX = Math.cos(angle) * radius;
                     const targetZ = Math.sin(angle) * radius;
                     
                     p.velocity.y *= 0.99; 
                     
                     // 復元力と、マイルドな上昇気流
-                    const spiralSpringK = 0.1; // 0.15 -> 0.1 に少し弱めて安定
+                    const spiralSpringK = 0.1; 
                     tempVec.set((targetX - p.position.x) * spiralSpringK, 0.4, (targetZ - p.position.z) * spiralSpringK);
                     p.addForce(tempVec);
 
@@ -484,12 +489,12 @@ export class Scene13 extends SceneBase {
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_WALL) {
-                    // 垂直グリッド壁：数に応じて動的に列数を計算
-                    const cols = Math.floor(Math.sqrt(this.sphereCount * 0.5)); 
-                    const spacing = 2500 / cols; // 1200 -> 2500 に壁のサイズを倍増！
-                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.1;
-                    const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.1;
-                    const tz = -1500 + p.targetOffset.z * 0.5; // 少し遠ざけて全体が見えるように
+                    // 垂直グリッド壁：さらに密度を極限まで高めて、一面の壁にする
+                    const cols = 200; 
+                    const spacing = 40; 
+                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05; 
+                    const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
+                    const tz = 0 + p.targetOffset.z * 0.2; // ど真ん中（z=0）に配置
                     
                     tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
                     p.addForce(tempVec);
@@ -545,10 +550,10 @@ export class Scene13 extends SceneBase {
                 } else if (this.currentMode === this.MODE_GRAVITY) {
                     p.velocity.multiplyScalar(0.98);
                 } else {
-                    // DEFAULT: 中心の引力 + 個体ごとの目標オフセット
-                    const tx = p.targetOffset.x * 2.0;
-                    const ty = p.targetOffset.y * 2.0 + 200;
-                    const tz = p.targetOffset.z * 2.0;
+                    // DEFAULT: 中心の引力 + 個体ごとの目標オフセット（球状分布）
+                    const tx = p.targetOffset.x;
+                    const ty = p.targetOffset.y + 200;
+                    const tz = p.targetOffset.z;
                     tempVec.set((tx - p.position.x) * 0.001, (ty - p.position.y) * 0.001, (tz - p.position.z) * 0.001);
                     p.addForce(tempVec);
                 }

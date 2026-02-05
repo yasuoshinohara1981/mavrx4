@@ -26,7 +26,8 @@ export class Scene13 extends SceneBase {
         
         // Boxの設定
         this.sphereCount = 20000; // ついに2万個！人類未踏の領域や！
-        this.spawnRadius = 1200;  // さらに広げてスケール感を出す（1000 -> 1200）        
+        this.spawnRadius = 1200;  // さらに広げてスケール感を出す（1000 -> 1200）
+        
         // インスタンス管理
         this.instancedMeshManager = null;
         this.particles = [];
@@ -169,17 +170,17 @@ export class Scene13 extends SceneBase {
      * Boxと物理演算の作成
      */
     createSpheres() {
-        // SphereからBoxに戻す
+        // 安定したBoxに戻す
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const textures = this.generateFleshTextures();
         const boxMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, // マテリアルは純白
+            color: 0xcccccc, 
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 4.0, 
-            metalness: 0.5, // 金属感を復活させて「AKIRA」な重厚感を取り戻す
-            roughness: 0.3, // ツヤを戻して光の反射をカッコよく
-            emissive: 0x000000, // 余計な発光はカット
+            metalness: 0.5, 
+            roughness: 0.3, 
+            emissive: 0x000000, 
             emissiveIntensity: 0.0
         });
 
@@ -190,9 +191,9 @@ export class Scene13 extends SceneBase {
         
         // 個別色設定のための準備
         for (let i = 0; i < this.sphereCount; i++) {
-            this.boxColors[i * 3 + 0] = 1.0; // R
-            this.boxColors[i * 3 + 1] = 1.0; // G
-            this.boxColors[i * 3 + 2] = 1.0; // B (全て白)
+            this.boxColors[i * 3 + 0] = 1.0; 
+            this.boxColors[i * 3 + 1] = 1.0; 
+            this.boxColors[i * 3 + 2] = 1.0; 
         }
         mainMesh.instanceColor = new THREE.InstancedBufferAttribute(this.boxColors, 3);
 
@@ -399,7 +400,7 @@ export class Scene13 extends SceneBase {
                     const phi = Math.random() * Math.PI;
                     p.position.set(
                         r * Math.sin(phi) * Math.cos(theta),
-                        p.spiralHeightFactor * 2000 - 500, // 担当高度に一瞬で散らす
+                        p.spiralHeightFactor * 5000 - 500, // 2000 -> 5000 担当高度を大幅に拡大
                         r * Math.sin(phi) * Math.sin(theta)
                     );
                     p.velocity.set(0, 0, 0); 
@@ -457,93 +458,107 @@ export class Scene13 extends SceneBase {
                 if (this.currentMode === this.MODE_SPIRAL) {
                     const side = (idx % 2 === 0) ? 1 : -1;
                     const rotationSpeed = 1.5;
-                    const radius = 350 * p.radiusOffset; // 250 -> 350 少し広げて2本を強調
-                    // 0.01 -> 0.003 に変更して、巻き数を減らす（ゆったりした螺旋へ）
+                    // はみ出し粒子は半径を大きく外側に散らす
+                    const radius = 350 * p.radiusOffset * p.strayRadiusOffset; 
                     const angle = (this.time * rotationSpeed) + (p.position.y * 0.003) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.05);
                     const targetX = Math.cos(angle) * radius;
                     const targetZ = Math.sin(angle) * radius;
                     
                     p.velocity.y *= 0.99; 
                     
-                    // 復元力と、マイルドな上昇気流
-                    const spiralSpringK = 0.1; 
-                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0.4, (targetZ - p.position.z) * spiralSpringK);
+                    // はみ出し粒子（Stray）は引力を極限まで弱めて「漂わせる」
+                    const spiralSpringK = 0.1 * p.strayFactor;
+                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0.4 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK);
                     p.addForce(tempVec);
 
                     // 螺旋専用の循環処理：上に行ったら下から出す
-                    if (p.position.y > 1500) {
+                    if (p.position.y > 4500) { 
                         p.position.y = -500;
                         p.velocity.y *= 0.5;
                     }
 
                 } else if (this.currentMode === this.MODE_TORUS) {
                     const mainRadius = 1200;
-                    const tubeRadius = 60 * p.radiusOffset; // 筒の太さに個体差
+                    // はみ出し粒子はドーナツの「外側」や「内側」に大きくズレる
+                    const tubeRadius = 60 * p.radiusOffset * p.strayRadiusOffset; 
                     const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
                     const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5) + p.phaseOffset;
                     const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
                     const ty = tubeRadius * Math.sin(phi) + 300;
                     const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
                     
-                    tempVec.set((tx - p.position.x) * 0.04, (ty - p.position.y) * 0.04, (tz - p.position.z) * 0.04);
+                    // はみ出し粒子は引力を弱める
+                    const torusSpringK = 0.04 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_WALL) {
                     // 垂直グリッド壁：さらに密度を極限まで高めて、一面の壁にする
                     const cols = 200; 
                     const spacing = 40; 
+                    // はみ出し粒子は壁の「前後」に大きく漂う
+                    const zOffset = p.isStray ? (p.targetOffset.z * 5.0) : (p.targetOffset.z * 0.2);
                     const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05; 
                     const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
-                    const tz = 0 + p.targetOffset.z * 0.2; // ど真ん中（z=0）に配置
+                    const tz = 0 + zOffset; // ど真ん中（z=0）に配置
                     
-                    tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
+                    // はみ出し粒子は引力を弱める
+                    const wallSpringK = 0.05 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_WAVE) {
                     // 巨大な波：数に応じて動的に密度を計算し、サイズを大幅に拡大
                     const cols = Math.floor(Math.sqrt(this.sphereCount));
                     const spacing = 5000 / cols; // 2500 -> 5000 に波の広がりを倍増！
+                    // はみ出し粒子は波の「上下」に激しく飛び出す
+                    const yOffset = p.isStray ? (p.targetOffset.y * 2.0) : (p.targetOffset.y * 0.05);
                     const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
                     const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.05;
-                    const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + p.targetOffset.y * 0.05;
+                    const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
                     
-                    tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
+                    // はみ出し粒子は引力を弱める
+                    const waveSpringK = 0.05 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_BLACK_HOLE) {
-                    // ... (既存のBLACK_HOLEロジック)
                     if (idx % 10 < 7) {
                         const radius = (idx / this.sphereCount) * 1200 + 50 + p.targetOffset.x * 0.5;
                         const angle = (idx * 0.05) + (this.time * 3.0) + p.phaseOffset * 0.1;
                         const tx = Math.cos(angle) * radius;
                         const tz = Math.sin(angle) * radius;
                         const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
-                        tempVec.set((tx - p.position.x) * 0.06, (ty - p.position.y) * 0.06, (tz - p.position.z) * 0.06);
+                        
+                        const bhSpringK = 0.06 * p.strayFactor;
+                        tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
                     } else {
                         const side = (idx % 2 === 0) ? 1 : -1;
                         const tx = (Math.random() - 0.5) * 40 + p.targetOffset.x * 0.1;
                         const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
                         const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
-                        tempVec.set((tx - p.position.x) * 0.1, (ty - p.position.y) * 0.1, (tz - p.position.z) * 0.1);
+                        
+                        const jetSpringK = 0.1 * p.strayFactor;
+                        tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
                     }
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_PILLARS) {
-                    // 5本の垂直柱：間隔を広く取る
                     const pillarIdx = idx % 5;
                     const angle = (pillarIdx / 5) * Math.PI * 2;
                     const pillarRadius = 1500; // 800 -> 1500 に柱の間隔を拡大！
                     const px = Math.cos(angle) * pillarRadius;
                     const pz = Math.sin(angle) * pillarRadius;
-                    const tx = px + (Math.sin(idx + this.time) * 100); // 柱自体の太さも少し出す
-                    const tz = pz + (Math.cos(idx + this.time) * 100);
-                    const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000; // 柱の高さも 2000 -> 3000 に！
+                    const tx = px + (Math.sin(idx + this.time) * 100) + p.targetOffset.x * 0.5;
+                    const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
+                    const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
                     
-                    tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
+                    const pillarSpringK = 0.05 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_CHAOS) {
-                    const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 2.0;
+                    const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 2.0 * p.strayFactor;
                     tempVec.copy(p.position).normalize().multiplyScalar(force);
                     p.addForce(tempVec);
 
@@ -554,7 +569,8 @@ export class Scene13 extends SceneBase {
                     const tx = p.targetOffset.x;
                     const ty = p.targetOffset.y + 200;
                     const tz = p.targetOffset.z;
-                    tempVec.set((tx - p.position.x) * 0.001, (ty - p.position.y) * 0.001, (tz - p.position.z) * 0.001);
+                    const defSpringK = 0.001 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
                     p.addForce(tempVec);
                 }
 
@@ -566,6 +582,7 @@ export class Scene13 extends SceneBase {
                 p.update();
                 
                 // 全体的な摩擦（空気抵抗）を大幅に強化（0.98 -> 0.92）
+                // これにより痙攣（微振動）を吸収し、しっとりとした動きにする
                 p.velocity.multiplyScalar(0.92); 
                 
                 if (this.useWallCollision) {

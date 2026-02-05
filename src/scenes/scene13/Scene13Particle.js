@@ -29,6 +29,20 @@ export class Scene13Particle extends Particle {
         // 螺旋モードでの担当高度を固定（0.0 〜 1.0）
         this.spiralHeightFactor = Math.random();
         
+        // 【追加】はみ出し（Stray）設定
+        // 25%の確率で「はみ出し粒子」にする（15% -> 25%にアップ）
+        this.isStray = Math.random() < 0.25;
+        if (this.isStray) {
+            // はみ出し粒子はオフセットを巨大にし、動きを鈍くする
+            // 螺旋やトーラスの「外側」に漂うように半径方向のオフセットを強化
+            this.strayFactor = 0.05 + Math.random() * 0.2; // 引力への抵抗力をさらに強化（より戻りにくく）
+            this.strayRadiusOffset = 1.5 + Math.random() * 2.0; // 螺旋やトーラスの半径に対する倍率
+            this.scale.multiplyScalar(0.3 + Math.random() * 0.4); // さらに小さくして「塵」感を出す
+        } else {
+            this.strayFactor = 1.0;
+            this.strayRadiusOffset = 1.0;
+        }
+        
         // 回転パラメータ
         this.rotation = new THREE.Euler(
             Math.random() * Math.PI * 2,

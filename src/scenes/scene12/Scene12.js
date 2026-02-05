@@ -10,6 +10,7 @@ import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
+import { StudioBox } from '../../lib/StudioBox.js';
 import { Scene12Particle } from './Scene12Particle.js';
 
 export class Scene12 extends SceneBase {
@@ -37,9 +38,8 @@ export class Scene12 extends SceneBase {
         this.gridSize = 150; // マス目を少し大きくして効率化
         this.grid = new Map();
 
-        // 撮影用スタジオ（白い箱）
-        this.studioBox = null;
-        this.studioFloor = null;
+        // 撮影用スタジオ
+        this.studio = null;
         
         // エフェクト設定
         this.useDOF = true;
@@ -146,34 +146,15 @@ export class Scene12 extends SceneBase {
     }
 
     /**
-     * 撮影用スタジオ（白い箱）
+     * 撮影用スタジオ
      */
     createStudioBox() {
-        const size = 2000;
-        const geometry = new THREE.BoxGeometry(size, size, size);
-        const material = new THREE.MeshStandardMaterial({
+        this.studio = new StudioBox(this.scene, {
+            size: 2000,
             color: 0xffffff,
-            side: THREE.BackSide,
-            roughness: 0.5, // 0.8から下げて少し光沢を出し、白を強調
-            metalness: 0.0  // 0.1から0にして、よりマットな白に
-        });
-        this.studioBox = new THREE.Mesh(geometry, material);
-        this.studioBox.position.set(0, 500, 0);
-        this.studioBox.receiveShadow = true;
-        this.scene.add(this.studioBox);
-
-        // 床を別途作成（シャドウをより確実に受けるため）
-        const floorGeo = new THREE.PlaneGeometry(size, size);
-        const floorMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            roughness: 0.5, // 0.8から下げて白を明るく
+            roughness: 0.4,
             metalness: 0.0
         });
-        this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
-        this.studioFloor.rotation.x = -Math.PI / 2;
-        this.studioFloor.position.y = -499; // 箱の底よりわずかに上に配置
-        this.studioFloor.receiveShadow = true;
-        this.scene.add(this.studioFloor);
     }
 
     /**
@@ -359,8 +340,8 @@ export class Scene12 extends SceneBase {
             // ピントの芯をクッキリさせつつ、ボケへの移行を自然にするための調整
             this.bokehPass = new BokehPass(this.scene, this.camera, {
                 focus: 500, 
-                aperture: 0.00002, // 0.00003から少し絞ってピントの芯を戻す
-                maxblur: 0.005,     // 0.004から少し戻してボケの深さを出す
+                aperture: 0.000005, // 0.00002からさらに絞ってピントの合う範囲を広げる
+                maxblur: 0.003,     // 0.005から下げてボケをマイルドに
                 width: window.innerWidth, 
                 height: window.innerHeight
             });
@@ -633,16 +614,7 @@ export class Scene12 extends SceneBase {
 
     dispose() {
         console.log('Scene12.dispose: クリーンアップ開始');
-        if (this.studioBox) {
-            this.scene.remove(this.studioBox);
-            this.studioBox.geometry.dispose();
-            this.studioBox.material.dispose();
-        }
-        if (this.studioFloor) {
-            this.scene.remove(this.studioFloor);
-            this.studioFloor.geometry.dispose();
-            this.studioFloor.material.dispose();
-        }
+        if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }

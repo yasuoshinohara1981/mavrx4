@@ -712,6 +712,80 @@ export class Scene13 extends SceneBase {
         }
     }
 
+    /**
+     * カメラをランダムに切り替える（phaseごとに挙動を変更）
+     */
+    switchCameraRandom() {
+        // 次のカメラを選択
+        let newIndex = this.currentCameraIndex;
+        while (newIndex === this.currentCameraIndex) {
+            newIndex = Math.floor(Math.random() * this.cameraParticles.length);
+        }
+        this.currentCameraIndex = newIndex;
+        const cp = this.cameraParticles[this.currentCameraIndex];
+
+        // phaseに基づいたカメラの性格付け
+        const phaseValue = Math.min(8, Math.max(0, this.phase || 0));
+        
+        // 全てのカメラパーティクルのパラメータを一度リセット
+        this.cameraParticles.forEach(p => {
+            p.minDistance = 400;
+            p.maxDistance = 2000;
+            p.boxMin = null;
+            p.boxMax = null;
+            p.maxSpeed = 8.0;
+        });
+
+        switch (phaseValue) {
+            case 1: // GRAVITY: 低い位置から見上げる
+                cp.position.set((Math.random()-0.5)*1000, -400, (Math.random()-0.5)*1000);
+                cp.velocity.set(0, 5, 0); // 少し上に浮き上がる動き
+                break;
+            case 2: // SPIRAL: 高い位置から見下ろす
+                cp.position.set((Math.random()-0.5)*1500, 3000, (Math.random()-0.5)*1500);
+                cp.velocity.set(0, -2, 0);
+                break;
+            case 3: // TORUS: 遠くから全体を俯瞰
+                const angle = Math.random() * Math.PI * 2;
+                cp.position.set(Math.cos(angle) * 3000, 1000, Math.sin(angle) * 3000);
+                cp.minDistance = 2000;
+                cp.maxDistance = 5000;
+                break;
+            case 4: // WALL: 壁の正面または真横
+                if (Math.random() > 0.5) {
+                    cp.position.set((Math.random()-0.5)*2000, 500, 1500); // 正面
+                } else {
+                    cp.position.set(3000, 500, (Math.random()-0.5)*1000); // 真横
+                }
+                break;
+            case 5: // WAVE: 水面スレスレ
+                cp.position.set((Math.random()-0.5)*3000, -300, (Math.random()-0.5)*3000);
+                cp.maxSpeed = 15.0; // 高速移動
+                break;
+            case 6: // BLACK_HOLE: 中心に吸い込まれるか、ジェットを追う
+                if (Math.random() > 0.5) {
+                    cp.position.set((Math.random()-0.5)*200, 200, (Math.random()-0.5)*200); // 中心近辺
+                } else {
+                    cp.position.set((Math.random()-0.5)*500, 4000, (Math.random()-0.5)*500); // ジェット先端
+                }
+                break;
+            case 7: // PILLARS: 柱の間を縫う
+                cp.position.set((Math.random()-0.5)*1000, (Math.random()-0.5)*1000 + 500, (Math.random()-0.5)*1000);
+                cp.maxSpeed = 12.0;
+                break;
+            case 8: // CHAOS: 予測不能な激しい動き
+                cp.applyRandomForce();
+                cp.velocity.multiplyScalar(5.0);
+                cp.maxSpeed = 30.0;
+                break;
+            default: // DEFAULT: 通常のランダム
+                cp.applyRandomForce();
+                break;
+        }
+
+        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Style: Phase ${phaseValue})`);
+    }
+
     reset() { super.reset(); }
 
     dispose() {

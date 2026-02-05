@@ -16,7 +16,7 @@ import { Scene12Particle } from './Scene12Particle.js';
 export class Scene12 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Scene 12';  // シーンのタイトルを設定
+        this.title = 'Xenosphere';  // シーンのタイトルを設定
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
@@ -61,6 +61,23 @@ export class Scene12 extends SceneBase {
         this.gravityForce = new THREE.Vector3(0, -0.8, 0);
         this.gravityTimer = 0;
         this.gravityInterval = 10.0; // 10秒周期
+
+        // モード設定（Scene13リスペクトの10パターン）
+        this.currentMode = 0;
+        this.modeTimer = 0;
+        this.modeInterval = 10.0; 
+        
+        // モード定数（Scene12オリジナル：生物的・物理的アプローチ）
+        this.MODE_DEFAULT    = 0; // 浮遊
+        this.MODE_GRAVITY    = 1; // 重力
+        this.MODE_SWARM      = 2; // 群れ（一つの巨大な塊）
+        this.MODE_SNAKE      = 3; // 蛇行（数珠つなぎ）
+        this.MODE_VORTEX     = 4; // 竜巻
+        this.MODE_ATOM       = 5; // 原子軌道
+        this.MODE_PULSE      = 6; // 鼓動
+        this.MODE_GRID_3D    = 7; // 3D標本（整列）
+        this.MODE_FIGHT      = 8; // 衝突（2群対立）
+        this.MODE_RAIN       = 9; // 降り注ぐ雨
 
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -356,12 +373,32 @@ export class Scene12 extends SceneBase {
             this.sphereDepthShader.uniforms.uTime.value = this.time;
         }
 
-        // 重力の自動切り替え（10秒周期）
-        this.gravityTimer += deltaTime;
-        if (this.gravityTimer >= this.gravityInterval) {
-            this.useGravity = !this.useGravity;
-            this.gravityTimer = 0;
-            console.log(`Auto Gravity: ${this.useGravity ? 'ON' : 'OFF'}`);
+        // モードの自動切り替え（10秒周期）
+        this.modeTimer += deltaTime;
+        if (this.modeTimer >= this.modeInterval) {
+            this.modeTimer = 0;
+            let nextMode;
+            do {
+                nextMode = Math.floor(Math.random() * 10);
+            } while (nextMode === this.currentMode);
+            
+            this.currentMode = nextMode;
+            this.useGravity = (this.currentMode === this.MODE_GRAVITY || this.currentMode === this.MODE_RAIN);
+            console.log(`Mode Switched: ${this.currentMode}`);
+
+            // モード切り替え時の初期化
+            if (this.currentMode === this.MODE_RAIN) {
+                this.particles.forEach(p => {
+                    p.position.y = 1500 + Math.random() * 1000;
+                    p.velocity.set(0, -10 - Math.random() * 20, 0);
+                });
+            } else if (this.currentMode === this.MODE_FIGHT) {
+                this.particles.forEach((p, idx) => {
+                    const side = (idx % 2 === 0) ? 1 : -1;
+                    p.position.set(side * 800, (Math.random() - 0.5) * 500 + 200, (Math.random() - 0.5) * 1000);
+                    p.velocity.set(-side * 20, 0, 0);
+                });
+            }
         }
 
         this.updatePhysics(deltaTime);
@@ -417,22 +454,117 @@ export class Scene12 extends SceneBase {
                 this.grid.get(key).push(i);
             });
 
-            this.particles.forEach(p => {
-                // 中心の引力を計算
-                tempVec.copy(p.position).multiplyScalar(-0.002);
-                
-                // 重力オンの時は、床付近での中心引力をさらに弱める（一箇所に固まるのを防ぐ）
-                if (this.useGravity && p.position.y < -400) {
-                    tempVec.multiplyScalar(0.1);
-                }
-                p.addForce(tempVec);
+            this.particles.forEach((p, idx) => {
+                // モード別の力計算（Scene12オリジナル：生物的・物理的アプローチ）
+                if (this.currentMode === this.MODE_SWARM) {
+                    // 一つの巨大な塊として動く（群れ）
+                    const center = new THREE.Vector3(
+                        Math.sin(this.time * 0.5) * 300,
+                        Math.cos(this.time * 0.7) * 200 + 300,
+                        Math.sin(this.time * 0.3) * 300
+                    );
+                    const tx = center.x + p.targetOffset.x * 0.4;
+                    const ty = center.y + p.targetOffset.y * 0.4;
+                    const tz = center.z + p.targetOffset.z * 0.4;
+                    const springK = 0.05 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
 
-                // 重力の適用
-                if (this.useGravity) {
+                } else if (this.currentMode === this.MODE_SNAKE) {
+                    // 蛇行（数珠つなぎのような動き）
+                    const t = this.time * 2.0 - idx * 0.1;
+                    const tx = Math.sin(t) * 500;
+                    const ty = Math.cos(t * 0.5) * 300 + 300;
+                    const tz = Math.sin(t * 0.7) * 500;
+                    const springK = 0.1 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_VORTEX) {
+                    // 竜巻（垂直方向の渦）
+                    const angle = this.time * 3.0 + p.position.y * 0.01;
+                    const radius = (p.position.y + 500) * 0.3 + 100;
+                    const tx = Math.cos(angle) * radius;
+                    const tz = Math.sin(angle) * radius;
+                    const springK = 0.08 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, 0.5, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+                    if (p.position.y > 1500) p.position.y = -450;
+
+                } else if (this.currentMode === this.MODE_ATOM) {
+                    // 原子軌道（3軸の回転）
+                    const speed = 2.0;
+                    const radius = 500 * p.radiusOffset;
+                    const axis = idx % 3;
+                    let tx = 0, ty = 200, tz = 0;
+                    if (axis === 0) {
+                        tx = Math.cos(this.time * speed + p.phaseOffset) * radius;
+                        ty = Math.sin(this.time * speed + p.phaseOffset) * radius + 200;
+                    } else if (axis === 1) {
+                        ty = Math.cos(this.time * speed + p.phaseOffset) * radius + 200;
+                        tz = Math.sin(this.time * speed + p.phaseOffset) * radius;
+                    } else {
+                        tx = Math.cos(this.time * speed + p.phaseOffset) * radius;
+                        tz = Math.sin(this.time * speed + p.phaseOffset) * radius;
+                    }
+                    const springK = 0.06 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_PULSE) {
+                    // 鼓動（拡大縮小する球体）
+                    const pulse = Math.pow(Math.sin(this.time * 2.0), 4.0);
+                    const radius = (300 + pulse * 400) * p.radiusOffset;
+                    const target = p.targetOffset.clone().normalize().multiplyScalar(radius);
+                    const tx = target.x;
+                    const ty = target.y + 300;
+                    const tz = target.z;
+                    const springK = 0.1 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_GRID_3D) {
+                    // 3D標本（整列）
+                    const gridCount = 7; // 7x7x7 = 343 (300個にちょうど良い)
+                    const spacing = 150;
+                    const gx = idx % gridCount;
+                    const gy = Math.floor(idx / gridCount) % gridCount;
+                    const gz = Math.floor(idx / (gridCount * gridCount));
+                    const tx = (gx - (gridCount-1)*0.5) * spacing;
+                    const ty = (gy - (gridCount-1)*0.5) * spacing + 400;
+                    const tz = (gz - (gridCount-1)*0.5) * spacing;
+                    const springK = 0.15 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_FIGHT) {
+                    // 衝突（2群対立）
+                    const side = (idx % 2 === 0) ? 1 : -1;
+                    const tx = side * (Math.sin(this.time * 5.0) * 200 + 400);
+                    const ty = p.targetOffset.y * 0.5 + 300;
+                    const tz = p.targetOffset.z * 0.5;
+                    const springK = 0.1 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_RAIN) {
+                    // 降り注ぐ雨
+                    p.addForce(this.gravityForce.clone().multiplyScalar(2.0));
+                    if (p.position.y < -450) {
+                        p.position.y = 1500;
+                        p.velocity.y = -10 - Math.random() * 20;
+                    }
+                } else if (this.currentMode === this.MODE_GRAVITY) {
                     p.addForce(this.gravityForce);
+                } else {
+                    // DEFAULT: 浮遊
+                    tempVec.copy(p.position).multiplyScalar(-0.002);
+                    p.addForce(tempVec);
                 }
 
                 p.update();
+                p.velocity.multiplyScalar(0.95); 
+
                 if (this.useWallCollision) {
                     if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
                     if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }

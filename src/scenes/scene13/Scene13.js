@@ -348,10 +348,11 @@ export class Scene13 extends SceneBase {
             this.composer.addPass(this.ssaoPass);
         }
         if (this.useDOF) {
+            // ボケ味を再調整：ミニチュア感を抑えつつ、適度な被写界深度を出す
             this.bokehPass = new BokehPass(this.scene, this.camera, {
                 focus: 500, 
-                aperture: 0.000005, // 0.00002からさらに絞ってピントの合う範囲を広げる
-                maxblur: 0.003,     // 0.005から下げてボケをマイルドに
+                aperture: 0.000005, // 0.000001 -> 0.000005 少し広げてボケを出す
+                maxblur: 0.003,     // 0.001 -> 0.003 適度なボケの深さを復活
                 width: window.innerWidth, 
                 height: window.innerHeight
             });
@@ -385,6 +386,11 @@ export class Scene13 extends SceneBase {
             
             this.currentMode = nextMode;
             console.log(`Auto Randomizing Mode: ${this.currentMode}`);
+
+            // モードフラグの更新（updatePhysicsで使用）
+            this.useGravity = (this.currentMode === this.MODE_GRAVITY);
+            this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
+            this.torusMode = (this.currentMode === this.MODE_TORUS);
 
             // モード切り替え時の特殊処理
             if (this.currentMode === this.MODE_GRAVITY) {
@@ -426,8 +432,11 @@ export class Scene13 extends SceneBase {
                 targetDistance = Math.max(10, toOrigin.dot(targetVec));
             }
             
+            // 現在のフォーカス値を取得
             const currentFocus = this.bokehPass.uniforms.focus.value;
-            const lerpFactor = 0.1; 
+            
+            // 追従速度（0.1）。ピントが急激に変わってチカチカするのを防ぐため、少し遅く設定
+            const lerpFactor = 0.05; // 0.1 -> 0.05 さらにゆっくりにして「映画のフォーカス送り」感を出す
             this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
         }
     }

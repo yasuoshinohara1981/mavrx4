@@ -30,14 +30,14 @@ export class Scene13Particle extends Particle {
         this.spiralHeightFactor = Math.random();
         
         // 【追加】はみ出し（Stray）設定
-        // 25%の確率で「はみ出し粒子」にする（15% -> 25%にアップ）
-        this.isStray = Math.random() < 0.25;
+        // 15%の確率で「はみ出し粒子」にする（25% -> 15%に少し抑える）
+        this.isStray = Math.random() < 0.15;
         if (this.isStray) {
             // はみ出し粒子はオフセットを巨大にし、動きを鈍くする
-            // 螺旋やトーラスの「外側」に漂うように半径方向のオフセットを強化
-            this.strayFactor = 0.05 + Math.random() * 0.2; // 引力への抵抗力をさらに強化（より戻りにくく）
-            this.strayRadiusOffset = 1.5 + Math.random() * 2.0; // 螺旋やトーラスの半径に対する倍率
-            this.scale.multiplyScalar(0.3 + Math.random() * 0.4); // さらに小さくして「塵」感を出す
+            // 螺旋やトーラスの「外側」に漂うように半径方向のオフセットを調整
+            this.strayFactor = 0.1 + Math.random() * 0.3; // 引力への抵抗力を少し弱めて、離れすぎないように調整
+            this.strayRadiusOffset = 1.2 + Math.random() * 1.5; // 半径に対する倍率を少し抑える（1.5~3.5 -> 1.2~2.7）
+            this.scale.multiplyScalar(0.4 + Math.random() * 0.4); // 少しだけ大きくして「欠片」としての存在感を出す
         } else {
             this.strayFactor = 1.0;
             this.strayRadiusOffset = 1.0;

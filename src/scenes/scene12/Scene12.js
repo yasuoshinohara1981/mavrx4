@@ -8,6 +8,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene12Particle } from './Scene12Particle.js';
 
@@ -19,6 +20,9 @@ export class Scene12 extends SceneBase {
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
         this.useSharedResources = !!sharedResourceManager;
+        
+        // レイキャスター（オートフォーカス用）
+        this.raycaster = new THREE.Raycaster();
         
         // Sphereの設定
         this.sphereCount = 300; // 100から300に戻す
@@ -352,10 +356,13 @@ export class Scene12 extends SceneBase {
             this.composer.addPass(this.ssaoPass);
         }
         if (this.useDOF) {
-            // 元の設定に戻す
+            // ピントの芯をクッキリさせつつ、ボケへの移行を自然にするための調整
             this.bokehPass = new BokehPass(this.scene, this.camera, {
-                focus: 500, aperture: 0.00001, maxblur: 0.005,
-                width: window.innerWidth, height: window.innerHeight
+                focus: 500, 
+                aperture: 0.00002, // 0.00003から少し絞ってピントの芯を戻す
+                maxblur: 0.005,     // 0.004から少し戻してボケの深さを出す
+                width: window.innerWidth, 
+                height: window.innerHeight
             });
             this.composer.addPass(this.bokehPass);
         }
@@ -364,6 +371,14 @@ export class Scene12 extends SceneBase {
     onUpdate(deltaTime) {
         this.time += deltaTime;
         
+        // シェーダーの時間を更新
+        if (this.sphereMaterialShader) {
+            this.sphereMaterialShader.uniforms.uTime.value = this.time;
+        }
+        if (this.sphereDepthShader) {
+            this.sphereDepthShader.uniforms.uTime.value = this.time;
+        }
+
         // 重力の自動切り替え（10秒周期）
         this.gravityTimer += deltaTime;
         if (this.gravityTimer >= this.gravityInterval) {
@@ -378,20 +393,32 @@ export class Scene12 extends SceneBase {
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
         
-        // フォーカス更新の強化版：滑らかな追従（Lerp）を追加
-        if (this.useDOF && this.bokehPass) {
-            // ターゲット位置（基本は原点だが、パーティクルの密集地帯を想定）
-            const targetPos = new THREE.Vector3(0, 0, 0);
+        // レイキャストによるオートフォーカス：視線の先にあるオブジェクトにピントを合わせる
+        if (this.useDOF && this.bokehPass && this.instancedMeshManager) {
+            // カメラの真ん中（0, 0）からビームを飛ばす
+            this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
             
-            // カメラからターゲットまでの理想的な距離
-            const targetDistance = this.camera.position.distanceTo(targetPos);
+            // インスタンスメッシュとの衝突判定
+            const mainMesh = this.instancedMeshManager.getMainMesh();
+            const intersects = this.raycaster.intersectObject(mainMesh);
+            
+            let targetDistance;
+            if (intersects.length > 0) {
+                // 何か当たったら、その一番手前の距離を採用
+                targetDistance = intersects[0].distance;
+            } else {
+                // 何も当たらない時は、視線方向の原点投影距離を保険にする
+                const targetVec = new THREE.Vector3(0, 0, -1);
+                targetVec.applyQuaternion(this.camera.quaternion);
+                const toOrigin = new THREE.Vector3(0, 0, 0).sub(this.camera.position);
+                targetDistance = Math.max(10, toOrigin.dot(targetVec));
+            }
             
             // 現在のフォーカス値
             const currentFocus = this.bokehPass.uniforms.focus.value;
             
-            // 急激な変化を抑えるための補間（Lerp）
-            // 0.1は追従速度。カメラ切り替え時も「スッ」とピントが合うようになる
-            const lerpFactor = 0.1; 
+            // 追従速度（0.2）。ピント送りのような滑らかな動きを維持
+            const lerpFactor = 0.2; 
             this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
         }
     }
@@ -409,7 +436,9 @@ export class Scene12 extends SceneBase {
                 const gx = Math.floor(p.position.x / this.gridSize);
                 const gy = Math.floor(p.position.y / this.gridSize);
                 const gz = Math.floor(p.position.z / this.gridSize);
-                const key = `${gx},${gy},${gz}`;
+                // 文字列キーをやめて、整数キー（ハッシュ）を使うことで劇的に高速化
+                // 空間を200x200x200のグリッドと仮定（十分な広さ）
+                const key = (gx + 100) + (gy + 100) * 200 + (gz + 100) * 40000;
                 if (!this.grid.has(key)) this.grid.set(key, []);
                 this.grid.get(key).push(i);
             });
@@ -464,7 +493,8 @@ export class Scene12 extends SceneBase {
                 for (let ox = -1; ox <= 1; ox++) {
                     for (let oy = -1; oy <= 1; oy++) {
                         for (let oz = -1; oz <= 1; oz++) {
-                            const neighbors = this.grid.get(`${gx+ox},${gy+oy},${gz+oz}`);
+                            const key = (gx + ox + 100) + (gy + oy + 100) * 200 + (gz + oz + 100) * 40000;
+                            const neighbors = this.grid.get(key);
                             if (!neighbors) continue;
                             neighbors.forEach(j => {
                                 if (i >= j) return;

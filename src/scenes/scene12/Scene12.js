@@ -49,6 +49,10 @@ export class Scene12 extends SceneBase {
         this.bokehPass = null;
         this.ssaoPass = null;
 
+        // トラック3,4(色収差、グリッチ)をデフォルトオフに設定
+        this.trackEffects[3] = false;
+        this.trackEffects[4] = false;
+
         // トラック6用エフェクト管理
         this.expandSpheres = []; 
         
@@ -58,14 +62,6 @@ export class Scene12 extends SceneBase {
         this.gravityTimer = 0;
         this.gravityInterval = 10.0; // 10秒周期
 
-        // 色の変化用
-        this.sphereColors = [];
-        this.targetColors = [];
-        for (let i = 0; i < this.sphereCount; i++) {
-            this.sphereColors.push(new THREE.Color(0x888888)); // 初期色（ライトグレー）
-            this.targetColors.push(new THREE.Color(0x888888));
-        }
-        
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
@@ -88,11 +84,11 @@ export class Scene12 extends SceneBase {
         this.showGridRuler3D = true;
         this.initGridRuler3D({
             center: { x: 0, y: 0, z: 0 },
-            size: { x: 1000, y: 1000, z: 1000 },
-            floorY: -500,
-            floorSize: 2000,
-            floorDivisions: 40,
-            labelMax: 64
+            size: { x: 5000, y: 5000, z: 5000 },
+            floorY: -498, // 床(-499)より1ユニット上に配置してZファイティングを物理的に回避
+            floorSize: 10000,
+            floorDivisions: 100,
+            labelMax: 256
         });
 
         this.setupLights();
@@ -150,7 +146,7 @@ export class Scene12 extends SceneBase {
      */
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
-            size: 2000,
+            size: 10000, // 2000 -> 10000 にバカデカく！
             color: 0xffffff,
             roughness: 0.4,
             metalness: 0.0
@@ -368,9 +364,6 @@ export class Scene12 extends SceneBase {
             console.log(`Auto Gravity: ${this.useGravity ? 'ON' : 'OFF'}`);
         }
 
-        // actual_tickに基づいた色の変化
-        this.updateSphereColors(deltaTime);
-
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
         
@@ -570,43 +563,6 @@ export class Scene12 extends SceneBase {
                 if (effect.light) effect.light.intensity = effect.maxIntensity * (1.0 - Math.pow(progress, 0.5));
                 if (effect.mesh) effect.mesh.scale.setScalar(1.0 - progress);
             }
-        }
-    }
-
-    /**
-     * actual_tickに基づいてSphereの色を一つずつ白に変えていく
-     */
-    updateSphereColors(deltaTime) {
-        if (!this.instancedMeshManager) return;
-        const mainMesh = this.instancedMeshManager.getMainMesh();
-        if (!mainMesh.instanceColor) return;
-
-        // actualTick (0〜36864) を使って、どのSphereまで白くするか決める
-        // 300個のSphereを全期間で均等に割り振る
-        const totalTicks = 36864;
-        const whiteCount = Math.floor((this.actualTick / totalTicks) * this.sphereCount);
-
-        let needsUpdate = false;
-        const lerpSpeed = deltaTime * 2.0; // シレーっと変わる速度
-
-        for (let i = 0; i < this.sphereCount; i++) {
-            // 目標色の設定
-            if (i < whiteCount) {
-                this.targetColors[i].set(0xffffff); // 白
-            } else {
-                this.targetColors[i].set(0x888888); // 元のグレー
-            }
-
-            // 現在の色を目標色に近づける（線形補間）
-            if (!this.sphereColors[i].equals(this.targetColors[i])) {
-                this.sphereColors[i].lerp(this.targetColors[i], lerpSpeed);
-                mainMesh.setColorAt(i, this.sphereColors[i]);
-                needsUpdate = true;
-            }
-        }
-
-        if (needsUpdate) {
-            mainMesh.instanceColor.needsUpdate = true;
         }
     }
 

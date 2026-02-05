@@ -31,76 +31,119 @@ export class GridRuler3D {
     this.group.visible = !!v;
   }
 
-  /**
-   * @param {{
-   *  center: {x:number,y:number,z:number},
-   *  size: {x:number,y:number,z:number},
-   *  divX?:number, divY?:number, divZ?:number,
-   *  labelMax?:number,
-   *  floorY?:number,
-   *  color?:number,
-   *  opacity?:number
-   * }} params
-   */
-  init(params) {
-    const center = params.center;
-    const size = params.size;
-    if (!center || !size) return;
+    /**
+     * @param {{
+     *  center: {x:number,y:number,z:number},
+     *  size: {x:number,y:number,z:number},
+     *  divX?:number, divY?:number, divZ?:number,
+     *  labelMax?:number,
+     *  floorY?:number,
+     *  color?:number,
+     *  opacity?:number
+     * }} params
+     */
+    init(params) {
+        const center = params.center;
+        const size = params.size;
+        if (!center || !size) return;
 
-    // Scene01準拠のデフォルト値（Scene側は基本「箱サイズ」だけ渡せばOK）
-    const divX = Math.max(2, Number(params.divX ?? 12));
-    const divY = Math.max(2, Number(params.divY ?? 10));
-    const divZ = Math.max(2, Number(params.divZ ?? 8));
-    // Scene01で採用している「箱サイズに対して少し余白」スケール
-    const floorSize = Number(params.floorSize ?? (Math.max(size.x, size.z) * 2.2));
-    const floorDivisions = Math.max(2, Number(params.floorDivisions ?? 40));
-    // 「赤い十字」は 0/16/32/48/64 に出す設計なのでデフォは 64
-    const labelMax = Number(params.labelMax ?? 64);
+        // Scene01準拠のデフォルト値
+        const divX = Math.max(2, Number(params.divX ?? 12));
+        const divY = Math.max(2, Number(params.divY ?? 10));
+        const divZ = Math.max(2, Number(params.divZ ?? 8));
+        const floorSize = Number(params.floorSize ?? (Math.max(size.x, size.z) * 2.2));
+        const floorDivisions = Math.max(2, Number(params.floorDivisions ?? 40));
+        const labelMax = Number(params.labelMax ?? 64);
 
-    const color = Number(params.color ?? 0xffffff);
-    const opacity = Number(params.opacity ?? 0.65);
+        const color = Number(params.color ?? 0xffffff);
+        const opacity = Number(params.opacity ?? 0.65);
 
-    const cx = center.x, cy = center.y, cz = center.z;
-    const sx = size.x, sy = size.y, sz = size.z;
+        const cx = center.x, cy = center.y, cz = center.z;
+        const sx = size.x, sy = size.y, sz = size.z;
 
-    // ラベル（数字）が「出てないように見える」問題の対策:
-    // - シーンのスケールに合わせてスプライトサイズを自動スケール
-    // - 粒や床に隠れないよう、ラベルは常に前面表示（depthTest=false）
-    const baseScale = Math.max(sx, sy, sz, floorSize);
-    this._labelScale = Number(params.labelScale ?? (baseScale * 0.04));
+        const baseScale = Math.max(sx, sy, sz, floorSize);
+        this._labelScale = Number(params.labelScale ?? (baseScale * 0.04));
 
-    const minX = cx - sx * 0.5, maxX = cx + sx * 0.5;
-    const minY = cy - sy * 0.5, maxY = cy + sy * 0.5;
-    const minZ = cz - sz * 0.5, maxZ = cz + sz * 0.5;
-    const floorY = (params.floorY ?? (minY - 0.002));
+        const minX = cx - sx * 0.5, maxX = cx + sx * 0.5;
+        const minY = cy - sy * 0.5, maxY = cy + sy * 0.5;
+        const minZ = cz - sz * 0.5, maxZ = cz + sz * 0.5;
+        const floorY = (params.floorY ?? (minY - 0.002));
 
-    // Line material (unlit)
-    const lineMat = new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      depthTest: true,
-      depthWrite: false
-    });
-    this._materials.push(lineMat);
+        // Line material (unlit)
+        // チラつき対策: 
+        // 1. depthWriteをfalseにする
+        // 2. polygonOffsetで床メッシュとの干渉を避ける
+        // 3. 床よりわずかに上に配置する（これはinitを呼ぶ側でも制御可能だが、マテリアルレベルでも補強）
+        const lineMat = new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity,
+            depthTest: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1, // カメラ側に寄せる
+            polygonOffsetUnits: -4   // 見下ろした時のチラつき（Z-fighting）を抑えるために強めに設定
+        });
+        this._materials.push(lineMat);
 
-    // --- floor grid (XZ) : big one only
-    const fMinX = cx - floorSize * 0.5;
-    const fMaxX = cx + floorSize * 0.5;
-    const fMinZ = cz - floorSize * 0.5;
-    const fMaxZ = cz + floorSize * 0.5;
-    this.group.add(this._makeGridXZ(fMinX, fMaxX, fMinZ, fMaxZ, floorY, floorDivisions, floorDivisions, lineMat));
+        // --- floor grid (XZ) : big one only
+        const fMinX = cx - floorSize * 0.5;
+        const fMaxX = cx + floorSize * 0.5;
+        const fMinZ = cz - floorSize * 0.5;
+        const fMaxZ = cz + floorSize * 0.5;
+        this.group.add(this._makeGridXZ(fMinX, fMaxX, fMinZ, fMaxZ, floorY, floorDivisions, floorDivisions, lineMat));
 
-    // --- rulers (ticks + labels)
-    // 要望:
-    // - 垂直グリッドは無し
-    // - 目盛りは「X軸の真ん中」と「Z軸の外側」だけ
-    //
-    // X: 床の中心線 (z=cz)
-    // Z: 床の右外周 (x=fMaxX)
-    this.group.add(this._makeRulerX(fMinX, fMaxX, floorY, cz, labelMax, color, floorSize));
-    this.group.add(this._makeRulerZ(fMinZ, fMaxZ, floorY, fMaxX, labelMax, color, floorSize));
-  }
+        // --- rulers (ticks + labels)
+        this.group.add(this._makeRulerX(fMinX, fMaxX, floorY, cz, labelMax, color, floorSize));
+        this.group.add(this._makeRulerZ(fMinZ, fMaxZ, floorY, fMaxX, labelMax, color, floorSize));
+    }
+
+    /**
+     * チラつき対策：テクスチャを使用したグリッド床の作成
+     */
+    _makeTexturedGridXZ(size, y, divisions, color, opacity) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024;
+        canvas.height = 1024;
+        const ctx = canvas.getContext('2d');
+        ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`;
+        ctx.lineWidth = 4; // 太めの線
+
+        const step = canvas.width / divisions;
+        for (let i = 0; i <= divisions; i++) {
+            const pos = i * step;
+            // 垂直線
+            ctx.beginPath();
+            ctx.moveTo(pos, 0);
+            ctx.lineTo(pos, canvas.height);
+            ctx.stroke();
+            // 水平線
+            ctx.beginPath();
+            ctx.moveTo(0, pos);
+            ctx.lineTo(canvas.width, pos);
+            ctx.stroke();
+        }
+
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.anisotropy = 16; // 遠くのチラつきを抑える
+
+        const geometry = new THREE.PlaneGeometry(size, size);
+        const material = new THREE.MeshBasicMaterial({
+            map: tex,
+            transparent: true,
+            opacity: opacity,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        this._materials.push(material);
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.y = y;
+        mesh.name = 'texturedGridFloorXZ';
+        return mesh;
+    }
 
   update(camera) {
     // label sprites should face camera (billboard)

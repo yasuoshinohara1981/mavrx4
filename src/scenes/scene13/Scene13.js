@@ -30,7 +30,6 @@ export class Scene13 extends SceneBase {
         
         // インスタンス管理
         this.instancedMeshManager = null;
-        this.lineManager = null; // タコの足（赤い毛）
         this.particles = [];
 
         // 空間分割用
@@ -44,11 +43,11 @@ export class Scene13 extends SceneBase {
         this.useDOF = true;
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
-        this.useTacoFeet = false;     // 赤い足オフ
         this.bokehPass = null;
         this.ssaoPass = null;
 
-        // トラック4（グリッチ）をデフォルトオフに設定
+        // トラック3,4(色収差、グリッチ)をデフォルトオフに設定
+        this.trackEffects[3] = false;
         this.trackEffects[4] = false;
 
         // トラック6用エフェクト管理
@@ -65,14 +64,11 @@ export class Scene13 extends SceneBase {
         this.spiralTimer = 0;
         this.spiralInterval = 15.0; // 15秒周期で切り替え（重力とはずらす）
 
-        // 色の変化用
-        this.sphereColors = [];
-        this.targetColors = [];
-        for (let i = 0; i < this.sphereCount; i++) {
-            this.sphereColors.push(new THREE.Color(0x9e9e9e)); // 初期色（コンクリートグレー）
-            this.targetColors.push(new THREE.Color(0x9e9e9e));
-        }
-        
+        // 【追加】トーラスモード設定
+        this.torusMode = false;
+        this.torusTimer = 0;
+        this.torusInterval = 20.0; // 20秒周期で切り替え
+
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
@@ -100,11 +96,11 @@ export class Scene13 extends SceneBase {
         this.showGridRuler3D = true;
         this.initGridRuler3D({
             center: { x: 0, y: 0, z: 0 },
-            size: { x: 1000, y: 1000, z: 1000 },
-            floorY: -500,
-            floorSize: 2000,
-            floorDivisions: 40,
-            labelMax: 64
+            size: { x: 5000, y: 5000, z: 5000 },
+            floorY: -498, // 床(-499)より1ユニット上に配置してZファイティングを物理的に回避
+            floorSize: 10000,
+            floorDivisions: 100,
+            labelMax: 256
         });
 
         this.setupLights();
@@ -156,7 +152,7 @@ export class Scene13 extends SceneBase {
      */
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
-            size: 2000,
+            size: 10000, // 2000 -> 10000 にバカデカく！
             color: 0xffffff, // 白に戻す
             roughness: 0.4,
             metalness: 0.0
@@ -172,9 +168,9 @@ export class Scene13 extends SceneBase {
         const boxMat = new THREE.MeshStandardMaterial({
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 4.0, // バンプをキツめに（2.0 -> 4.0）
-            metalness: 0.6, // 金属感をアップしてギラつかせる（0.1 -> 0.6）
-            roughness: 0.3, // ラフネスを下げてツヤを出す（0.8 -> 0.3）
+            bumpScale: 4.0, 
+            metalness: 0.6, 
+            roughness: 0.3, 
             emissive: 0x000000, 
             emissiveIntensity: 0.0
         });
@@ -372,14 +368,24 @@ export class Scene13 extends SceneBase {
             this.gravityTimer = 0;
         }
 
-        this.updateSphereColors(deltaTime);
-
         // 螺旋モードの自動切り替え（15秒周期）
         this.spiralTimer += deltaTime;
         if (this.spiralTimer >= this.spiralInterval) {
             this.spiralMode = !this.spiralMode;
             this.spiralTimer = 0;
             console.log(`Spiral Mode: ${this.spiralMode ? 'ON' : 'OFF'}`);
+            // モードが重ならないように調整
+            if (this.spiralMode) this.torusMode = false;
+        }
+
+        // トーラスモードの自動切り替え（20秒周期）
+        this.torusTimer += deltaTime;
+        if (this.torusTimer >= this.torusInterval) {
+            this.torusMode = !this.torusMode;
+            this.torusTimer = 0;
+            console.log(`Torus Mode: ${this.torusMode ? 'ON' : 'OFF'}`);
+            // モードが重ならないように調整
+            if (this.torusMode) this.spiralMode = false;
         }
 
         this.updatePhysics(deltaTime);
@@ -409,7 +415,7 @@ export class Scene13 extends SceneBase {
     updatePhysics(deltaTime) {
         const subSteps = 2;
         const dt = deltaTime / subSteps;
-        const halfSize = 950;
+        const halfSize = 4950; // スタジオサイズ10000に合わせて拡張（950 -> 4950）
         const tempVec = new THREE.Vector3();
         const diff = new THREE.Vector3();
 
@@ -431,13 +437,11 @@ export class Scene13 extends SceneBase {
                     const side = (idx % 2 === 0) ? 1 : -1;
                     
                     // 螺旋のパラメータ
-                    const spiralHeight = 2000; // 螺旋の全体の高さ
-                    const verticalSpeed = 150; // 上昇速度
-                    const rotationSpeed = 1.5; // 回転速度
-                    const radius = 250;        // 螺旋の半径
+                    const verticalSpeed = 150;
+                    const rotationSpeed = 1.5;
+                    const radius = 250;        
                     
                     // 現在の高さに基づいた角度の計算（これがDNAのねじれを作る）
-                    // timeによる回転 + 高さによるねじれ
                     const angle = (this.time * rotationSpeed) + (p.position.y * 0.01) + (side === 1 ? 0 : Math.PI);
                     
                     // 目標の水平位置
@@ -445,34 +449,60 @@ export class Scene13 extends SceneBase {
                     const targetZ = Math.sin(angle) * radius;
                     
                     // 復元力（目標の螺旋位置に引き寄せる力）
-                    // 飛び散らないように、かつ動きが荒ぶらないように調整
-                    const springK = 0.02; // 0.05 -> 0.02 にさらに弱めて極限までマイルドに
-                    const damping = 0.96; // 0.95 -> 0.96 にしてさらに安定
+                    const springK = 0.02; 
+                    const damping = 0.96; 
                     
                     p.velocity.x *= damping;
                     p.velocity.z *= damping;
-                    p.velocity.y *= 0.99; // 上昇速度の減衰もマイルドに
+                    p.velocity.y *= 0.99; 
                     
                     tempVec.set(
                         (targetX - p.position.x) * springK,
-                        0.2, // 0.4 -> 0.2 上昇気流をさらに半分に
+                        0.2, 
                         (targetZ - p.position.z) * springK
+                    );
+                    p.addForce(tempVec);
+                } else if (this.torusMode) {
+                    // 【追加】トーラスモード：ドーナツ状に配置し、さらに捻る
+                    const mainRadius = 1200; // 600 -> 1200 に巨大化
+                    const tubeRadius = 60;   // 150 -> 60 に細くしてシャープに
+                    
+                    // 1. 円環上の角度 (0 ~ 2PI)
+                    const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
+                    
+                    // 2. 筒断面の角度 (0 ~ 2PI) + 捻り
+                    // 高さやthetaに連動させて捻りを加える
+                    const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5); // 捻りも少し強調
+                    
+                    // トーラスの座標計算
+                    const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
+                    const ty = tubeRadius * Math.sin(phi) + 300; // 少し高めに配置
+                    const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
+                    
+                    const springK = 0.04; // 少し復元力を強めて形をキープ
+                    const damping = 0.94;
+                    p.velocity.multiplyScalar(damping);
+                    
+                    tempVec.set(
+                        (tx - p.position.x) * springK,
+                        (ty - p.position.y) * springK,
+                        (tz - p.position.z) * springK
                     );
                     p.addForce(tempVec);
                 } else {
                     // 中心の引力を計算
-                    tempVec.copy(p.position).multiplyScalar(-0.001); // -0.002 -> -0.001 に弱める
+                    tempVec.copy(p.position).multiplyScalar(-0.001); 
                     
                     // 重力オンの時は、床付近での中心引力をさらに弱める
                     if (this.useGravity && p.position.y < -400) {
-                        tempVec.multiplyScalar(0.05); // 0.1 -> 0.05 に弱める
+                        tempVec.multiplyScalar(0.05); 
                     }
                     p.addForce(tempVec);
                 }
 
                 // 重力の適用
-                if (this.useGravity && !this.spiralMode) {
-                    p.addForce(this.gravityForce); // 重力を元に戻す
+                if (this.useGravity && !this.spiralMode && !this.torusMode) {
+                    p.addForce(this.gravityForce); 
                 }
 
                 p.update();
@@ -605,69 +635,6 @@ export class Scene13 extends SceneBase {
                 if (effect.light) effect.light.intensity = effect.maxIntensity * (1.0 - Math.pow(progress, 0.5));
                 if (effect.mesh) effect.mesh.scale.setScalar(1.0 - progress);
             }
-        }
-    }
-
-    /**
-     * actual_tickに基づいてSphereの色を一つずつ白に変えていく
-     * および、Boxの表示数を制御する
-     */
-    updateSphereColors(deltaTime) {
-        if (!this.instancedMeshManager) return;
-        const mainMesh = this.instancedMeshManager.getMainMesh();
-        if (!mainMesh.instanceColor) return;
-
-        // actualTick (0〜36864) を使って、どのSphereまで表示・着色するか決める
-        // ユーザーが再生していない場合でも1個は表示されるようにする
-        const totalTicks = 36864;
-        const tick = this.actualTick || 0;
-        const progress = Math.min(1.0, Math.max(0.0, tick / totalTicks));
-        
-        // 最初は1個、最後はsphereCount個まで増やす
-        const currentVisibleCount = Math.max(1, Math.floor(progress * this.sphereCount));
-        
-        // インスタンスメッシュの描画数を更新
-        mainMesh.count = currentVisibleCount;
-        
-        // 【追加】非表示になったBoxの行列をリセット（スケーリングを0にする）
-        // これをしないと、描画数が減ってもGPU側に古いデータが残って表示され続ける場合がある
-        const zeroScale = new THREE.Vector3(0, 0, 0);
-        for (let i = currentVisibleCount; i < this.sphereCount; i++) {
-            const p = this.particles[i];
-            this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, zeroScale);
-        }
-        if (currentVisibleCount < this.sphereCount) {
-            this.instancedMeshManager.markNeedsUpdate();
-        }
-
-        // デバッグログ（必要に応じて）
-        // console.log(`Visible: ${currentVisibleCount}, Tick: ${this.actualTick}`);
-
-        // 色の変化（visibleな範囲内での進捗）
-        // 表示されているもののうち、さらに進捗に合わせて白くしていく
-        const whiteCount = Math.floor(progress * currentVisibleCount);
-
-        let needsUpdate = false;
-        const lerpSpeed = deltaTime * 2.0; 
-
-        for (let i = 0; i < this.sphereCount; i++) {
-            // 目標色の設定：グレーから明るい白へ（コンクリートの乾燥した感じ）
-            if (i < whiteCount) {
-                this.targetColors[i].set(0xeeeeee); 
-            } else {
-                this.targetColors[i].set(0x9e9e9e); 
-            }
-
-            // 現在の色を目標色に近づける（線形補間）
-            if (!this.sphereColors[i].equals(this.targetColors[i])) {
-                this.sphereColors[i].lerp(this.targetColors[i], lerpSpeed);
-                mainMesh.setColorAt(i, this.sphereColors[i]);
-                needsUpdate = true;
-            }
-        }
-
-        if (needsUpdate) {
-            mainMesh.instanceColor.needsUpdate = true;
         }
     }
 

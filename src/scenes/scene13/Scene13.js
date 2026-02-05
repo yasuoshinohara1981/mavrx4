@@ -53,21 +53,21 @@ export class Scene13 extends SceneBase {
         // トラック6用エフェクト管理
         this.expandSpheres = []; 
         
-        // 重力設定
-        this.useGravity = false;
-        this.gravityForce = new THREE.Vector3(0, -0.8, 0);
-        this.gravityTimer = 0;
-        this.gravityInterval = 10.0; // 10秒周期
-
-        // 【追加】螺旋モード設定
-        this.spiralMode = false;
-        this.spiralTimer = 0;
-        this.spiralInterval = 15.0; // 15秒周期で切り替え（重力とはずらす）
-
-        // 【追加】トーラスモード設定
-        this.torusMode = false;
-        this.torusTimer = 0;
-        this.torusInterval = 20.0; // 20秒周期で切り替え
+        // モード設定（自動ランダマイズ）
+        this.currentMode = 0;
+        this.modeTimer = 0;
+        this.modeInterval = 10.0; // 10秒ごとにランダムに切り替え
+        
+        // モード定数
+        this.MODE_DEFAULT = 0;   // 浮遊・中心引力
+        this.MODE_GRAVITY = 1;   // 重力落下
+        this.MODE_SPIRAL  = 2;   // DNA二重螺旋
+        this.MODE_TORUS   = 3;   // 捻れトーラス
+        this.MODE_WALL    = 4;   // 垂直グリッド壁
+        this.MODE_WAVE    = 5;   // 巨大な波（サーフェス）
+        this.MODE_VORTEX  = 6;   // 銀河状の渦
+        this.MODE_PILLARS = 7;   // 5本の垂直柱
+        this.MODE_CHAOS   = 8;   // 混沌・脈動
 
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -352,6 +352,10 @@ export class Scene13 extends SceneBase {
         }
     }
 
+    handlePhase(phase) {
+        super.handlePhase(phase);
+    }
+
     onUpdate(deltaTime) {
         this.time += deltaTime;
         
@@ -362,30 +366,23 @@ export class Scene13 extends SceneBase {
             this.sphereDepthShader.uniforms.uTime.value = this.time;
         }
 
-        this.gravityTimer += deltaTime;
-        if (this.gravityTimer >= this.gravityInterval) {
-            this.useGravity = !this.useGravity;
-            this.gravityTimer = 0;
-        }
-
-        // 螺旋モードの自動切り替え（15秒周期）
-        this.spiralTimer += deltaTime;
-        if (this.spiralTimer >= this.spiralInterval) {
-            this.spiralMode = !this.spiralMode;
-            this.spiralTimer = 0;
-            console.log(`Spiral Mode: ${this.spiralMode ? 'ON' : 'OFF'}`);
-            // モードが重ならないように調整
-            if (this.spiralMode) this.torusMode = false;
-        }
-
-        // トーラスモードの自動切り替え（20秒周期）
-        this.torusTimer += deltaTime;
-        if (this.torusTimer >= this.torusInterval) {
-            this.torusMode = !this.torusMode;
-            this.torusTimer = 0;
-            console.log(`Torus Mode: ${this.torusMode ? 'ON' : 'OFF'}`);
-            // モードが重ならないように調整
-            if (this.torusMode) this.spiralMode = false;
+        // 時間によるモードの自動ランダマイズ
+        this.modeTimer += deltaTime;
+        if (this.modeTimer >= this.modeInterval) {
+            this.modeTimer = 0;
+            // 0〜8の範囲でランダムに新しいモードを選択（現在のモード以外）
+            let nextMode;
+            do {
+                nextMode = Math.floor(Math.random() * 9);
+            } while (nextMode === this.currentMode);
+            
+            this.currentMode = nextMode;
+            console.log(`Auto Randomizing Mode: ${this.currentMode}`);
+            
+            // モード切り替え時のフラグ調整
+            this.useGravity = (this.currentMode === this.MODE_GRAVITY);
+            this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
+            this.torusMode = (this.currentMode === this.MODE_TORUS);
         }
 
         this.updatePhysics(deltaTime);
@@ -431,90 +428,120 @@ export class Scene13 extends SceneBase {
             });
 
             this.particles.forEach((p, idx) => {
-                // 螺旋モードの計算
-                if (this.spiralMode) {
+                const springK = 0.02;
+                const damping = 0.96;
+
+                // モード別の力計算
+                if (this.currentMode === this.MODE_SPIRAL) {
                     // 2本の螺旋を作るために、インデックスで分ける
                     const side = (idx % 2 === 0) ? 1 : -1;
-                    
-                    // 螺旋のパラメータ
-                    const verticalSpeed = 150;
                     const rotationSpeed = 1.5;
                     const radius = 250;        
-                    
-                    // 現在の高さに基づいた角度の計算（これがDNAのねじれを作る）
                     const angle = (this.time * rotationSpeed) + (p.position.y * 0.01) + (side === 1 ? 0 : Math.PI);
-                    
-                    // 目標の水平位置
                     const targetX = Math.cos(angle) * radius;
                     const targetZ = Math.sin(angle) * radius;
-                    
-                    // 復元力（目標の螺旋位置に引き寄せる力）
-                    const springK = 0.02; 
-                    const damping = 0.96; 
                     
                     p.velocity.x *= damping;
                     p.velocity.z *= damping;
                     p.velocity.y *= 0.99; 
                     
-                    tempVec.set(
-                        (targetX - p.position.x) * springK,
-                        0.2, 
-                        (targetZ - p.position.z) * springK
-                    );
+                    tempVec.set((targetX - p.position.x) * springK, 0.2, (targetZ - p.position.z) * springK);
                     p.addForce(tempVec);
-                } else if (this.torusMode) {
-                    // 【追加】トーラスモード：ドーナツ状に配置し、さらに捻る
-                    const mainRadius = 1200; // 600 -> 1200 に巨大化
-                    const tubeRadius = 60;   // 150 -> 60 に細くしてシャープに
-                    
-                    // 1. 円環上の角度 (0 ~ 2PI)
+
+                } else if (this.currentMode === this.MODE_TORUS) {
+                    const mainRadius = 1200;
+                    const tubeRadius = 60;
                     const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
-                    
-                    // 2. 筒断面の角度 (0 ~ 2PI) + 捻り
-                    // 高さやthetaに連動させて捻りを加える
-                    const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5); // 捻りも少し強調
-                    
-                    // トーラスの座標計算
+                    const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5);
                     const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
-                    const ty = tubeRadius * Math.sin(phi) + 300; // 少し高めに配置
+                    const ty = tubeRadius * Math.sin(phi) + 300;
                     const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
                     
-                    const springK = 0.04; // 少し復元力を強めて形をキープ
-                    const damping = 0.94;
-                    p.velocity.multiplyScalar(damping);
-                    
-                    tempVec.set(
-                        (tx - p.position.x) * springK,
-                        (ty - p.position.y) * springK,
-                        (tz - p.position.z) * springK
-                    );
+                    p.velocity.multiplyScalar(0.94);
+                    tempVec.set((tx - p.position.x) * 0.04, (ty - p.position.y) * 0.04, (tz - p.position.z) * 0.04);
                     p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_WALL) {
+                    // 垂直グリッド壁
+                    const spacing = 60;
+                    const cols = 50;
+                    const tx = ((idx % cols) - cols * 0.5) * spacing;
+                    const ty = (Math.floor(idx / cols) - 20) * spacing + 500;
+                    const tz = -800; // 少し奥に配置
+                    
+                    p.velocity.multiplyScalar(0.9);
+                    tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_WAVE) {
+                    // 巨大な波（サーフェス）
+                    const spacing = 80;
+                    const side = Math.sqrt(this.sphereCount);
+                    const cols = Math.floor(side);
+                    const tx = ((idx % cols) - cols * 0.5) * spacing;
+                    const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing;
+                    const ty = Math.sin(tx * 0.002 + this.time) * Math.cos(tz * 0.002 + this.time) * 400 + 200;
+                    
+                    p.velocity.multiplyScalar(0.9);
+                    tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_VORTEX) {
+                    // 銀河状の渦
+                    const radius = (idx / this.sphereCount) * 1500 + 100;
+                    const angle = (idx * 0.1) + (this.time * 2.0);
+                    const tx = Math.cos(angle) * radius;
+                    const tz = Math.sin(angle) * radius;
+                    const ty = (Math.sin(idx * 0.5) * 100) + 200;
+                    
+                    p.velocity.multiplyScalar(0.92);
+                    tempVec.set((tx - p.position.x) * 0.04, (ty - p.position.y) * 0.04, (tz - p.position.z) * 0.04);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_PILLARS) {
+                    // 5本の垂直柱
+                    const pillarIdx = idx % 5;
+                    const angle = (pillarIdx / 5) * Math.PI * 2;
+                    const px = Math.cos(angle) * 800;
+                    const pz = Math.sin(angle) * 800;
+                    const tx = px + (Math.sin(idx + this.time) * 50);
+                    const tz = pz + (Math.cos(idx + this.time) * 50);
+                    const ty = ((idx / 5) / (this.sphereCount / 5)) * 2000 - 500;
+                    
+                    p.velocity.multiplyScalar(0.9);
+                    tempVec.set((tx - p.position.x) * 0.05, (ty - p.position.y) * 0.05, (tz - p.position.z) * 0.05);
+                    p.addForce(tempVec);
+
+                } else if (this.currentMode === this.MODE_CHAOS) {
+                    // 混沌・脈動
+                    const dist = p.position.length();
+                    const force = Math.sin(this.time * 2.0) * 2.0;
+                    tempVec.copy(p.position).normalize().multiplyScalar(force);
+                    p.addForce(tempVec);
+                    p.velocity.multiplyScalar(0.99);
+
+                } else if (this.currentMode === this.MODE_GRAVITY) {
+                    // 重力落下は既存のロジックを使用（下でaddForceされる）
+                    p.velocity.multiplyScalar(0.98);
                 } else {
-                    // 中心の引力を計算
-                    tempVec.copy(p.position).multiplyScalar(-0.001); 
-                    
-                    // 重力オンの時は、床付近での中心引力をさらに弱める
-                    if (this.useGravity && p.position.y < -400) {
-                        tempVec.multiplyScalar(0.05); 
-                    }
+                    // DEFAULT: 中心の引力
+                    tempVec.copy(p.position).multiplyScalar(-0.001);
                     p.addForce(tempVec);
+                    p.velocity.multiplyScalar(0.98);
                 }
 
-                // 重力の適用
-                if (this.useGravity && !this.spiralMode && !this.torusMode) {
-                    p.addForce(this.gravityForce); 
+                // 重力の適用（MODE_GRAVITYの時のみ）
+                if (this.currentMode === this.MODE_GRAVITY) {
+                    p.addForce(this.gravityForce);
                 }
 
                 p.update();
-                // 全体的な摩擦（空気抵抗）を少し強める
-                p.velocity.multiplyScalar(0.98); 
                 
                 if (this.useWallCollision) {
                     if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
                     if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
                     if (p.position.y > 1500) { 
-                        if (this.spiralMode) {
-                            // 螺旋モードの時は上から下にワープさせて循環させる
+                        if (this.currentMode === this.MODE_SPIRAL) {
                             p.position.y = -450;
                             p.velocity.y *= 0.1;
                         } else {

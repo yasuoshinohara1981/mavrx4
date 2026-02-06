@@ -405,8 +405,9 @@ export class Scene13 extends SceneBase {
             this.sphereDepthShader.uniforms.uTime.value = this.time;
         }
 
-        // actual_tick (0〜36864) に基づいた表示数の動的制御
+        // actual_tick (0〜36864) に基づいた表示数の動적制御
         const totalTicks = 36864;
+        // デバッグ用にtimeで増やすのはやめて、actualTickのみを参照するように修正
         const tick = this.actualTick || 0;
         
         const halfTicks = totalTicks / 2; // ループの半分 (18432)
@@ -414,7 +415,10 @@ export class Scene13 extends SceneBase {
         const phase9StartTick = Math.floor((totalTicks / 9) * 9) - 100; // Phase 9 の開始目安（ほぼ最後）
         
         let currentVisibleCount;
-        if (tick < halfTicks) {
+        if (tick === 0) {
+            // 曲が止まっている（または開始前）は1000個固定
+            currentVisibleCount = 1000;
+        } else if (tick < halfTicks) {
             // 序盤から半分まで：1000個から20000個へ一気に増殖
             const progress = tick / halfTicks;
             currentVisibleCount = Math.floor(1000 + (this.sphereCount - 1000) * progress);
@@ -447,49 +451,49 @@ export class Scene13 extends SceneBase {
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
             
-            // モードごとの出現確率（重み付け）を設定
-            const weights = [
-                1.0, // DEFAULT
-                1.2, // GRAVITY
-                1.5, // SPIRAL 
-                1.5, // TORUS 
-                1.0, // WALL
-                1.0, // WAVE
-                1.2, // BLACK_HOLE
-                1.0, // PILLARS
-                0.8, // CHAOS 
-                1.5  // DEFORM 
-            ];
-            
-            const totalWeight = weights.reduce((a, b) => a + b, 0);
-            let random = Math.random() * totalWeight;
-            let nextMode = 0;
-            
-            for (let i = 0; i < weights.length; i++) {
-                if (random < weights[i]) {
-                    nextMode = i;
-                    break;
-                }
-                random -= weights[i];
+        const weights = [
+            1.0, // DEFAULT
+            1.2, // GRAVITY
+            1.5, // SPIRAL 
+            1.5, // TORUS 
+            1.0, // WALL
+            1.0, // WAVE
+            1.2, // BLACK_HOLE
+            1.0, // PILLARS
+            0.8, // CHAOS 
+            1.5  // DEFORM 
+        ];
+        
+        const totalWeight = weights.reduce((a, b) => a + b, 0);
+        let random = Math.random() * totalWeight;
+        let nextMode = 0;
+        
+        for (let i = 0; i < weights.length; i++) {
+            if (random < weights[i]) {
+                nextMode = i;
+                break;
             }
-            
-            if (nextMode === this.currentMode) {
-                nextMode = (nextMode + 1) % 10;
-            }
-            
-            this.currentMode = nextMode;
-            console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted)`);
+            random -= weights[i];
+        }
+        
+        // 現在のモードと同じなら再抽選（確率は維持）
+        if (nextMode === this.currentMode) {
+            nextMode = (nextMode + 1) % 10;
+        }
+        
+        this.currentMode = nextMode;
+        console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted)`);
 
-            // モードフラグの更新（updatePhysicsで使用）
-            this.useGravity = (this.currentMode === this.MODE_GRAVITY);
-            this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
-            this.torusMode = (this.currentMode === this.MODE_TORUS);
+        // モードフラグの更新（updatePhysicsで使用）
+        this.useGravity = (this.currentMode === this.MODE_GRAVITY);
+        this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
+        this.torusMode = (this.currentMode === this.MODE_TORUS);
 
-            // 【追加】モードが変わった瞬間にカメラプリセットを適用
-            this.applyCameraModeForMovement();
+        // 【追加】モードが変わった瞬間にカメラプリセットを適用
+        this.applyCameraModeForMovement();
 
-            // モード切り替え時の特殊処理
-            if (this.currentMode === this.MODE_GRAVITY) {
+        // モード切り替え時の特殊処理
+        if (this.currentMode === this.MODE_GRAVITY) {
                 // 重力モード：即座に落下開始
                 this.particles.forEach(p => {
                     if (p.velocity.y > 0) p.velocity.y = 0;

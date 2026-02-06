@@ -1,5 +1,5 @@
 /**
- * Scene13: 新規シーン（テンプレートベース）
+ * Scene14: 新規シーン（テンプレートベース）
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -10,12 +10,12 @@ import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { StudioBox } from '../../lib/StudioBox.js';
-import { Scene13Particle } from './Scene13Particle.js';
+import { Scene14Particle } from './Scene14Particle.js';
 
-export class Scene13 extends SceneBase {
+export class Scene14 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Xenolith';  // シーンのタイトルを Xenolith に設定
+        this.title = 'Scene14';  // 一旦タイトルはScene14にしておくで！
         this.initialized = false;
         
         // 共有リソースマネージャー
@@ -239,7 +239,7 @@ export class Scene13 extends SceneBase {
             
             const radius = Math.max(scaleX, scaleY, scaleZ) * 0.5;
             
-            const p = new Scene13Particle(x, y, z, radius, scale);
+            const p = new Scene14Particle(x, y, z, radius, scale);
             p.angularVelocity.multiplyScalar(2.0);
             this.particles.push(p);
 
@@ -897,7 +897,7 @@ export class Scene13 extends SceneBase {
 
     dispose() {
         this.initialized = false;
-        console.log('Scene13.dispose: クリーンアップ開始');
+        console.log('Scene14.dispose: クリーンアップ開始');
         if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);

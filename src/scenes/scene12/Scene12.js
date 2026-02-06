@@ -17,6 +17,7 @@ export class Scene12 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'Xenosphere';  // シーンのタイトルを設定
+        this.initialized = false;
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
@@ -131,6 +132,7 @@ export class Scene12 extends SceneBase {
         this.createStudioBox();
         this.createSpheres();
         this.initPostProcessing();
+        this.initialized = true;
     }
 
     /**
@@ -382,6 +384,7 @@ export class Scene12 extends SceneBase {
     }
 
     onUpdate(deltaTime) {
+        if (!this.initialized) return;
         this.time += deltaTime;
         
         // シェーダーの時間を更新
@@ -430,26 +433,28 @@ export class Scene12 extends SceneBase {
             
             // インスタンスメッシュとの衝突判定
             const mainMesh = this.instancedMeshManager.getMainMesh();
-            const intersects = this.raycaster.intersectObject(mainMesh);
-            
-            let targetDistance;
-            if (intersects.length > 0) {
-                // 何か当たったら、その一番手前の距離を採用
-                targetDistance = intersects[0].distance;
-            } else {
-                // 何も当たらない時は、視線方向の原点投影距離を保険にする
-                const targetVec = new THREE.Vector3(0, 0, -1);
-                targetVec.applyQuaternion(this.camera.quaternion);
-                const toOrigin = new THREE.Vector3(0, 0, 0).sub(this.camera.position);
-                targetDistance = Math.max(10, toOrigin.dot(targetVec));
+            if (mainMesh) {
+                const intersects = this.raycaster.intersectObject(mainMesh);
+                
+                let targetDistance;
+                if (intersects.length > 0) {
+                    // 何か当たったら、その一番手前の距離を採用
+                    targetDistance = intersects[0].distance;
+                } else {
+                    // 何も当たらない時は、視線方向の原点投影距離を保険にする
+                    const targetVec = new THREE.Vector3(0, 0, -1);
+                    targetVec.applyQuaternion(this.camera.quaternion);
+                    const toOrigin = new THREE.Vector3(0, 0, 0).sub(this.camera.position);
+                    targetDistance = Math.max(10, toOrigin.dot(targetVec));
+                }
+                
+                // 現在のフォーカス値
+                const currentFocus = this.bokehPass.uniforms.focus.value;
+                
+                // 追従速度（0.2）。ピント送りのような滑らかな動きを維持
+                const lerpFactor = 0.2; 
+                this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
             }
-            
-            // 現在のフォーカス値
-            const currentFocus = this.bokehPass.uniforms.focus.value;
-            
-            // 追従速度（0.2）。ピント送りのような滑らかな動きを維持
-            const lerpFactor = 0.2; 
-            this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
         }
     }
 
@@ -656,18 +661,21 @@ export class Scene12 extends SceneBase {
         }
 
         if (this.instancedMeshManager) {
-            const lineMatrix = new THREE.Matrix4();
-            const lineQuat = new THREE.Quaternion();
-            this.particles.forEach((p, i) => {
-                this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.radius);
-                if (this.lineManager && this.useTacoFeet) {
-                    lineQuat.setFromEuler(p.rotation);
-                    lineMatrix.compose(p.position, lineQuat, tempVec.set(p.radius*0.5, p.radius*4.0, p.radius*0.5));
-                    this.lineManager.setMatrixAt(i, lineMatrix);
-                }
-            });
-            this.instancedMeshManager.markNeedsUpdate();
-            if (this.lineManager) this.lineManager.instanceMatrix.needsUpdate = true;
+            const mainMesh = this.instancedMeshManager.getMainMesh();
+            if (mainMesh) {
+                const lineMatrix = new THREE.Matrix4();
+                const lineQuat = new THREE.Quaternion();
+                this.particles.forEach((p, i) => {
+                    this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.radius);
+                    if (this.lineManager && this.useTacoFeet) {
+                        lineQuat.setFromEuler(p.rotation);
+                        lineMatrix.compose(p.position, lineQuat, tempVec.set(p.radius*0.5, p.radius*4.0, p.radius*0.5));
+                        this.lineManager.setMatrixAt(i, lineMatrix);
+                    }
+                });
+                this.instancedMeshManager.markNeedsUpdate();
+                if (this.lineManager) this.lineManager.instanceMatrix.needsUpdate = true;
+            }
         }
     }
 
@@ -720,6 +728,7 @@ export class Scene12 extends SceneBase {
     reset() { super.reset(); }
 
     dispose() {
+        this.initialized = false;
         console.log('Scene12.dispose: クリーンアップ開始');
         if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
@@ -732,8 +741,20 @@ export class Scene12 extends SceneBase {
             this.lineManager.geometry.dispose();
             this.lineManager.material.dispose();
         }
-        if (this.bokehPass) this.bokehPass.enabled = false;
-        if (this.ssaoPass) this.ssaoPass.enabled = false;
+        if (this.bokehPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.bokehPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.bokehPass.enabled = false;
+        }
+        if (this.ssaoPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.ssaoPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.ssaoPass.enabled = false;
+        }
         super.dispose();
     }
 }

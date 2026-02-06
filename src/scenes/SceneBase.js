@@ -135,7 +135,18 @@ export class SceneBase {
         directionalLight.position.set(1000, 2000, 1000);
         this.debugScene.add(directionalLight);
         
-        // カメラデバッグ用Canvasを作成
+        // 座標軸ヘルパーを作成（元のsceneに追加）
+        this.axesHelper = new THREE.AxesHelper(1000);  // 1000の長さの軸
+        this.axesHelper.visible = this.SHOW_AXES;
+        this.scene.add(this.axesHelper);
+    }
+
+    /**
+     * カメラデバッグ用Canvasを作成（必要になったタイミングで作成）
+     */
+    ensureCameraDebugCanvas() {
+        if (this.cameraDebugCanvas) return;
+
         this.cameraDebugCanvas = document.createElement('canvas');
         this.cameraDebugCanvas.width = window.innerWidth;
         this.cameraDebugCanvas.height = window.innerHeight;
@@ -152,11 +163,6 @@ export class SceneBase {
         
         // カメラデバッグ用オブジェクトを初期化
         this.initCameraDebugObjects();
-        
-        // 座標軸ヘルパーを作成（元のsceneに追加）
-        this.axesHelper = new THREE.AxesHelper(1000);  // 1000の長さの軸
-        this.axesHelper.visible = this.SHOW_AXES;
-        this.scene.add(this.axesHelper);
     }
     
     /**
@@ -936,6 +942,7 @@ export class SceneBase {
      * Three.jsのオブジェクトを破棄してメモリリークを防ぐ
      */
     dispose() {
+        this.initialized = false;
         debugLog('init', 'SceneBase.dispose開始');
         
         // HUDのCanvasをクリア（テキストが残らないように）
@@ -1485,6 +1492,10 @@ export class SceneBase {
             if (key === 'c') {
                 this.SHOW_CAMERA_DEBUG = !this.SHOW_CAMERA_DEBUG;
                 debugLog('camera', `Camera debug: ${this.SHOW_CAMERA_DEBUG ? 'ON' : 'OFF'}`);
+                
+                if (this.SHOW_CAMERA_DEBUG) {
+                    this.ensureCameraDebugCanvas();
+                }
                 
                 // カメラデバッググループの表示/非表示を切り替え
                 if (this.cameraDebugGroup) {

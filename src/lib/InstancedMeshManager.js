@@ -70,6 +70,7 @@ export class InstancedMeshManager {
      * @param {THREE.Vector3|Object} scale - スケール（Vector3または{x, y, z}）
      */
     setMatrixAt(index, position, rotation, scale) {
+        if (!this.mainMesh) return;
         if (index < 0 || index >= this.count) {
             console.warn(`InstancedMeshManager: index ${index} is out of range (0-${this.count - 1})`);
             return;
@@ -130,6 +131,7 @@ export class InstancedMeshManager {
      * マトリックスを更新した後、必ず呼び出すこと
      */
     markNeedsUpdate() {
+        if (!this.mainMesh) return;
         this.mainMesh.instanceMatrix.needsUpdate = true;
         if (this.wireframeMesh) {
             this.wireframeMesh.instanceMatrix.needsUpdate = true;

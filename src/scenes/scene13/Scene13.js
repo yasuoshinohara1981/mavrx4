@@ -76,6 +76,7 @@ export class Scene13 extends SceneBase {
         this.MODE_BLACK_HOLE = 6; // ブラックホール・ジェット
         this.MODE_PILLARS = 7;   // 5本の垂直柱
         this.MODE_CHAOS   = 8;   // 混沌・脈動
+        this.MODE_DEFORM  = 9;   // 【新】変形モード（球体同相）
 
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
@@ -181,8 +182,9 @@ export class Scene13 extends SceneBase {
             bumpScale: 4.0, 
             metalness: 0.5, 
             roughness: 0.3, 
-            emissive: 0x000000, 
-            emissiveIntensity: 0.0
+            emissive: 0x220000, // ほのかに赤く光らせる（暗い赤）
+            emissiveIntensity: 0.5, // 強度を調整
+            emissiveMap: textures.bumpMap // バンプの凹凸に合わせて光らせる
         });
 
         this.instancedMeshManager = new InstancedMeshManager(this.scene, boxGeo, boxMat, this.sphereCount);
@@ -367,12 +369,6 @@ export class Scene13 extends SceneBase {
         const phaseValue = Math.min(9, Math.max(0, phase || 0));
 
         // Phaseの進行に合わせてエフェクトを順番に解放（累積的にONにしていく）
-        // Phase 1: トラック1 (カメラランダマイズ)
-        // Phase 2: トラック2 (色反転)
-        // Phase 3: トラック3 (色収差)
-        // Phase 4: トラック4 (グリッチ)
-        // Phase 5: トラック5 (未実装だが枠は確保)
-        // Phase 6: トラック6 (爆発エフェクト)
         for (let i = 1; i <= 6; i++) {
             this.trackEffects[i] = (phaseValue >= i);
         }
@@ -393,6 +389,9 @@ export class Scene13 extends SceneBase {
             this.useGravity = false;
             this.spiralMode = false;
             this.torusMode = false;
+
+            // カメラもデフォルトに戻す
+            this.applyCameraModeForMovement();
         }
     }
 
@@ -406,23 +405,60 @@ export class Scene13 extends SceneBase {
             this.sphereDepthShader.uniforms.uTime.value = this.time;
         }
 
+        // actual_tick (0〜36864) に基づいた表示数の動的制御
+        const totalTicks = 36864;
+        const tick = this.actualTick || 0;
+        
+        const halfTicks = totalTicks / 2; // ループの半分 (18432)
+        const phase8StartTick = Math.floor((totalTicks / 9) * 8); // Phase 8 の開始目安 (約32768)
+        const phase9StartTick = Math.floor((totalTicks / 9) * 9) - 100; // Phase 9 の開始目安（ほぼ最後）
+        
+        let currentVisibleCount;
+        if (tick < halfTicks) {
+            // 序盤から半分まで：1000個から20000個へ一気に増殖
+            const progress = tick / halfTicks;
+            currentVisibleCount = Math.floor(1000 + (this.sphereCount - 1000) * progress);
+        } else if (tick < phase8StartTick) {
+            // 半分からPhase 8まで：最大数（20000個）をキープ！
+            currentVisibleCount = this.sphereCount;
+        } else if (tick < phase9StartTick) {
+            // Phase 8からPhase 9まで：20000個から0個へ一気に収束
+            const progress = Math.min(1.0, (tick - phase8StartTick) / (phase9StartTick - phase8StartTick));
+            currentVisibleCount = Math.floor(this.sphereCount * (1.0 - progress));
+        } else {
+            // Phase 9からラスト：0個！完全消滅！
+            currentVisibleCount = 0;
+        }
+
+        // HUDに表示するパーティクル数を更新
+        this.setParticleCount(currentVisibleCount);
+
+        // インスタンスメッシュの描画数を更新
+        if (this.instancedMeshManager) {
+            const mainMesh = this.instancedMeshManager.getMainMesh();
+            // THREE.InstancedMesh.count を直接制御
+            mainMesh.count = Math.max(1, currentVisibleCount);
+            // 行列の更新フラグを立てる
+            mainMesh.instanceMatrix.needsUpdate = true;
+        }
+
         // 時間によるモードの自動ランダマイズ
         this.modeTimer += deltaTime;
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
             
             // モードごとの出現確率（重み付け）を設定
-            // 0:DEFAULT, 1:GRAVITY, 2:SPIRAL, 3:TORUS, 4:WALL, 5:WAVE, 6:BLACK_HOLE, 7:PILLARS, 8:CHAOS
             const weights = [
                 1.0, // DEFAULT
                 1.2, // GRAVITY
-                1.5, // SPIRAL (人気なので高め)
-                1.5, // TORUS (人気なので高め)
+                1.5, // SPIRAL 
+                1.5, // TORUS 
                 1.0, // WALL
                 1.0, // WAVE
                 1.2, // BLACK_HOLE
                 1.0, // PILLARS
-                0.8  // CHAOS (激しすぎるので少し低め)
+                0.8, // CHAOS 
+                1.5  // DEFORM 
             ];
             
             const totalWeight = weights.reduce((a, b) => a + b, 0);
@@ -437,9 +473,8 @@ export class Scene13 extends SceneBase {
                 random -= weights[i];
             }
             
-            // 現在のモードと同じなら再抽選（確率は維持）
             if (nextMode === this.currentMode) {
-                nextMode = (nextMode + 1) % 9;
+                nextMode = (nextMode + 1) % 10;
             }
             
             this.currentMode = nextMode;
@@ -450,8 +485,8 @@ export class Scene13 extends SceneBase {
             this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
             this.torusMode = (this.currentMode === this.MODE_TORUS);
 
-            // 【追加】モードが変わった瞬間にカメラもそのモードに合わせてランダマイズ！
-            this.switchCameraRandom();
+            // 【追加】モードが変わった瞬間にカメラプリセットを適用
+            this.applyCameraModeForMovement();
 
             // モード切り替え時の特殊処理
             if (this.currentMode === this.MODE_GRAVITY) {
@@ -541,12 +576,6 @@ export class Scene13 extends SceneBase {
                     tempVec.set((targetX - p.position.x) * spiralSpringK, 0.4 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK);
                     p.addForce(tempVec);
 
-                    // 螺旋専用の循環処理：上に行ったら下から出す
-                    if (p.position.y > 4500) { 
-                        p.position.y = -500;
-                        p.velocity.y *= 0.5;
-                    }
-
                 } else if (this.currentMode === this.MODE_TORUS) {
                     const mainRadius = 1200;
                     // はみ出し粒子はドーナツの「外側」や「内側」に大きくズレる
@@ -632,6 +661,36 @@ export class Scene13 extends SceneBase {
                     tempVec.copy(p.position).normalize().multiplyScalar(force);
                     p.addForce(tempVec);
 
+                } else if (this.currentMode === this.MODE_DEFORM) {
+                    // 【新】変形モード：球体同相の物体を軸として、歪ませる
+                    // 2万個の粒子で巨大な「アメーバ状の球体」を作る
+                    const baseRadius = 600;
+                    const noiseSpeed = 1.0;
+                    
+                    // 球面上の基本位置
+                    // idx % 1000 ではなく、全インデックスを使って均等に散らす
+                    const theta = (idx / this.sphereCount) * Math.PI * 2;
+                    const phi = Math.acos(2 * (idx / this.sphereCount) - 1);
+                    
+                    // ノイズによる半径の歪み
+                    const nx = Math.cos(theta) * Math.sin(phi);
+                    const ny = Math.sin(theta) * Math.sin(phi);
+                    const nz = Math.cos(phi);
+                    
+                    // 時間と位置によるグニャグニャ感
+                    const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) * 
+                                     Math.cos(ny * 5.0 + this.time * noiseSpeed) * 
+                                     Math.sin(nz * 5.0 + this.time * noiseSpeed) * 200;
+                    
+                    const r = (baseRadius + distortion) * p.radiusOffset;
+                    const tx = nx * r;
+                    const ty = ny * r + 300;
+                    const tz = nz * r;
+                    
+                    const springK = 0.04 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
                 } else if (this.currentMode === this.MODE_GRAVITY) {
                     p.velocity.multiplyScalar(0.98);
                 } else {
@@ -658,12 +717,15 @@ export class Scene13 extends SceneBase {
                 if (this.useWallCollision) {
                     if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
                     if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
-                    if (p.position.y > 1500) { 
+                    
+                    // 天井の判定をスタジオサイズに合わせて拡張（1500 -> 4500）
+                    // 螺旋モード以外でも高く昇れるようにする
+                    if (p.position.y > 4500) { 
                         if (this.currentMode === this.MODE_SPIRAL) {
-                            p.position.y = -450;
-                            p.velocity.y *= 0.1;
+                            p.position.y = -500; // 螺旋は循環
+                            p.velocity.y *= 0.5;
                         } else {
-                            p.position.y = 1500; 
+                            p.position.y = 4500; // 他は跳ね返り
                             p.velocity.y *= -0.5; 
                         }
                     }
@@ -783,7 +845,7 @@ export class Scene13 extends SceneBase {
     }
 
     /**
-     * カメラをランダムに切り替える（現在の運動モードごとに挙動を変更）
+     * カメラをランダムに切り替える（Scene12と同じ広範囲なランダマイズ）
      */
     switchCameraRandom() {
         // 次のカメラを選択
@@ -794,10 +856,36 @@ export class Scene13 extends SceneBase {
         this.currentCameraIndex = newIndex;
         const cp = this.cameraParticles[this.currentCameraIndex];
 
-        // 現在の運動モード（currentMode）に基づいたカメラの性格付け
-        // CameraParticleクラスのプリセット機能を使用して、新しいスタンダードを確立
+        // 全てのカメラパーティクルのパラメータを一度リセット
+        this.cameraParticles.forEach(p => {
+            p.minDistance = 400;
+            p.maxDistance = 2000;
+            p.boxMin = null;
+            p.boxMax = null;
+            p.maxSpeed = 8.0;
+        });
+
+        // Scene12と同等の広範囲なランダム配置
+        const angle1 = Math.random() * Math.PI * 2;
+        const angle2 = Math.random() * Math.PI;
+        const dist = 1000 + Math.random() * 2000; // 広めに設定
+        cp.position.set(
+            Math.cos(angle1) * Math.sin(angle2) * dist,
+            Math.sin(angle1) * Math.sin(angle2) * dist + 500,
+            Math.cos(angle2) * dist
+        );
+        cp.applyRandomForce();
+
+        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Wide Random)`);
+    }
+
+    /**
+     * 現在の運動モードに最適なカメラプリセットを適用する（トラック1がオフでも実行）
+     */
+    applyCameraModeForMovement() {
+        const cp = this.cameraParticles[this.currentCameraIndex];
         const mode = this.currentMode;
-        
+
         switch (mode) {
             case this.MODE_GRAVITY:
                 cp.applyPreset('LOOK_UP');
@@ -823,12 +911,14 @@ export class Scene13 extends SceneBase {
             case this.MODE_CHAOS:
                 cp.applyPreset('CHAOTIC');
                 break;
+            case this.MODE_DEFORM:
+                cp.applyPreset('WIDE_VIEW', { distance: 2000 });
+                break;
             default:
                 cp.applyPreset('DEFAULT');
                 break;
         }
-
-        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Preset: ${mode})`);
+        console.log(`Camera Preset Applied for Mode: ${mode}`);
     }
 
     reset() { super.reset(); }

@@ -240,15 +240,15 @@ export class Scene14 extends SceneBase {
     createSpheres() {
         const textures = this.generateFleshTextures();
         const metalMat = new THREE.MeshStandardMaterial({
-            color: 0xcccccc, // シーン13と同じグレー
-            map: textures.map, // サビと汚れのテクスチャを適用
+            color: 0xcccccc, 
+            map: textures.map, 
             bumpMap: textures.bumpMap,
-            bumpScale: 4.0, // シーン13と同じ強めのバンプ
-            metalness: 0.5, 
-            roughness: 0.3, 
-            emissive: 0x220000, // シーン13と同じほのかな赤
-            emissiveIntensity: 0.5,
-            emissiveMap: textures.bumpMap
+            bumpScale: 2.0,  // バンプを少し抑えて反射を見やすく
+            metalness: 0.8,  // 金属感をアップして反射を強化
+            roughness: 0.15, // 表面を滑らかにしてライトをパキッと反射させる
+            emissive: 0x110000, // 発光は控えめに
+            emissiveIntensity: 0.2,
+            envMapIntensity: 2.0 // 環境マップの映り込みを強化
         });
 
         // 20種類のジオメトリを定義（AKIRAっぽいメカニカルパーツ）
@@ -282,14 +282,18 @@ export class Scene14 extends SceneBase {
             mainMesh.castShadow = true;
             mainMesh.receiveShadow = true;
             
-            // 個別色設定（シーン13と同じく白ベースで統一）
+            // 個別色設定（少し明るめのダークグレーに調整）
+            const darkGray = new THREE.Color(0x555555);
             const colors = new Float32Array(this.instancesPerType * 3);
             for (let j = 0; j < this.instancesPerType; j++) {
-                colors[j * 3 + 0] = 1.0; 
-                colors[j * 3 + 1] = 1.0; 
-                colors[j * 3 + 2] = 1.0; 
+                // 同じトーン内でわずかにランダマイズして質感を出す
+                const noise = 0.9 + Math.random() * 0.2;
+                colors[j * 3 + 0] = darkGray.r * noise; 
+                colors[j * 3 + 1] = darkGray.g * noise; 
+                colors[j * 3 + 2] = darkGray.b * noise; 
             }
             mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+            mainMesh.instanceColor.needsUpdate = true;
 
             mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
                 depthPacking: THREE.RGBADepthPacking,

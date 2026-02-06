@@ -6,10 +6,12 @@ import { Particle } from '../../lib/Particle.js';
 import * as THREE from 'three';
 
 export class Scene14Particle extends Particle {
-    constructor(initialX = 0, initialY = 0, initialZ = 0, radius = 10, scale = null) {
+    constructor(initialX = 0, initialY = 0, initialZ = 0, radius = 10, scale = null, typeIndex = 0, indexInType = 0) {
         super(initialX, initialY, initialZ);
         this.radius = radius;
         this.scale = scale || new THREE.Vector3(radius, radius, radius);
+        this.typeIndex = typeIndex;   // パーツの種類
+        this.indexInType = indexInType; // その種類の中でのインデックス
         
         // 【追加】個体差（パーソナリティ）パラメータ
         // 同じ目標位置に向かっても「固まらない」ようにするためのオフセット
@@ -30,14 +32,13 @@ export class Scene14Particle extends Particle {
         this.spiralHeightFactor = Math.random();
         
         // 【追加】はみ出し（Stray）設定
-        // 15%の確率で「はみ出し粒子」にする（25% -> 15%に少し抑える）
-        this.isStray = Math.random() < 0.15;
+        // 散らし量をさらに減らして5%に設定（15% -> 5%）
+        this.isStray = Math.random() < 0.05;
         if (this.isStray) {
-            // はみ出し粒子はオフセットを巨大にし、動きを鈍くする
-            // 螺旋やトーラスの「外側」に漂うように半径方向のオフセットを調整
-            this.strayFactor = 0.1 + Math.random() * 0.3; // 引力への抵抗力を少し弱めて、離れすぎないように調整
-            this.strayRadiusOffset = 1.2 + Math.random() * 1.5; // 半径に対する倍率を少し抑える（1.5~3.5 -> 1.2~2.7）
-            this.scale.multiplyScalar(0.4 + Math.random() * 0.4); // 少しだけ大きくして「欠片」としての存在感を出す
+            // はみ出し粒子は「メインから剥がれ落ちたデカい破片」として表現
+            this.strayFactor = 0.05 + Math.random() * 0.1; // 引力を極限まで弱めてゆったりさせる
+            this.strayRadiusOffset = 1.1 + Math.random() * 0.4; // 図形のすぐ外側を漂う
+            this.scale.multiplyScalar(1.5 + Math.random() * 1.0); // 逆にデカくして「重厚感」を出す（ハエ防止）
         } else {
             this.strayFactor = 1.0;
             this.strayRadiusOffset = 1.0;

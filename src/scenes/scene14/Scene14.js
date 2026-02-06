@@ -26,11 +26,13 @@ export class Scene14 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // Boxの設定
-        this.sphereCount = 20000; // ついに2万個！人類未踏の領域や！
+        this.partTypes = 20; // 20種類
+        this.instancesPerType = 800; // 800個
+        this.sphereCount = this.partTypes * this.instancesPerType; // 16000個
         this.spawnRadius = 1200;  // さらに広げてスケール感を出す（1000 -> 1200）
         
         // インスタンス管理
-        this.instancedMeshManager = null;
+        this.instancedMeshManagers = []; // 複数のマネージャーを管理
         this.particles = [];
 
         // 空間分割用
@@ -48,55 +50,85 @@ export class Scene14 extends SceneBase {
         this.ssaoPass = null;
 
         // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
-        for (let i = 1; i <= 9; i++) {
-            this.trackEffects[i] = false;
-        }
+        this.trackEffects = {
+            1: false, // カメラランダマイズ
+            2: false, // 色反転
+            3: false, // 色収差
+            4: false, // グリッチ
+            5: false, // 未割り当て
+            6: false, // 未割り当て
+            7: false, // 未割り当て
+            8: false, // 未割り当て
+            9: false  // 未割り当て
+        };
 
-        // トラック6用エフェクト管理
-        this.expandSpheres = []; 
-        
-        // 重力設定
-        this.gravityForce = new THREE.Vector3(0, -10.0, 0); // -2.5 -> -10.0 超絶重力！ブラックホール級や！
+        // モード管理（20パターンの幾何学モード！）
+        this.MODE_DEFAULT = 0;
+        this.MODE_RINGS   = 1;
+        this.MODE_CUBE    = 2;
+        this.MODE_PYRAMID = 3;
+        this.MODE_CYLINDER = 4;
+        this.MODE_DOUBLE_HELIX = 5;
+        this.MODE_GRID_WALL = 6;
+        this.MODE_SINE_WAVE = 7;
+        this.MODE_CROSS = 8;
+        this.MODE_STAR = 9;
+        this.MODE_HOURGLASS = 10;
+        this.MODE_DIAMOND = 11;
+        this.MODE_HEXAGON = 12;
+        this.MODE_DNA = 13;
+        this.MODE_SATURN = 14;
+        this.MODE_CUBE_FRAME = 15;
+        this.MODE_GALAXY = 16;
+        this.MODE_CONE = 17;
+        this.MODE_MOBIUS = 18;
+        this.MODE_FRACTAL_CUBES = 19;
 
-        // モード設定（自動ランダマイズ）
-        this.currentMode = this.MODE_DEFAULT; // 最初は引力モードから開始
+        this.currentMode = this.MODE_DEFAULT;
         this.modeTimer = 0;
-        this.modeInterval = 10.0; // 10秒ごとにランダムに切り替え
+        this.modeInterval = 10.0; // 10秒ごとにモードチェンジ
+
+        // 物理演算パラメータ
+        this.useGravity = false;
+        this.spiralMode = false;
+        this.torusMode = false;
+        this.currentVisibleCount = this.sphereCount; // 初期値をセット
+        
+        // ターゲット位置のキャッシュ
+        this.geometricTargets = new Map(); // モードごとのターゲットをキャッシュ
         
         // 色管理用
         this.boxColors = new Float32Array(this.sphereCount * 3);
         this.tempColor = new THREE.Color();
         
-        // モード定数
-        this.MODE_DEFAULT = 0;   // 浮遊・中心引力
-        this.MODE_GRAVITY = 1;   // 重力落下
-        this.MODE_SPIRAL  = 2;   // DNA二重螺旋
-        this.MODE_TORUS   = 3;   // 捻れトーラス
-        this.MODE_WALL    = 4;   // 垂直グリッド壁
-        this.MODE_WAVE    = 5;   // 巨大な波（サーフェス）
-        this.MODE_BLACK_HOLE = 6; // ブラックホール・ジェット
-        this.MODE_PILLARS = 7;   // 5本の垂直柱
-        this.MODE_CHAOS   = 8;   // 混沌・脈動
-        this.MODE_DEFORM  = 9;   // 【新】変形モード（球体同相）
+        // シェーダー管理用
+        this.sphereMaterialShader = null;
+        this.sphereDepthShader = null;
+
+        // トラック6用エフェクト管理
+        this.expandSpheres = []; 
+        
+        // 重力設定
+        this.gravityForce = new THREE.Vector3(0, -10.0, 0);
 
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
     }
-    
+
     /**
-     * セットアップ処理
+     * 初期セットアップ
      */
     async setup() {
-        if (this.initialized) return; // 二重初期化防止
+        if (this.initialized) return;
+
+        // 親クラスのsetup()を呼ぶ
         await super.setup();
-        
-        // トラック4（グリッチ）を確実にオフにする
-        if (this.glitchPass) {
-            this.glitchPass.enabled = false;
-        }
-        
-        if (this.camera) {
-            this.camera.far = 20000;
+
+        // カメラの初期位置
+        this.camera.position.set(0, 500, 1500);
+        this.camera.lookAt(0, 200, 0);
+        if (this.camera.fov !== 60) {
+            this.camera.fov = 60;
             this.camera.updateProjectionMatrix();
         }
 
@@ -125,36 +157,67 @@ export class Scene14 extends SceneBase {
      * ライトの設定
      */
     setupLights() {
-        // 全体を明るく（強度を0.8に設定）
+        // シーン13と同じ明るい設定に戻すで！
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 0.8);
         this.scene.add(hemiLight);
 
-        // 環境光も底上げ
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        // メインの平行光源（白）
+        // 環境マッピング（質感のために残す）
+        const genEnvMap = () => {
+            const size = 512;
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // 天井を真っ白にしたグラデーション（金属の映り込み用）
+            const grad = ctx.createLinearGradient(0, 0, 0, size);
+            grad.addColorStop(0, '#ffffff'); // 天井側（真っ白！）
+            grad.addColorStop(0.3, '#ffffff'); // 少し広めに白を確保
+            grad.addColorStop(0.7, '#111111'); // 壁面（暗い）
+            grad.addColorStop(1, '#000000'); // 床側（真っ黒）
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, size, size);
+            
+            // スタジオ照明の映り込みをシミュレート（強烈な白）
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(size * 0.1, size * 0.1, size * 0.2, size * 0.6); 
+            ctx.fillRect(size * 0.6, size * 0.3, size * 0.3, size * 0.2);
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.mapping = THREE.EquirectangularReflectionMapping;
+            return tex;
+        };
+
+        const envMap = genEnvMap();
+        this.scene.environment = envMap; 
+
+        // 3. DirectionalLight (影の範囲を極限まで広げて、黒い三角を消滅させるで！)
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(1000, 1500, 1000);
+        directionalLight.position.set(2000, 3000, 2000); // 位置も少し遠ざけて全体をカバー
         directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -1500;
-        directionalLight.shadow.camera.right = 1500;
-        directionalLight.shadow.camera.top = 1500;
-        directionalLight.shadow.camera.bottom = -1500;
+        
+        // 影の範囲をスタジオサイズに合わせて超拡大！
+        directionalLight.shadow.camera.left = -8000;
+        directionalLight.shadow.camera.right = 8000;
+        directionalLight.shadow.camera.top = 8000;
+        directionalLight.shadow.camera.bottom = -8000;
         directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 5000;
+        directionalLight.shadow.camera.far = 15000; // 5000 -> 15000 これが短いと端っこが欠けるんや！
+        
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.bias = -0.0001; // バイアスも微調整
         this.scene.add(directionalLight);
 
-        // 中心光源（強烈な白）
-        const pointLight = new THREE.PointLight(0xffffff, 2.5, 2500); 
-        pointLight.position.set(0, 200, 0); 
+        // 4. PointLight (中心からの影も範囲拡大)
+        const pointLight = new THREE.PointLight(0xffffff, 2.5, 5000); 
+        pointLight.position.set(0, 500, 0); 
         pointLight.castShadow = true; 
-        pointLight.shadow.mapSize.width = 1024;
-        pointLight.shadow.mapSize.height = 1024;
         pointLight.shadow.camera.near = 10;
-        pointLight.shadow.camera.far = 3000;
+        pointLight.shadow.camera.far = 10000; // 4000 -> 10000
         pointLight.shadow.bias = -0.001;
         this.scene.add(pointLight);
     }
@@ -164,51 +227,95 @@ export class Scene14 extends SceneBase {
      */
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
-            size: 10000, // 2000 -> 10000 にバカデカく！
-            color: 0xffffff, // 白に戻す
-            roughness: 0.4,
+            size: 10000,
+            color: 0xbbbbbb, // 0x888888 -> 0xbbbbbb 少し明るくしてグレーすぎ問題を解消！
+            roughness: 0.8,
             metalness: 0.0
         });
     }
 
     /**
-     * Boxと物理演算の作成
+     * 金属パーツと物理演算の作成
      */
     createSpheres() {
-        // 安定したBoxに戻す
-        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const textures = this.generateFleshTextures();
-        const boxMat = new THREE.MeshStandardMaterial({
-            color: 0xcccccc, 
-            map: textures.map,
+        const metalMat = new THREE.MeshStandardMaterial({
+            color: 0xcccccc, // シーン13と同じグレー
+            map: textures.map, // サビと汚れのテクスチャを適用
             bumpMap: textures.bumpMap,
-            bumpScale: 4.0, 
+            bumpScale: 4.0, // シーン13と同じ強めのバンプ
             metalness: 0.5, 
             roughness: 0.3, 
-            emissive: 0x220000, // ほのかに赤く光らせる（暗い赤）
-            emissiveIntensity: 0.5, // 強度を調整
-            emissiveMap: textures.bumpMap // バンプの凹凸に合わせて光らせる
+            emissive: 0x220000, // シーン13と同じほのかな赤
+            emissiveIntensity: 0.5,
+            emissiveMap: textures.bumpMap
         });
 
-        this.instancedMeshManager = new InstancedMeshManager(this.scene, boxGeo, boxMat, this.sphereCount);
-        const mainMesh = this.instancedMeshManager.getMainMesh();
-        mainMesh.castShadow = true;
-        mainMesh.receiveShadow = true;
-        
-        // 個別色設定のための準備
-        for (let i = 0; i < this.sphereCount; i++) {
-            this.boxColors[i * 3 + 0] = 1.0; 
-            this.boxColors[i * 3 + 1] = 1.0; 
-            this.boxColors[i * 3 + 2] = 1.0; 
+        // 20種類のジオメトリを定義（AKIRAっぽいメカニカルパーツ）
+        const geometries = [
+            new THREE.BoxGeometry(1, 1, 1), // 0: Box
+            new THREE.CylinderGeometry(0.5, 0.5, 2, 8), // 1: Rod
+            new THREE.CylinderGeometry(0.8, 0.8, 0.4, 6), // 2: Hex Nut
+            new THREE.TorusGeometry(0.6, 0.2, 8, 16), // 3: Ring
+            new THREE.CylinderGeometry(0.2, 0.2, 4, 8), // 4: Pipe
+            new THREE.SphereGeometry(0.6, 12, 12), // 5: Joint
+            new THREE.BoxGeometry(2, 0.2, 2), // 6: Plate
+            new THREE.CylinderGeometry(0.5, 0, 1.5, 4), // 7: Pointy
+            new THREE.TorusGeometry(0.8, 0.1, 4, 4), // 8: Square Ring
+            new THREE.CylinderGeometry(1, 1, 0.3, 12), // 9: Disk
+            new THREE.IcosahedronGeometry(0.7, 0), // 10: Faceted Joint
+            new THREE.OctahedronGeometry(0.8, 0), // 11: Diamond Part
+            new THREE.TetrahedronGeometry(0.9, 0), // 12: Fragment
+            new THREE.CylinderGeometry(0.4, 0.4, 1.5, 16), // 13: Small Cylinder
+            new THREE.ConeGeometry(0.6, 1.2, 8), // 14: Cone Part
+            new THREE.TorusKnotGeometry(0.4, 0.1, 32, 8), // 15: Complex Wiring
+            new THREE.DodecahedronGeometry(0.7, 0), // 16: Poly Part
+            new THREE.CylinderGeometry(0.1, 0.1, 5, 6), // 17: Needle
+            new THREE.BoxGeometry(1.5, 0.5, 0.5), // 18: Rect Part
+            new THREE.BoxGeometry(0.5, 0.5, 0.5)  // 19: Small Cube
+        ];
+
+        // 各種類ごとにInstancedMeshManagerを作成
+        for (let i = 0; i < this.partTypes; i++) {
+            const manager = new InstancedMeshManager(this.scene, geometries[i], metalMat, this.instancesPerType);
+            const mainMesh = manager.getMainMesh();
+            mainMesh.castShadow = true;
+            mainMesh.receiveShadow = true;
+            
+            // 個別色設定（シーン13と同じく白ベースで統一）
+            const colors = new Float32Array(this.instancesPerType * 3);
+            for (let j = 0; j < this.instancesPerType; j++) {
+                colors[j * 3 + 0] = 1.0; 
+                colors[j * 3 + 1] = 1.0; 
+                colors[j * 3 + 2] = 1.0; 
+            }
+            mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+
+            mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
+                depthPacking: THREE.RGBADepthPacking,
+                alphaTest: 0.5
+            });
+
+            this.instancedMeshManagers.push(manager);
         }
-        mainMesh.instanceColor = new THREE.InstancedBufferAttribute(this.boxColors, 3);
 
-        mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
-            depthPacking: THREE.RGBADepthPacking,
-            alphaTest: 0.5
-        });
+        // パーティクルの生成（グループ化を防ぐために作成順序をシャッフル）
+        const creationList = [];
+        for (let typeIdx = 0; typeIdx < this.partTypes; typeIdx++) {
+            for (let i = 0; i < this.instancesPerType; i++) {
+                creationList.push({ typeIdx, indexInType: i });
+            }
+        }
+        
+        // シャッフル（Fisher-Yates）
+        for (let i = creationList.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const temp = creationList[i];
+            creationList[i] = creationList[j];
+            creationList[j] = temp;
+        }
 
-        for (let i = 0; i < this.sphereCount; i++) {
+        creationList.forEach((info, idx) => {
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos(2 * Math.random() - 1);
             const r = Math.pow(Math.random(), 1.5) * this.spawnRadius;
@@ -216,129 +323,107 @@ export class Scene14 extends SceneBase {
             const y = r * Math.sin(phi) * Math.sin(theta);
             const z = r * Math.cos(phi);
 
-            // 大きさのランダムバリエーション
-            // 最大値をさらに抑える調整
+            // サイズの調整（Scene13のような極端なランダムバリエーション）
             const sizeRand = Math.random();
             let baseSize;
             if (sizeRand < 0.7) {
                 // 70%は小さめ (5〜12)
                 baseSize = 5 + Math.random() * 7;
             } else if (sizeRand < 0.95) {
-                // 25%は中くらい (12〜20)
-                baseSize = 12 + Math.random() * 8;
+                // 25%は中くらい (12〜25)
+                baseSize = 12 + Math.random() * 13;
             } else {
-                // 5%だけ大きい (20〜25) - 最大サイズをさらに縮小 (35->25)
-                baseSize = 20 + Math.random() * 5;
+                // 5%だけ大きい (25〜45) - 巨大なパーツを混ぜる！
+                baseSize = 25 + Math.random() * 20;
             }
 
-            // 縦横比をさらに極端に（細長いものを増やす）
-            const scaleX = baseSize * (0.2 + Math.random() * 2.8);
-            const scaleY = baseSize * (0.2 + Math.random() * 2.8);
-            const scaleZ = baseSize * (0.2 + Math.random() * 2.8);
+            // 縦横比もランダムにして、細長いパーツや平べったいパーツを増やす
+            const scaleX = baseSize * (0.5 + Math.random() * 1.5);
+            const scaleY = baseSize * (0.5 + Math.random() * 1.5);
+            const scaleZ = baseSize * (0.5 + Math.random() * 1.5);
             const scale = new THREE.Vector3(scaleX, scaleY, scaleZ);
-            
             const radius = Math.max(scaleX, scaleY, scaleZ) * 0.5;
             
-            const p = new Scene14Particle(x, y, z, radius, scale);
+            const p = new Scene14Particle(x, y, z, radius, scale, info.typeIdx, info.indexInType);
             p.angularVelocity.multiplyScalar(2.0);
             this.particles.push(p);
 
-            this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.scale);
-        }
+            this.instancedMeshManagers[info.typeIdx].setMatrixAt(info.indexInType, p.position, p.rotation, p.scale);
+        });
         
-        this.instancedMeshManager.markNeedsUpdate();
+        this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
         this.setParticleCount(this.sphereCount);
     }
 
     /**
-     * コンクリート質感のテクスチャを生成
+     * メカニカルな基板・パネル風テクスチャを生成（サビと傷を追加）
      */
     generateFleshTextures() {
         const size = 512;
-        
-        // 1. カラーマップ用のキャンバス
         const colorCanvas = document.createElement('canvas');
         colorCanvas.width = size;
         colorCanvas.height = size;
         const cCtx = colorCanvas.getContext('2d');
-        
-        // ベース：純白に変更（テクスチャがグレーだとBoxもグレーになるため）
-        cCtx.fillStyle = '#ffffff'; 
+        cCtx.fillStyle = '#aaaaaa'; 
         cCtx.fillRect(0, 0, size, size);
 
-        // コンクリートの汚れや色ムラを追加（白ベースなので薄めに）
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 40; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 5 + Math.random() * 30;
+            const r = 10 + Math.random() * 50;
             const grad = cCtx.createRadialGradient(x, y, 0, x, y, r);
-            
-            const grayVal = 200 + Math.random() * 40; // かなり明るいグレー
-            grad.addColorStop(0, `rgba(${grayVal}, ${grayVal}, ${grayVal}, 0.2)`);
-            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            const rustType = Math.random();
+            if (rustType < 0.6) grad.addColorStop(0, 'rgba(101, 67, 33, 0.6)');
+            else grad.addColorStop(0, 'rgba(139, 69, 19, 0.4)');
+            grad.addColorStop(1, 'rgba(101, 67, 33, 0)');
             cCtx.fillStyle = grad;
             cCtx.beginPath();
             cCtx.arc(x, y, r, 0, Math.PI * 2);
             cCtx.fill();
         }
 
-        // 砂利や気泡のような細かい点々
-        for (let i = 0; i < 200; i++) {
+        cCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        for (let i = 0; i < 100; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 0.5 + Math.random() * 1.5;
-            cCtx.fillStyle = Math.random() > 0.5 ? 'rgba(60, 60, 60, 0.4)' : 'rgba(200, 200, 200, 0.4)';
+            const len = 5 + Math.random() * 20;
             cCtx.beginPath();
-            cCtx.arc(x, y, r, 0, Math.PI * 2);
-            cCtx.fill();
+            cCtx.moveTo(x, y);
+            cCtx.lineTo(x + (Math.random() - 0.5) * len, y + (Math.random() - 0.5) * len);
+            cCtx.stroke();
         }
 
-        // 2. バンプマップ用のキャンバス
         const bumpCanvas = document.createElement('canvas');
         bumpCanvas.width = size;
         bumpCanvas.height = size;
         const bCtx = bumpCanvas.getContext('2d');
         bCtx.fillStyle = '#808080';
         bCtx.fillRect(0, 0, size, size);
+        bCtx.strokeStyle = '#444444'; 
+        bCtx.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+            const pos = (i / 8) * size;
+            bCtx.strokeRect(pos, pos, size/4, size/4);
+        }
 
-        // 鋭いひび割れ（クラック）
-        bCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        bCtx.strokeStyle = '#000000';
+        bCtx.lineWidth = 1;
         for (let i = 0; i < 30; i++) {
-            bCtx.lineWidth = 1 + Math.random() * 2;
             let x = Math.random() * size;
             let y = Math.random() * size;
             bCtx.beginPath();
             bCtx.moveTo(x, y);
-            for (let j = 0; j < 8; j++) {
-                x += (Math.random() - 0.5) * 60;
-                y += (Math.random() - 0.5) * 60;
+            for (let j = 0; j < 3; j++) {
+                x += (Math.random() - 0.5) * 40;
+                y += (Math.random() - 0.5) * 40;
                 bCtx.lineTo(x, y);
             }
             bCtx.stroke();
         }
 
-        // 隆起したボコボコ
-        for (let i = 0; i < 100; i++) {
-            const x = Math.random() * size;
-            const y = Math.random() * size;
-            const r = 5 + Math.random() * 20;
-            const grad = bCtx.createRadialGradient(x, y, 0, x, y, r);
-            const isUp = Math.random() > 0.3; 
-            const val = isUp ? 255 : 0;
-            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.5)`);
-            grad.addColorStop(1, `rgba(128, 128, 128, 0)`);
-            bCtx.fillStyle = grad;
-            bCtx.beginPath();
-            bCtx.arc(x, y, r, 0, Math.PI * 2);
-            bCtx.fill();
-        }
-
         const colorTex = new THREE.CanvasTexture(colorCanvas);
-        colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
-        
         const bumpTex = new THREE.CanvasTexture(bumpCanvas);
         bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
-
         return { map: colorTex, bumpMap: bumpTex };
     }
 
@@ -354,11 +439,10 @@ export class Scene14 extends SceneBase {
             this.composer.addPass(this.ssaoPass);
         }
         if (this.useDOF) {
-            // ボケ味を再調整：ミニチュア感を抑えつつ、適度な被写界深度を出す
             this.bokehPass = new BokehPass(this.scene, this.camera, {
                 focus: 500, 
-                aperture: 0.000005, // 0.000001 -> 0.000005 少し広げてボケを出す
-                maxblur: 0.003,     // 0.001 -> 0.003 適度なボケの深さを復活
+                aperture: 0.000005, // シーン13と同じ
+                maxblur: 0.003,     // シーン13と同じ
                 width: window.innerWidth, 
                 height: window.innerHeight
             });
@@ -368,32 +452,16 @@ export class Scene14 extends SceneBase {
 
     handlePhase(phase) {
         super.handlePhase(phase);
-        
         const phaseValue = Math.min(9, Math.max(0, phase || 0));
-
-        // Phaseの進行に合わせてエフェクトを順番に解放（累積的にONにしていく）
-        for (let i = 1; i <= 6; i++) {
-            this.trackEffects[i] = (phaseValue >= i);
-        }
-
-        // 特別な演出：Phase 0 の時は全てオフ、かつ原点回帰
+        for (let i = 1; i <= 6; i++) this.trackEffects[i] = (phaseValue >= i);
         if (phaseValue === 0) {
             for (let i = 1; i <= 9; i++) this.trackEffects[i] = false;
-            
             this.currentMode = this.MODE_DEFAULT;
             this.modeTimer = 0; 
-            console.log("Phase 0 detected: Resetting positions and effects");
-            
             this.particles.forEach(p => {
                 p.position.set(0, 200, 0);
                 p.velocity.set(0, 0, 0);
             });
-
-            this.useGravity = false;
-            this.spiralMode = false;
-            this.torusMode = false;
-
-            // カメラもデフォルトに戻す
             this.applyCameraModeForMovement();
         }
     }
@@ -402,374 +470,370 @@ export class Scene14 extends SceneBase {
         if (!this.initialized) return;
         this.time += deltaTime;
         
-        if (this.sphereMaterialShader) {
-            this.sphereMaterialShader.uniforms.uTime.value = this.time;
-        }
-        if (this.sphereDepthShader) {
-            this.sphereDepthShader.uniforms.uTime.value = this.time;
-        }
-
-        // actual_tick (0〜36864) に基づいた表示数の動的制御
-        const totalTicks = 36864;
-        const tick = this.actualTick || 0;
-        
-        const halfTicks = totalTicks / 2; // ループの半分 (18432)
-        const phase8StartTick = Math.floor((totalTicks / 9) * 8); // Phase 8 の開始目安 (約32768)
-        const phase9StartTick = Math.floor((totalTicks / 9) * 9) - 100; // Phase 9 の開始目安（ほぼ最後）
-        
-        let currentVisibleCount;
-        if (tick === 0) {
-            // 曲が止まっている（または開始前）は1000個固定
-            currentVisibleCount = 1000;
-        } else if (tick < halfTicks) {
-            // 序盤から半分まで：1000個から20000個へ一気に増殖
-            const progress = tick / halfTicks;
-            currentVisibleCount = Math.floor(1000 + (this.sphereCount - 1000) * progress);
-        } else if (tick < phase8StartTick) {
-            // 半分からPhase 8まで：最大数（20000個）をキープ！
-            currentVisibleCount = this.sphereCount;
-        } else if (tick < phase9StartTick) {
-            // Phase 8からPhase 9まで：20000個から0個へ一気に収束
-            const progress = Math.min(1.0, (tick - phase8StartTick) / (phase9StartTick - phase8StartTick));
-            currentVisibleCount = Math.floor(this.sphereCount * (1.0 - progress));
-        } else {
-            // Phase 9からラスト：0個！完全消滅！
-            currentVisibleCount = 0;
-        }
-
-        // HUDに表示するパーティクル数を更新
+        const currentVisibleCount = this.sphereCount;
         this.setParticleCount(currentVisibleCount);
-        this.currentVisibleCount = currentVisibleCount; // 物理演算用に保存
+        this.currentVisibleCount = currentVisibleCount;
 
-        // インスタンスメッシュの描画数を更新
-        if (this.instancedMeshManager) {
-            const mainMesh = this.instancedMeshManager.getMainMesh();
-            if (mainMesh) {
-                // THREE.InstancedMesh.count を直接制御
-                mainMesh.count = Math.max(1, currentVisibleCount);
-                // 行列の更新フラグを立てる
-                mainMesh.instanceMatrix.needsUpdate = true;
-            }
+        if (this.instancedMeshManagers.length > 0) {
+            this.instancedMeshManagers.forEach(manager => {
+                const mainMesh = manager.getMainMesh();
+                if (mainMesh) {
+                    mainMesh.count = this.instancesPerType;
+                    mainMesh.instanceMatrix.needsUpdate = true;
+                }
+            });
         }
 
-        // 時間によるモードの自動ランダマイズ
         this.modeTimer += deltaTime;
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
-            
-            const weights = [
-                1.0, // DEFAULT
-                1.2, // GRAVITY
-                1.5, // SPIRAL 
-                1.5, // TORUS 
-                1.0, // WALL
-                1.0, // WAVE
-                1.2, // BLACK_HOLE
-                1.0, // PILLARS
-                0.8, // CHAOS 
-                1.5  // DEFORM 
-            ];
-            
-            const totalWeight = weights.reduce((a, b) => a + b, 0);
-            let random = Math.random() * totalWeight;
-            let nextMode = 0;
-            
-            for (let i = 0; i < weights.length; i++) {
-                if (random < weights[i]) {
-                    nextMode = i;
-                    break;
-                }
-                random -= weights[i];
-            }
-            
-            // 現在のモードと同じなら再抽選（確率は維持）
-            if (nextMode === this.currentMode) {
-                nextMode = (nextMode + 1) % 10;
-            }
-            
-            this.currentMode = nextMode;
-            console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted)`);
-
-            // モードフラグの更新（updatePhysicsで使用）
-            this.useGravity = (this.currentMode === this.MODE_GRAVITY);
-            this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
-            this.torusMode = (this.currentMode === this.MODE_TORUS);
-
-            // 【追加】モードが変わった瞬間にカメラプリセットを適用
+            this.currentMode = (this.currentMode + 1) % 20;
+            console.log(`Mode Switched: ${this.currentMode}`);
             this.applyCameraModeForMovement();
-
-            // モード切り替え時の特殊処理
-            if (this.currentMode === this.MODE_GRAVITY) {
-                // 重力モード：即座に落下開始
-                this.particles.forEach(p => {
-                    if (p.velocity.y > 0) p.velocity.y = 0;
-                });
-            } else if (this.currentMode === this.MODE_SPIRAL) {
-                // 螺旋モード：位置を完全にランダムに散らして、渋滞を回避する
-                this.particles.forEach((p, idx) => {
-                    const r = Math.random() * this.spawnRadius;
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.random() * Math.PI;
-                    p.position.set(
-                        r * Math.sin(phi) * Math.cos(theta),
-                        p.spiralHeightFactor * 5000 - 500, // 2000 -> 5000 担当高度を大幅に拡大
-                        r * Math.sin(phi) * Math.sin(theta)
-                    );
-                    p.velocity.set(0, 0, 0); 
-                });
-            }
         }
 
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
         
-        if (this.useDOF && this.bokehPass && this.instancedMeshManager) {
+        if (this.useDOF && this.bokehPass && this.instancedMeshManagers.length > 0) {
             this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-            const mainMesh = this.instancedMeshManager.getMainMesh();
-            if (mainMesh) {
-                const intersects = this.raycaster.intersectObject(mainMesh);
-                
-                let targetDistance;
-                if (intersects.length > 0) {
-                    targetDistance = intersects[0].distance;
-                } else {
-                    const targetVec = new THREE.Vector3(0, 0, -1);
-                    targetVec.applyQuaternion(this.camera.quaternion);
-                    const toOrigin = new THREE.Vector3(0, 0, 0).sub(this.camera.position);
-                    targetDistance = Math.max(10, toOrigin.dot(targetVec));
-                }
-                
-                // 現在のフォーカス値を取得
-                const currentFocus = this.bokehPass.uniforms.focus.value;
-                
-                // 追従速度（0.1）。ピントが急激に変わってチカチカするのを防ぐため、少し遅く設定
-                const lerpFactor = 0.1; // 0.05 -> 0.1 少し速めて追従性を改善
-                this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
+            const meshes = this.instancedMeshManagers.map(m => m.getMainMesh()).filter(m => !!m);
+            const intersects = this.raycaster.intersectObjects(meshes);
+            let targetDistance;
+            if (intersects.length > 0) {
+                targetDistance = intersects[0].distance;
+            } else {
+                const targetVec = new THREE.Vector3(0, 0, -1);
+                targetVec.applyQuaternion(this.camera.quaternion);
+                const toOrigin = new THREE.Vector3(0, 0, 0).sub(this.camera.position);
+                targetDistance = Math.max(100, toOrigin.dot(targetVec));
             }
+            const currentFocus = this.bokehPass.uniforms.focus.value;
+            const lerpFactor = 0.1; 
+            this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
         }
     }
 
+    applyCameraModeForMovement() {
+        const cp = this.cameraParticles[this.currentCameraIndex];
+        if (!cp) return;
+        cp.applyPreset('DEFAULT');
+    }
+
     updatePhysics(deltaTime) {
-        const subSteps = 2;
-        const dt = deltaTime / subSteps;
-        const halfSize = 4950; // スタジオサイズ10000に合わせて拡張（950 -> 4950）
-        const tempVec = new THREE.Vector3();
-        const diff = new THREE.Vector3();
         const visibleCount = Math.min(this.currentVisibleCount || 0, this.particles.length);
+        const tempVec = new THREE.Vector3();
+        const halfSize = 4950;
 
-        for (let s = 0; s < subSteps; s++) {
-            this.grid.clear();
-            for (let i = 0; i < visibleCount; i++) {
-                const p = this.particles[i];
-                const gx = Math.floor(p.position.x / this.gridSize);
-                const gy = Math.floor(p.position.y / this.gridSize);
-                const gz = Math.floor(p.position.z / this.gridSize);
-                const key = (gx + 100) + (gy + 100) * 200 + (gz + 100) * 40000;
-                if (!this.grid.has(key)) this.grid.set(key, []);
-                this.grid.get(key).push(i);
-            }
-
-            for (let idx = 0; idx < visibleCount; idx++) {
-                const p = this.particles[idx];
-                const springK = 0.02;
-                const damping = 0.96;
-
-                // モード別の力計算
-                if (this.currentMode === this.MODE_SPIRAL) {
-                    const side = (idx % 2 === 0) ? 1 : -1;
-                    const rotationSpeed = 1.5;
-                    // はみ出し粒子は半径を大きく外側に散らす
-                    const radius = 350 * p.radiusOffset * p.strayRadiusOffset; 
-                    const angle = (this.time * rotationSpeed) + (p.position.y * 0.003) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.05);
-                    const targetX = Math.cos(angle) * radius;
-                    const targetZ = Math.sin(angle) * radius;
-                    
-                    p.velocity.y *= 0.99; 
-                    
-                    // はみ出し粒子（Stray）は引力を極限まで弱めて「漂わせる」
-                    const spiralSpringK = 0.1 * p.strayFactor;
-                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0.4 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_TORUS) {
-                    const mainRadius = 1200;
-                    // はみ出し粒子はドーナツの「外側」や「内側」に大きくズレる
-                    const tubeRadius = 60 * p.radiusOffset * p.strayRadiusOffset; 
-                    const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
-                    const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5) + p.phaseOffset;
-                    const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
-                    const ty = tubeRadius * Math.sin(phi) + 300;
-                    const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
-                    
-                    // はみ出し粒子は引力を弱める
-                    const torusSpringK = 0.04 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_WALL) {
-                    // 垂直グリッド壁：さらに密度を極限まで高めて、一面の壁にする
-                    const cols = 200; 
-                    const spacing = 40; 
-                    // はみ出し粒子は壁の「前後」に大きく漂う
-                    const zOffset = p.isStray ? (p.targetOffset.z * 5.0) : (p.targetOffset.z * 0.2);
-                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05; 
-                    const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
-                    const tz = 0 + zOffset; // ど真ん中（z=0）に配置
-                    
-                    // はみ出し粒子は引力を弱める
-                    const wallSpringK = 0.05 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_WAVE) {
-                    // 巨大な波：数に応じて動的に密度を計算し、サイズを大幅に拡大
-                    const cols = Math.floor(Math.sqrt(this.sphereCount));
-                    const spacing = 5000 / cols; // 2500 -> 5000 に波の広がりを倍増！
-                    // はみ出し粒子は波の「上下」に激しく飛び出す
-                    const yOffset = p.isStray ? (p.targetOffset.y * 2.0) : (p.targetOffset.y * 0.05);
-                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
-                    const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.05;
-                    const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
-                    
-                    // はみ出し粒子は引力を弱める
-                    const waveSpringK = 0.05 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_BLACK_HOLE) {
-                    if (idx % 10 < 7) {
-                        const radius = (idx / this.sphereCount) * 1200 + 50 + p.targetOffset.x * 0.5;
-                        const angle = (idx * 0.05) + (this.time * 3.0) + p.phaseOffset * 0.1;
-                        const tx = Math.cos(angle) * radius;
-                        const tz = Math.sin(angle) * radius;
-                        const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
-                        
-                        const bhSpringK = 0.06 * p.strayFactor;
-                        tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
-                        p.addForce(tempVec);
-                    } else {
-                        const side = (idx % 2 === 0) ? 1 : -1;
-                        const tx = (Math.random() - 0.5) * 40 + p.targetOffset.x * 0.1;
-                        const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
-                        const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
-                        
-                        const jetSpringK = 0.1 * p.strayFactor;
-                        tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
-                        p.addForce(tempVec);
-                    }
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_PILLARS) {
-                    const pillarIdx = idx % 5;
-                    const angle = (pillarIdx / 5) * Math.PI * 2;
-                    const pillarRadius = 1500; // 800 -> 1500 に柱の間隔を拡大！
-                    const px = Math.cos(angle) * pillarRadius;
-                    const pz = Math.sin(angle) * pillarRadius;
-                    const tx = px + (Math.sin(idx + this.time) * 100) + p.targetOffset.x * 0.5;
-                    const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
-                    const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
-                    
-                    const pillarSpringK = 0.05 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_CHAOS) {
-                    const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 2.0 * p.strayFactor;
-                    tempVec.copy(p.position).normalize().multiplyScalar(force);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_DEFORM) {
-                    // 【新】変形モード：球体同相の物体を軸として、歪ませる
-                    // 2万個の粒子で巨大な「アメーバ状の球体」を作る
-                    const baseRadius = 600;
-                    const noiseSpeed = 1.0;
-                    
-                    // 球面上の基本位置
-                    // idx % 1000 ではなく、全インデックスを使って均等に散らす
-                    const theta = (idx / this.sphereCount) * Math.PI * 2;
-                    const phi = Math.acos(2 * (idx / this.sphereCount) - 1);
-                    
-                    // ノイズによる半径の歪み
-                    const nx = Math.cos(theta) * Math.sin(phi);
-                    const ny = Math.sin(theta) * Math.sin(phi);
-                    const nz = Math.cos(phi);
-                    
-                    // 時間と位置によるグニャグニャ感
-                    const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) * 
-                                     Math.cos(ny * 5.0 + this.time * noiseSpeed) * 
-                                     Math.sin(nz * 5.0 + this.time * noiseSpeed) * 200;
-                    
-                    const r = (baseRadius + distortion) * p.radiusOffset;
-                    const tx = nx * r;
-                    const ty = ny * r + 300;
-                    const tz = nz * r;
-                    
-                    const springK = 0.04 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-
-                } else if (this.currentMode === this.MODE_GRAVITY) {
-                    p.velocity.multiplyScalar(0.98);
-                } else {
-                    // DEFAULT: 中心の引力 + 個体ごとの目標オフセット（球状分布）
-                    const tx = p.targetOffset.x;
-                    const ty = p.targetOffset.y + 200;
-                    const tz = p.targetOffset.z;
-                    const defSpringK = 0.001 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
-                    p.addForce(tempVec);
-                }
-
-                // 重力の適用（MODE_GRAVITYの時のみ）
-                if (this.currentMode === this.MODE_GRAVITY) {
-                    p.addForce(this.gravityForce);
-                }
-
-                p.update();
-                
-                // 全体的な摩擦（空気抵抗）を大幅に強化（0.98 -> 0.92）
-                // これにより痙攣（微振動）を吸収し、しっとりとした動きにする
-                p.velocity.multiplyScalar(0.92); 
-                
-                if (this.useWallCollision) {
-                    if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
-                    if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
-                    
-                    // 天井の判定をスタジオサイズに合わせて拡張（1500 -> 4500）
-                    // 螺旋モード以外でも高く昇れるようにする
-                    if (p.position.y > 4500) { 
-                        if (this.currentMode === this.MODE_SPIRAL) {
-                            p.position.y = -500; // 螺旋は循環
-                            p.velocity.y *= 0.5;
-                        } else {
-                            p.position.y = 4500; // 他は跳ね返り
-                            p.velocity.y *= -0.5; 
-                        }
-                    }
-                    
-                    if (p.position.y < -450) { 
-                        p.position.y = -450; 
-                        p.velocity.y *= -0.2; 
-                        const rollFactor = 0.1 / (p.radius / 30); 
-                        p.angularVelocity.z = -p.velocity.x * rollFactor;
-                        p.angularVelocity.x = p.velocity.z * rollFactor;
-                        p.velocity.x *= 0.97;
-                        p.velocity.z *= 0.97;
-                    }
-                    if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.5; }
-                    if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.5; }
-                }
-                p.updateRotation(dt);
-            }
+        if (this.currentMode !== this.MODE_DEFAULT && !this.geometricTargets.has(this.currentMode)) {
+            this.generateGeometricTargets(this.currentMode);
         }
 
-        if (this.instancedMeshManager) {
-            for (let i = 0; i < visibleCount; i++) {
-                const p = this.particles[i];
-                this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.scale);
+        const targets = this.geometricTargets.get(this.currentMode);
+
+        for (let idx = 0; idx < visibleCount; idx++) {
+            const p = this.particles[idx];
+            p.force.set(0, 0, 0);
+
+            if (this.currentMode !== this.MODE_DEFAULT && targets) {
+                const targetPos = targets[idx % targets.length];
+                
+                // はみ出し粒子（isStray）の散らしを「ハエ」にならない程度に抑制（2.0 -> 0.5）
+                let tx = targetPos.x + (p.isStray ? p.targetOffset.x * 0.5 : 0);
+                let ty = targetPos.y + (p.isStray ? p.targetOffset.y * 0.5 : 0);
+                let tz = targetPos.z + (p.isStray ? p.targetOffset.z * 0.5 : 0);
+
+                const springK = 0.08 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                p.addForce(tempVec);
+
+                // 【循環フォース】図形の中でパーツをぐるぐる回すで！🌀
+                const centerX = 0; const centerZ = 0;
+                const dx = p.position.x - centerX;
+                const dz = p.position.z - centerZ;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist > 10) {
+                    const vortexStrength = p.isStray ? 0.5 : 2.0; // はみ出し粒子はゆったり
+                    p.addForce(new THREE.Vector3(-dz / dist * vortexStrength, 0, dx / dist * vortexStrength));
+                }
+
+                // 【うごめき】時間による微細な振動を追加（はみ出し粒子はさらにスローに）
+                const wiggleSpeed = p.isStray ? 0.5 : 2.0;
+                const wiggleStrength = p.isStray ? 3.0 : 5.0;
+                p.addForce(new THREE.Vector3(
+                    Math.sin(this.time * wiggleSpeed + idx) * wiggleStrength,
+                    Math.cos(this.time * (wiggleSpeed * 0.8) + idx) * wiggleStrength,
+                    Math.sin(this.time * (wiggleSpeed * 0.9) + idx) * wiggleStrength
+                ));
+            } else {
+                const tx = p.targetOffset.x;
+                const ty = p.targetOffset.y + 200;
+                const tz = p.targetOffset.z;
+                const defSpringK = 0.001 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
+                p.addForce(tempVec);
             }
-            this.instancedMeshManager.markNeedsUpdate();
+
+            p.update();
+            p.velocity.multiplyScalar(0.92); 
+            
+            if (this.useWallCollision) {
+                if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
+                if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
+                if (p.position.y > 4500) { p.position.y = 4500; p.velocity.y *= -0.5; }
+                if (p.position.y < -450) { 
+                    p.position.y = -450; 
+                    p.velocity.y *= -0.2; 
+                    const rollFactor = 0.1 / (p.radius / 30); 
+                    p.angularVelocity.z = -p.velocity.x * rollFactor;
+                    p.angularVelocity.x = p.velocity.z * rollFactor;
+                }
+                if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.5; }
+                if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.5; }
+            }
+            p.updateRotation(deltaTime);
+
+            if (p.typeIndex !== undefined && this.instancedMeshManagers[p.typeIndex]) {
+                this.instancedMeshManagers[p.typeIndex].setMatrixAt(p.indexInType, p.position, p.rotation, p.scale);
+            }
         }
+        this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
+    }
+
+    generateGeometricTargets(mode) {
+        const targets = [];
+        const count = 4000; 
+        const center = new THREE.Vector3(0, 400, 0);
+
+        switch(mode) {
+            case this.MODE_RINGS: 
+                const ringRadius = 800;
+                const zSpacing = 800;
+                for (let r = 0; r < 4; r++) {
+                    const zPos = (r - 1.5) * zSpacing;
+                    const tilt = (r < 2 ? 1 : -1) * (30 * Math.PI / 180);
+                    for (let i = 0; i < 1000; i++) {
+                        const theta = (i / 1000) * Math.PI * 2;
+                        const p = new THREE.Vector3(Math.cos(theta) * ringRadius, Math.sin(theta) * ringRadius, 0);
+                        const tx = p.x * Math.cos(tilt) + p.z * Math.sin(tilt);
+                        const tz = -p.x * Math.sin(tilt) + p.z * Math.cos(tilt);
+                        targets.push(new THREE.Vector3(tx, p.y + 400, tz + zPos));
+                    }
+                }
+                break;
+
+            case this.MODE_CUBE: 
+                const size = 1200;
+                for (let i = 0; i < count; i++) {
+                    const side = Math.floor(Math.random() * 6);
+                    const u = Math.random() - 0.5;
+                    const v = Math.random() - 0.5;
+                    const p = new THREE.Vector3();
+                    if (side === 0) p.set(0.5, u, v);
+                    else if (side === 1) p.set(-0.5, u, v);
+                    else if (side === 2) p.set(u, 0.5, v);
+                    else if (side === 3) p.set(u, -0.5, v);
+                    else if (side === 4) p.set(u, v, 0.5);
+                    else p.set(u, v, -0.5);
+                    targets.push(p.multiplyScalar(size).add(center));
+                }
+                break;
+
+            case this.MODE_PYRAMID: 
+                const pSize = 1500;
+                for (let i = 0; i < count; i++) {
+                    const r1 = Math.random();
+                    const p = new THREE.Vector3();
+                    if (r1 < 0.25) { 
+                        p.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+                    } else { 
+                        const h = Math.random();
+                        const s = 1.0 - h;
+                        const theta = Math.floor(Math.random() * 4) * Math.PI / 2;
+                        p.set(Math.cos(theta) * s * 0.5, h, Math.sin(theta) * s * 0.5);
+                    }
+                    targets.push(p.multiplyScalar(pSize).add(center));
+                }
+                break;
+
+            case this.MODE_CYLINDER: 
+                const cRadius = 700;
+                const cHeight = 1500;
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const h = Math.random() - 0.5;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * cRadius, h * cHeight + 400, Math.sin(theta) * cRadius));
+                }
+                break;
+
+            case this.MODE_DOUBLE_HELIX: 
+                for (let i = 0; i < count; i++) {
+                    const h = (i / count) * 3000 - 1500;
+                    const theta = (i / count) * Math.PI * 10;
+                    const side = (i % 2 === 0) ? 0 : Math.PI;
+                    targets.push(new THREE.Vector3(Math.cos(theta + side) * 500, h + 400, Math.sin(theta + side) * 500));
+                }
+                break;
+
+            case this.MODE_GRID_WALL: 
+                const gSize = 2500;
+                for (let i = 0; i < count; i++) {
+                    const x = (Math.random() - 0.5) * gSize;
+                    const y = (Math.random() - 0.5) * gSize + 400;
+                    targets.push(new THREE.Vector3(x, y, 0));
+                }
+                break;
+
+            case this.MODE_SINE_WAVE: 
+                const wSize = 3000;
+                for (let i = 0; i < count; i++) {
+                    const x = (Math.random() - 0.5) * wSize;
+                    const z = (Math.random() - 0.5) * wSize;
+                    const y = Math.sin(x * 0.005) * Math.cos(z * 0.005) * 500 + 400;
+                    targets.push(new THREE.Vector3(x, y, z));
+                }
+                break;
+
+            case this.MODE_CROSS: 
+                for (let i = 0; i < count; i++) {
+                    const p = new THREE.Vector3();
+                    if (Math.random() < 0.5) p.set((Math.random() - 0.5) * 2000, 400, 0);
+                    else p.set(0, (Math.random() - 0.5) * 2000 + 400, 0);
+                    targets.push(p);
+                }
+                break;
+
+            case this.MODE_STAR: 
+                for (let i = 0; i < count; i++) {
+                    const axis = Math.floor(Math.random() * 3);
+                    const p = new THREE.Vector3();
+                    const len = (Math.random() - 0.5) * 2500;
+                    if (axis === 0) p.set(len, 400, 0);
+                    else if (axis === 1) p.set(0, len + 400, 0);
+                    else p.set(0, 400, len);
+                    targets.push(p);
+                }
+                break;
+
+            case this.MODE_HOURGLASS: 
+                for (let i = 0; i < count; i++) {
+                    const h = (Math.random() - 0.5) * 2;
+                    const r = Math.abs(h) * 600;
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h * 800 + 400, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_DIAMOND: 
+                const dSize = 1000;
+                for (let i = 0; i < count; i++) {
+                    const p = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5);
+                    p.normalize().multiplyScalar(dSize);
+                    const total = Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z);
+                    p.divideScalar(total).multiplyScalar(dSize);
+                    targets.push(p.add(center));
+                }
+                break;
+
+            case this.MODE_HEXAGON: 
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.floor(Math.random() * 6) * Math.PI / 3;
+                    const h = Math.random() - 0.5;
+                    const r = 800;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h * 1500 + 400, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_DNA: 
+                for (let i = 0; i < count; i++) {
+                    const h = (i / count) * 3000 - 1500;
+                    const theta = (i / count) * Math.PI * 8;
+                    const side = (i % 2 === 0) ? 0 : Math.PI;
+                    const p = new THREE.Vector3(Math.cos(theta + side) * 400, h + 400, Math.sin(theta + side) * 400);
+                    if (i % 20 < 5) { 
+                        const t = Math.random();
+                        p.set(Math.cos(theta) * 400 * (1-2*t), h + 400, Math.sin(theta) * 400 * (1-2*t));
+                    }
+                    targets.push(p);
+                }
+                break;
+
+            case this.MODE_SATURN: 
+                for (let i = 0; i < count; i++) {
+                    if (Math.random() < 0.4) { 
+                        const theta = Math.random() * Math.PI * 2;
+                        const phi = Math.random() * Math.PI;
+                        const r = 500;
+                        targets.push(new THREE.Vector3(Math.sin(phi) * Math.cos(theta) * r, Math.cos(phi) * r + 400, Math.sin(phi) * Math.sin(theta) * r));
+                    } else { 
+                        const theta = Math.random() * Math.PI * 2;
+                        const r = 700 + Math.random() * 400;
+                        targets.push(new THREE.Vector3(Math.cos(theta) * r, 400 + (Math.random()-0.5) * 20, Math.sin(theta) * r));
+                    }
+                }
+                break;
+
+            case this.MODE_CUBE_FRAME: 
+                const fSize = 1200;
+                for (let i = 0; i < count; i++) {
+                    const edge = Math.floor(Math.random() * 12);
+                    const t = Math.random() - 0.5;
+                    const p = new THREE.Vector3();
+                    if (edge === 0) p.set(t, 0.5, 0.5);
+                    else if (edge === 1) p.set(t, -0.5, 0.5);
+                    else if (edge === 2) p.set(t, 0.5, -0.5);
+                    else if (edge === 3) p.set(t, -0.5, -0.5);
+                    else if (edge === 4) p.set(0.5, t, 0.5);
+                    else if (edge === 5) p.set(-0.5, t, 0.5);
+                    else if (edge === 6) p.set(0.5, t, -0.5);
+                    else if (edge === 7) p.set(-0.5, t, -0.5);
+                    else if (edge === 8) p.set(0.5, 0.5, t);
+                    else if (edge === 9) p.set(-0.5, 0.5, t);
+                    else if (edge === 10) p.set(0.5, -0.5, t);
+                    else p.set(-0.5, -0.5, t);
+                    targets.push(p.multiplyScalar(fSize).add(center));
+                }
+                break;
+
+            case this.MODE_GALAXY: 
+                for (let i = 0; i < count; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const r = Math.pow(Math.random(), 0.5) * 1500;
+                    const spiral = r * 0.01;
+                    targets.push(new THREE.Vector3(Math.cos(angle + spiral) * r, 400 + (Math.random()-0.5) * 100 * (1 - r/1500), Math.sin(angle + spiral) * r));
+                }
+                break;
+
+            case this.MODE_CONE: 
+                for (let i = 0; i < count; i++) {
+                    const h = Math.random();
+                    const r = h * 800;
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, (1-h) * 1500 - 350, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_MOBIUS: 
+                for (let i = 0; i < count; i++) {
+                    const u = (i / count) * Math.PI * 2;
+                    const v = (Math.random() - 0.5) * 400;
+                    const x = (1000 + v * Math.cos(u/2)) * Math.cos(u);
+                    const y = (1000 + v * Math.cos(u/2)) * Math.sin(u);
+                    const z = v * Math.sin(u/2);
+                    targets.push(new THREE.Vector3(x, z + 400, y));
+                }
+                break;
+
+            case this.MODE_FRACTAL_CUBES: 
+                for (let i = 0; i < count; i++) {
+                    const cx = (Math.floor(Math.random() * 3) - 1) * 1000;
+                    const cy = (Math.floor(Math.random() * 3) - 1) * 1000 + 400;
+                    const cz = (Math.floor(Math.random() * 3) - 1) * 1000;
+                    targets.push(new THREE.Vector3(cx + (Math.random()-0.5) * 400, cy + (Math.random()-0.5) * 400, cz + (Math.random()-0.5) * 400));
+                }
+                break;
+        }
+        this.geometricTargets.set(mode, targets);
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -782,10 +846,9 @@ export class Scene14 extends SceneBase {
 
     triggerExpandEffect(velocity = 127) {
         const center = new THREE.Vector3((Math.random()-0.5)*this.spawnRadius*0.4, (Math.random()-0.5)*this.spawnRadius*0.4, (Math.random()-0.5)*this.spawnRadius*0.4);
-        const explosionRadius = 2000; // 1000 -> 2000 スタジオの半分を飲み込む爆風！
+        const explosionRadius = 2000; 
         const vFactor = velocity / 127.0;
-        const explosionForce = 250.0 * vFactor; // 80.0 -> 250.0 跡形もなく吹き飛ばすで！
-
+        const explosionForce = 250.0 * vFactor; 
         this.particles.forEach(p => {
             const diff = p.position.clone().sub(center);
             const dist = diff.length();
@@ -816,19 +879,13 @@ export class Scene14 extends SceneBase {
         }
     }
 
-    /**
-     * カメラをランダムに切り替える（Scene12と同じ広範囲なランダマイズ）
-     */
     switchCameraRandom() {
-        // 次のカメラを選択
         let newIndex = this.currentCameraIndex;
         while (newIndex === this.currentCameraIndex) {
             newIndex = Math.floor(Math.random() * this.cameraParticles.length);
         }
         this.currentCameraIndex = newIndex;
         const cp = this.cameraParticles[this.currentCameraIndex];
-
-        // 全てのカメラパーティクルのパラメータを一度リセット
         this.cameraParticles.forEach(p => {
             p.minDistance = 400;
             p.maxDistance = 2000;
@@ -836,74 +893,26 @@ export class Scene14 extends SceneBase {
             p.boxMax = null;
             p.maxSpeed = 8.0;
         });
-
-        // Scene12と同等の広範囲なランダム配置
         const angle1 = Math.random() * Math.PI * 2;
         const angle2 = Math.random() * Math.PI;
-        const dist = 1000 + Math.random() * 2000; // 広めに設定
-        cp.position.set(
-            Math.cos(angle1) * Math.sin(angle2) * dist,
-            Math.sin(angle1) * Math.sin(angle2) * dist + 500,
-            Math.cos(angle2) * dist
-        );
+        const dist = 1000 + Math.random() * 2000; 
+        cp.position.set(Math.cos(angle1) * Math.sin(angle2) * dist, Math.sin(angle1) * Math.sin(angle2) * dist + 500, Math.cos(angle2) * dist);
         cp.applyRandomForce();
-
         console.log(`Camera switched to #${this.currentCameraIndex + 1} (Wide Random)`);
     }
-
-    /**
-     * 現在の運動モードに最適なカメラプリセットを適用する（トラック1がオフでも実行）
-     */
-    applyCameraModeForMovement() {
-        const cp = this.cameraParticles[this.currentCameraIndex];
-        const mode = this.currentMode;
-
-        switch (mode) {
-            case this.MODE_GRAVITY:
-                cp.applyPreset('LOOK_UP');
-                break;
-            case this.MODE_SPIRAL:
-                cp.applyPreset('SKY_HIGH');
-                break;
-            case this.MODE_TORUS:
-                cp.applyPreset('WIDE_VIEW', { distance: 3000 });
-                break;
-            case this.MODE_WALL:
-                cp.applyPreset('FRONT_SIDE', { z: 1500, x: 3000 });
-                break;
-            case this.MODE_WAVE:
-                cp.applyPreset('DRONE_SURFACE', { y: -300 });
-                break;
-            case this.MODE_BLACK_HOLE:
-                cp.applyPreset('CORE_JET', { height: 4000 });
-                break;
-            case this.MODE_PILLARS:
-                cp.applyPreset('PILLAR_WALK');
-                break;
-            case this.MODE_CHAOS:
-                cp.applyPreset('CHAOTIC');
-                break;
-            case this.MODE_DEFORM:
-                cp.applyPreset('WIDE_VIEW', { distance: 2000 });
-                break;
-            default:
-                cp.applyPreset('DEFAULT');
-                break;
-        }
-        console.log(`Camera Preset Applied for Mode: ${mode}`);
-    }
-
-    reset() { super.reset(); }
 
     dispose() {
         this.initialized = false;
         console.log('Scene14.dispose: クリーンアップ開始');
         if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
-            if (e.light) this.scene.remove(e.light);
+            if (e.light) this.scene.remove(effect.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }
         });
-        if (this.instancedMeshManager) this.instancedMeshManager.dispose();
+        if (this.instancedMeshManagers) {
+            this.instancedMeshManagers.forEach(m => m.dispose());
+            this.instancedMeshManagers = [];
+        }
         if (this.bokehPass) {
             if (this.composer) {
                 const idx = this.composer.passes.indexOf(this.bokehPass);

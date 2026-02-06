@@ -10,6 +10,7 @@ export class StudioBox {
         this.color = options.color || 0xffffff;
         this.roughness = options.roughness !== undefined ? options.roughness : 0.4;
         this.metalness = options.metalness !== undefined ? options.metalness : 0.0;
+        this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 0.5; // バンプの強さを追加
         
         this.studioBox = null;
         this.studioFloor = null;
@@ -28,7 +29,7 @@ export class StudioBox {
             color: this.color,
             map: this.textures.map,
             bumpMap: this.textures.bumpMap,
-            bumpScale: 0.5,
+            bumpScale: this.bumpScale, // 指定された強度を適用
             side: THREE.BackSide,
             roughness: this.roughness,
             metalness: this.metalness
@@ -44,7 +45,7 @@ export class StudioBox {
             color: this.color,
             map: this.textures.map,
             bumpMap: this.textures.bumpMap,
-            bumpScale: 0.8,
+            bumpScale: this.bumpScale * 1.5, // 床はさらに強調
             roughness: this.roughness * 0.75, // 床は少しツヤを出す
             metalness: this.metalness
         });
@@ -56,35 +57,35 @@ export class StudioBox {
     }
 
     /**
-     * スタジオの壁面・床用の微細なテクスチャを生成
+     * スタジオの壁面・床用のテクスチャを生成（清潔感のある超微細な質感）
      */
     generateWallTexture() {
-        const size = 512;
+        const size = 1024;
         const canvas = document.createElement('canvas');
         canvas.width = size;
         canvas.height = size;
         const ctx = canvas.getContext('2d');
         
-        // ベース
-        ctx.fillStyle = '#ffffff';
+        // 1. ベースカラー（清潔感のある明るいグレー）
+        ctx.fillStyle = '#d0d0d0';
         ctx.fillRect(0, 0, size, size);
 
-        // 微細なノイズ（漆喰や塗装の質感を出す）
-        for (let i = 0; i < 5000; i++) {
+        // 2. 超微細な粒子感（「汚さ」ではなく「素材感」を出す）
+        for (let i = 0; i < 10000; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const alpha = Math.random() * 0.05;
+            const alpha = Math.random() * 0.02; // 極限まで薄く
             ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
             ctx.fillRect(x, y, 1, 1);
         }
 
-        // わずかな色ムラ
-        for (let i = 0; i < 20; i++) {
+        // 3. 非常に広範囲で薄いグラデーション
+        for (let i = 0; i < 5; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 50 + Math.random() * 150;
+            const r = 200 + Math.random() * 300;
             const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-            grad.addColorStop(0, 'rgba(200, 200, 200, 0.05)');
+            grad.addColorStop(0, 'rgba(255, 255, 255, 0.05)');
             grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = grad;
             ctx.beginPath();
@@ -92,27 +93,60 @@ export class StudioBox {
             ctx.fill();
         }
 
+        // 4. 隠し味程度の「シミ」と「ひび割れ」（超薄く！）
+        // シミ
+        for (let i = 0; i < 3; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = 30 + Math.random() * 60;
+            const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+            grad.addColorStop(0, 'rgba(0, 0, 0, 0.03)'); // ほぼ見えないレベルの薄いグレー
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // ひび割れ
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i < 2; i++) {
+            let x = Math.random() * size;
+            let y = Math.random() * size;
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            for (let j = 0; j < 3; j++) {
+                x += (Math.random() - 0.5) * 30;
+                y += (Math.random() - 0.5) * 30;
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
         const map = new THREE.CanvasTexture(canvas);
         map.wrapS = map.wrapT = THREE.RepeatWrapping;
-        map.repeat.set(4, 4);
+        map.repeat.set(2, 2); // 繰り返しを減らして、大らかな質感に
 
-        // バンプ用（コントラスト強め）
+        // --- バンプマップ用（手触りを感じる程度の超微細な凹凸） ---
         const bCanvas = document.createElement('canvas');
         bCanvas.width = size;
         bCanvas.height = size;
         const bCtx = bCanvas.getContext('2d');
         bCtx.fillStyle = '#808080';
         bCtx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 10000; i++) {
+
+        // 砂壁のような微細なノイズ
+        for (let i = 0; i < 20000; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
             const val = Math.random() > 0.5 ? 255 : 0;
-            bCtx.fillStyle = `rgba(${val}, ${val}, ${val}, 0.05)`;
+            bCtx.fillStyle = `rgba(${val}, ${val}, ${val}, 0.015)`; // ほぼ見えないレベル
             bCtx.fillRect(x, y, 1, 1);
         }
+
         const bumpMap = new THREE.CanvasTexture(bCanvas);
         bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;
-        bumpMap.repeat.set(4, 4);
+        bumpMap.repeat.set(2, 2);
 
         return { map, bumpMap };
     }

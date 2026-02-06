@@ -38,6 +38,70 @@ export class CameraParticle extends Particle {
     }
     
     /**
+     * プリセットに基づいたカメラの性格付け（新しいスタンダード）
+     */
+    applyPreset(presetName, options = {}) {
+        // デフォルト設定
+        this.minDistance = 400;
+        this.maxDistance = 2000;
+        this.boxMin = null;
+        this.boxMax = null;
+        this.maxSpeed = 8.0;
+        this.friction = 0.0001;
+
+        switch (presetName) {
+            case 'LOOK_UP': // 低い位置から見上げる
+                this.position.set((Math.random()-0.5)*1000, -400, (Math.random()-0.5)*1000);
+                this.velocity.set(0, 5, 0);
+                break;
+            case 'SKY_HIGH': // 高い位置から見下ろす
+                this.position.set((Math.random()-0.5)*1500, 3000, (Math.random()-0.5)*1500);
+                this.velocity.set(0, -2, 0);
+                break;
+            case 'WIDE_VIEW': // 遠くから俯瞰
+                const angle = Math.random() * Math.PI * 2;
+                const dist = options.distance || 3000;
+                this.position.set(Math.cos(angle) * dist, 1000, Math.sin(angle) * dist);
+                this.minDistance = dist * 0.5;
+                this.maxDistance = dist * 1.5;
+                break;
+            case 'FRONT_SIDE': // 正面または真横
+                if (Math.random() > 0.5) {
+                    this.position.set((Math.random()-0.5)*2000, 500, options.z || 1500);
+                } else {
+                    this.position.set(options.x || 3000, 500, (Math.random()-0.5)*1000);
+                }
+                break;
+            case 'DRONE_SURFACE': // 水面スレスレを高速移動
+                this.position.set((Math.random()-0.5)*3000, options.y || -300, (Math.random()-0.5)*3000);
+                this.maxSpeed = 15.0;
+                break;
+            case 'CORE_JET': // 中心またはジェット先端
+                if (Math.random() > 0.5) {
+                    this.position.set((Math.random()-0.5)*200, 200, (Math.random()-0.5)*200);
+                } else {
+                    this.position.set((Math.random()-0.5)*500, options.height || 4000, (Math.random()-0.5)*500);
+                }
+                break;
+            case 'PILLAR_WALK': // 障害物の間を縫う
+                // 柱モードの時は少しカメラを離して全体を見やすく調整
+                this.position.set((Math.random()-0.5)*2000, (Math.random()-0.5)*1500 + 800, (Math.random()-0.5)*2000);
+                this.maxSpeed = 10.0; // 少し速度を落として重厚感を出す
+                this.minDistance = 1000;
+                this.maxDistance = 4000;
+                break;
+            case 'CHAOTIC': // 激しい動き
+                this.applyRandomForce();
+                this.velocity.multiplyScalar(5.0);
+                this.maxSpeed = 30.0;
+                break;
+            default:
+                this.applyRandomForce();
+                break;
+        }
+    }
+
+    /**
      * 初期位置を設定
      */
     initializePosition() {

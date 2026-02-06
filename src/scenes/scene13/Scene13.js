@@ -15,7 +15,7 @@ import { Scene13Particle } from './Scene13Particle.js';
 export class Scene13 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Scene 13';  // シーンのタイトルを設定
+        this.title = 'Xenolith';  // シーンのタイトルを Xenolith に設定
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
@@ -46,9 +46,10 @@ export class Scene13 extends SceneBase {
         this.bokehPass = null;
         this.ssaoPass = null;
 
-        // トラック3,4(色収差、グリッチ)をデフォルトオフに設定
-        this.trackEffects[3] = false;
-        this.trackEffects[4] = false;
+        // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
+        for (let i = 1; i <= 9; i++) {
+            this.trackEffects[i] = false;
+        }
 
         // トラック6用エフェクト管理
         this.expandSpheres = []; 
@@ -57,7 +58,7 @@ export class Scene13 extends SceneBase {
         this.gravityForce = new THREE.Vector3(0, -10.0, 0); // -2.5 -> -10.0 超絶重力！ブラックホール級や！
 
         // モード設定（自動ランダマイズ）
-        this.currentMode = 0;
+        this.currentMode = this.MODE_DEFAULT; // 最初は引力モードから開始
         this.modeTimer = 0;
         this.modeInterval = 10.0; // 10秒ごとにランダムに切り替え
         
@@ -362,6 +363,37 @@ export class Scene13 extends SceneBase {
 
     handlePhase(phase) {
         super.handlePhase(phase);
+        
+        const phaseValue = Math.min(9, Math.max(0, phase || 0));
+
+        // Phaseの進行に合わせてエフェクトを順番に解放（累積的にONにしていく）
+        // Phase 1: トラック1 (カメラランダマイズ)
+        // Phase 2: トラック2 (色反転)
+        // Phase 3: トラック3 (色収差)
+        // Phase 4: トラック4 (グリッチ)
+        // Phase 5: トラック5 (未実装だが枠は確保)
+        // Phase 6: トラック6 (爆発エフェクト)
+        for (let i = 1; i <= 6; i++) {
+            this.trackEffects[i] = (phaseValue >= i);
+        }
+
+        // 特別な演出：Phase 0 の時は全てオフ、かつ原点回帰
+        if (phaseValue === 0) {
+            for (let i = 1; i <= 9; i++) this.trackEffects[i] = false;
+            
+            this.currentMode = this.MODE_DEFAULT;
+            this.modeTimer = 0; 
+            console.log("Phase 0 detected: Resetting positions and effects");
+            
+            this.particles.forEach(p => {
+                p.position.set(0, 200, 0);
+                p.velocity.set(0, 0, 0);
+            });
+
+            this.useGravity = false;
+            this.spiralMode = false;
+            this.torusMode = false;
+        }
     }
 
     onUpdate(deltaTime) {
@@ -378,19 +410,48 @@ export class Scene13 extends SceneBase {
         this.modeTimer += deltaTime;
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
-            // 0〜8の範囲でランダムに新しいモードを選択（現在のモード以外）
-            let nextMode;
-            do {
-                nextMode = Math.floor(Math.random() * 9);
-            } while (nextMode === this.currentMode);
+            
+            // モードごとの出現確率（重み付け）を設定
+            // 0:DEFAULT, 1:GRAVITY, 2:SPIRAL, 3:TORUS, 4:WALL, 5:WAVE, 6:BLACK_HOLE, 7:PILLARS, 8:CHAOS
+            const weights = [
+                1.0, // DEFAULT
+                1.2, // GRAVITY
+                1.5, // SPIRAL (人気なので高め)
+                1.5, // TORUS (人気なので高め)
+                1.0, // WALL
+                1.0, // WAVE
+                1.2, // BLACK_HOLE
+                1.0, // PILLARS
+                0.8  // CHAOS (激しすぎるので少し低め)
+            ];
+            
+            const totalWeight = weights.reduce((a, b) => a + b, 0);
+            let random = Math.random() * totalWeight;
+            let nextMode = 0;
+            
+            for (let i = 0; i < weights.length; i++) {
+                if (random < weights[i]) {
+                    nextMode = i;
+                    break;
+                }
+                random -= weights[i];
+            }
+            
+            // 現在のモードと同じなら再抽選（確率は維持）
+            if (nextMode === this.currentMode) {
+                nextMode = (nextMode + 1) % 9;
+            }
             
             this.currentMode = nextMode;
-            console.log(`Auto Randomizing Mode: ${this.currentMode}`);
+            console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted)`);
 
             // モードフラグの更新（updatePhysicsで使用）
             this.useGravity = (this.currentMode === this.MODE_GRAVITY);
             this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
             this.torusMode = (this.currentMode === this.MODE_TORUS);
+
+            // 【追加】モードが変わった瞬間にカメラもそのモードに合わせてランダマイズ！
+            this.switchCameraRandom();
 
             // モード切り替え時の特殊処理
             if (this.currentMode === this.MODE_GRAVITY) {
@@ -436,7 +497,7 @@ export class Scene13 extends SceneBase {
             const currentFocus = this.bokehPass.uniforms.focus.value;
             
             // 追従速度（0.1）。ピントが急激に変わってチカチカするのを防ぐため、少し遅く設定
-            const lerpFactor = 0.05; // 0.1 -> 0.05 さらにゆっくりにして「映画のフォーカス送り」感を出す
+            const lerpFactor = 0.1; // 0.05 -> 0.1 少し速めて追従性を改善
             this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
         }
     }
@@ -722,7 +783,7 @@ export class Scene13 extends SceneBase {
     }
 
     /**
-     * カメラをランダムに切り替える（phaseごとに挙動を変更）
+     * カメラをランダムに切り替える（現在の運動モードごとに挙動を変更）
      */
     switchCameraRandom() {
         // 次のカメラを選択
@@ -733,66 +794,41 @@ export class Scene13 extends SceneBase {
         this.currentCameraIndex = newIndex;
         const cp = this.cameraParticles[this.currentCameraIndex];
 
-        // phaseに基づいたカメラの性格付け
-        const phaseValue = Math.min(8, Math.max(0, this.phase || 0));
+        // 現在の運動モード（currentMode）に基づいたカメラの性格付け
+        // CameraParticleクラスのプリセット機能を使用して、新しいスタンダードを確立
+        const mode = this.currentMode;
         
-        // 全てのカメラパーティクルのパラメータを一度リセット
-        this.cameraParticles.forEach(p => {
-            p.minDistance = 400;
-            p.maxDistance = 2000;
-            p.boxMin = null;
-            p.boxMax = null;
-            p.maxSpeed = 8.0;
-        });
-
-        switch (phaseValue) {
-            case 1: // GRAVITY: 低い位置から見上げる
-                cp.position.set((Math.random()-0.5)*1000, -400, (Math.random()-0.5)*1000);
-                cp.velocity.set(0, 5, 0); // 少し上に浮き上がる動き
+        switch (mode) {
+            case this.MODE_GRAVITY:
+                cp.applyPreset('LOOK_UP');
                 break;
-            case 2: // SPIRAL: 高い位置から見下ろす
-                cp.position.set((Math.random()-0.5)*1500, 3000, (Math.random()-0.5)*1500);
-                cp.velocity.set(0, -2, 0);
+            case this.MODE_SPIRAL:
+                cp.applyPreset('SKY_HIGH');
                 break;
-            case 3: // TORUS: 遠くから全体を俯瞰
-                const angle = Math.random() * Math.PI * 2;
-                cp.position.set(Math.cos(angle) * 3000, 1000, Math.sin(angle) * 3000);
-                cp.minDistance = 2000;
-                cp.maxDistance = 5000;
+            case this.MODE_TORUS:
+                cp.applyPreset('WIDE_VIEW', { distance: 3000 });
                 break;
-            case 4: // WALL: 壁の正面または真横
-                if (Math.random() > 0.5) {
-                    cp.position.set((Math.random()-0.5)*2000, 500, 1500); // 正面
-                } else {
-                    cp.position.set(3000, 500, (Math.random()-0.5)*1000); // 真横
-                }
+            case this.MODE_WALL:
+                cp.applyPreset('FRONT_SIDE', { z: 1500, x: 3000 });
                 break;
-            case 5: // WAVE: 水面スレスレ
-                cp.position.set((Math.random()-0.5)*3000, -300, (Math.random()-0.5)*3000);
-                cp.maxSpeed = 15.0; // 高速移動
+            case this.MODE_WAVE:
+                cp.applyPreset('DRONE_SURFACE', { y: -300 });
                 break;
-            case 6: // BLACK_HOLE: 中心に吸い込まれるか、ジェットを追う
-                if (Math.random() > 0.5) {
-                    cp.position.set((Math.random()-0.5)*200, 200, (Math.random()-0.5)*200); // 中心近辺
-                } else {
-                    cp.position.set((Math.random()-0.5)*500, 4000, (Math.random()-0.5)*500); // ジェット先端
-                }
+            case this.MODE_BLACK_HOLE:
+                cp.applyPreset('CORE_JET', { height: 4000 });
                 break;
-            case 7: // PILLARS: 柱の間を縫う
-                cp.position.set((Math.random()-0.5)*1000, (Math.random()-0.5)*1000 + 500, (Math.random()-0.5)*1000);
-                cp.maxSpeed = 12.0;
+            case this.MODE_PILLARS:
+                cp.applyPreset('PILLAR_WALK');
                 break;
-            case 8: // CHAOS: 予測不能な激しい動き
-                cp.applyRandomForce();
-                cp.velocity.multiplyScalar(5.0);
-                cp.maxSpeed = 30.0;
+            case this.MODE_CHAOS:
+                cp.applyPreset('CHAOTIC');
                 break;
-            default: // DEFAULT: 通常のランダム
-                cp.applyRandomForce();
+            default:
+                cp.applyPreset('DEFAULT');
                 break;
         }
 
-        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Style: Phase ${phaseValue})`);
+        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Preset: ${mode})`);
     }
 
     reset() { super.reset(); }

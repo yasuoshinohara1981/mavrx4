@@ -62,8 +62,8 @@ export class Scene12 extends SceneBase {
         this.gravityTimer = 0;
         this.gravityInterval = 10.0; // 10秒周期
 
-        // モード設定（Scene13リスペクトの10パターン）
-        this.currentMode = 0;
+        // モード設定（自動ランダマイズ）
+        this.currentMode = this.MODE_DEFAULT; // 最初は引力モードから開始
         this.modeTimer = 0;
         this.modeInterval = 10.0; 
         
@@ -81,6 +81,25 @@ export class Scene12 extends SceneBase {
 
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
+    }
+
+    handlePhase(phase) {
+        super.handlePhase(phase);
+        
+        // phase 0 の時は強制的に引力モード（DEFAULT）にし、位置を原点にリセットする
+        if (phase === 0) {
+            this.currentMode = this.MODE_DEFAULT;
+            this.modeTimer = 0; 
+            console.log("Phase 0 detected: Resetting positions to origin");
+
+            // 全パーティクルの位置を原点に強制移動
+            this.particles.forEach(p => {
+                p.position.set(0, 200, 0); // 少し浮かせて原点付近に
+                p.velocity.set(0, 0, 0);   // 勢いもリセット
+            });
+
+            this.useGravity = false;
+        }
     }
     
     /**

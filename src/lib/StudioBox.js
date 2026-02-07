@@ -93,14 +93,15 @@ export class StudioBox {
             ctx.fill();
         }
 
-        // 4. 隠し味程度の「シミ」と「ひび割れ」（超薄く！）
+        // 4. 隠し味程度の「シミ」と「ひび割れ」（さらに極限まで薄く！）
         // シミ
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 3; i++) { // 5個から3個に減らす
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 30 + Math.random() * 60;
+            const r = 20 + Math.random() * 50; // さらに小さく
             const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-            grad.addColorStop(0, 'rgba(0, 0, 0, 0.03)'); // ほぼ見えないレベルの薄いグレー
+            const alpha = 0.02 + Math.random() * 0.03; // ほぼ見えないレベル（0.05以下）
+            grad.addColorStop(0, `rgba(0, 0, 0, ${alpha})`); 
             grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
             ctx.fillStyle = grad;
             ctx.beginPath();
@@ -108,14 +109,14 @@ export class StudioBox {
             ctx.fill();
         }
         // ひび割れ
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
-        ctx.lineWidth = 0.5;
-        for (let i = 0; i < 2; i++) {
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)'; // さらに薄く（0.15から0.05に）
+        ctx.lineWidth = 0.4; // さらに細く（0.7から0.4に）
+        for (let i = 0; i < 2; i++) { // 3本から2本に減らす
             let x = Math.random() * size;
             let y = Math.random() * size;
             ctx.beginPath();
             ctx.moveTo(x, y);
-            for (let j = 0; j < 3; j++) {
+            for (let j = 0; j < 3; j++) { // よりシンプルに
                 x += (Math.random() - 0.5) * 30;
                 y += (Math.random() - 0.5) * 30;
                 ctx.lineTo(x, y);
@@ -140,8 +141,24 @@ export class StudioBox {
             const x = Math.random() * size;
             const y = Math.random() * size;
             const val = Math.random() > 0.5 ? 255 : 0;
-            bCtx.fillStyle = `rgba(${val}, ${val}, ${val}, 0.015)`; // ほぼ見えないレベル
+            bCtx.fillStyle = `rgba(${val}, ${val}, ${val}, 0.015)`; // 極限まで薄く
             bCtx.fillRect(x, y, 1, 1);
+        }
+
+        // シミや割れの場所も凹ませる（超控えめに）
+        bCtx.strokeStyle = 'rgba(0, 0, 0, 0.03)';
+        bCtx.lineWidth = 0.5;
+        for (let i = 0; i < 2; i++) {
+            let x = Math.random() * size;
+            let y = Math.random() * size;
+            bCtx.beginPath();
+            bCtx.moveTo(x, y);
+            for (let j = 0; j < 3; j++) {
+                x += (Math.random() - 0.5) * 30;
+                y += (Math.random() - 0.5) * 30;
+                bCtx.lineTo(x, y);
+            }
+            ctx.stroke();
         }
 
         const bumpMap = new THREE.CanvasTexture(bCanvas);

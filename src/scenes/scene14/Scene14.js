@@ -15,7 +15,7 @@ import { Scene14Particle } from './Scene14Particle.js';
 export class Scene14 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Scene14';  // 一旦タイトルはScene14にしておくで！
+        this.title = 'Xenolite';  // 一旦タイトルはScene14にしておくで！
         this.initialized = false;
         
         // 共有リソースマネージャー

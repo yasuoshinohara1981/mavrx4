@@ -17,7 +17,9 @@ export class Scene13 extends SceneBase {
         super(renderer, camera);
         this.title = 'Xenolith';  // シーンのタイトルを Xenolith に設定
         this.initialized = false;
-        
+        this.sceneNumber = 13;
+        this.kitNo = 4;
+
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
         this.useSharedResources = !!sharedResourceManager;

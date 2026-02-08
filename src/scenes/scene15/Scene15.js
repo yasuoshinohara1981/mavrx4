@@ -39,8 +39,9 @@ export class Scene15 extends SceneBase {
         this.noiseStrength = 50.0;
         this.noiseSpeed = 0.5;
         
-        this.noiseScaleLFO = new RandomLFO(0.005, 0.02, 0.1, 0.5); // 最大値を1.5から0.5に下げて緩やかに
-        this.noiseStrengthLFO = new RandomLFO(0.02, 0.1, 30.0, 80.0); // 強度も少し抑える
+        // 周期（スピード）を大幅に落として、変化をゆったりさせる（第1, 第2引数を小さく）
+        this.noiseScaleLFO = new RandomLFO(0.001, 0.005, 0.1, 0.5); 
+        this.noiseStrengthLFO = new RandomLFO(0.005, 0.02, 30.0, 80.0);
         
         // 圧力エフェクト管理
         this.pressurePoints = []; // 叩かれた地点

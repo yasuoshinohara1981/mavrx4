@@ -245,15 +245,13 @@ export class Scene14 extends SceneBase {
     createSpheres() {
         const textures = this.generateFleshTextures();
         const metalMat = new THREE.MeshStandardMaterial({
-            color: 0xcccccc, 
+            color: 0xffffff, // テクスチャの色をそのまま出すために白に設定
             map: textures.map, 
             bumpMap: textures.bumpMap,
-            bumpScale: 2.0,  // バンプを少し抑えて反射を見やすく
-            metalness: 0.8,  // 金属感をアップして反射を強化
-            roughness: 0.15, // 表面を滑らかにしてライトをパキッと反射させる
-            emissive: 0x110000, // 発光は控えめに
-            emissiveIntensity: 0.2,
-            envMapIntensity: 2.0 // 環境マップの映り込みを強化
+            bumpScale: 5.0,  // 凹凸を強めてボロさを出す
+            metalness: 0.6,  // 金属感を少し戻してハイライトを出す
+            roughness: 0.6,  // 少し滑らかにして光を拾いやすくする
+            envMapIntensity: 1.0 // 環境マップの映り込みを標準に戻す
         });
 
         // 20種類のジオメトリを定義（AKIRAっぽいメカニカルパーツ）
@@ -287,15 +285,38 @@ export class Scene14 extends SceneBase {
             mainMesh.castShadow = true;
             mainMesh.receiveShadow = true;
             
-            // 個別色設定（少し明るめのダークグレーに調整）
-            const darkGray = new THREE.Color(0x555555);
+            // 個別色設定（ノイズ分布：綺麗な金属メイン、サビをレアに）
             const colors = new Float32Array(this.instancesPerType * 3);
             for (let j = 0; j < this.instancesPerType; j++) {
-                // 同じトーン内でわずかにランダマイズして質感を出す
-                const noise = 0.9 + Math.random() * 0.2;
-                colors[j * 3 + 0] = darkGray.r * noise; 
-                colors[j * 3 + 1] = darkGray.g * noise; 
-                colors[j * 3 + 2] = darkGray.b * noise; 
+                // インデックスベースの簡易ノイズ
+                const n = (Math.sin(j * 0.05) + Math.sin(j * 0.13) + Math.sin(j * 0.27)) / 3.0;
+                const noiseVal = (n + 1.0) / 2.0; // 0.0 〜 1.0
+
+                if (noiseVal < 0.55) {
+                    // 1. グレー・ブルー（多め）- 55%
+                    // 紫味を消すためにRとGを近づけ、Bを少しだけ強くする
+                    const base = 0.3 + Math.random() * 0.1;
+                    colors[j * 3 + 0] = base;       // R
+                    colors[j * 3 + 1] = base + 0.05; // G (Rより少し高くして緑寄りに振ることで紫を回避)
+                    colors[j * 3 + 2] = base + 0.15; // B (青みを強調)
+                } else if (noiseVal < 0.80) {
+                    // 2. 黒ずんだ金属（たまに）- 25%
+                    const v = 0.05 + Math.random() * 0.1;
+                    colors[j * 3 + 0] = v; 
+                    colors[j * 3 + 1] = v; 
+                    colors[j * 3 + 2] = v; 
+                } else if (noiseVal < 0.95) {
+                    // 3. 白っぽい金属（たまに）- 15%
+                    const v = 0.7 + Math.random() * 0.2;
+                    colors[j * 3 + 0] = v; 
+                    colors[j * 3 + 1] = v; 
+                    colors[j * 3 + 2] = v; 
+                } else {
+                    // 4. 錆びまくった茶色系（レア枠）- 5%
+                    colors[j * 3 + 0] = 0.5 + Math.random() * 0.2; // R強め
+                    colors[j * 3 + 1] = 0.2 + Math.random() * 0.1; // G弱め
+                    colors[j * 3 + 2] = 0.05 + Math.random() * 0.05; // Bほぼなし
+                }
             }
             mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
             mainMesh.instanceColor.needsUpdate = true;
@@ -373,61 +394,61 @@ export class Scene14 extends SceneBase {
         colorCanvas.width = size;
         colorCanvas.height = size;
         const cCtx = colorCanvas.getContext('2d');
-        cCtx.fillStyle = '#aaaaaa'; 
+        
+        // 1. ベースカラー（ニュートラルなグレーにして、instanceColorで色を付ける）
+        cCtx.fillStyle = '#ffffff'; 
         cCtx.fillRect(0, 0, size, size);
 
-        for (let i = 0; i < 40; i++) {
+        // 2. 腐食・汚れのパターン（サビの「形」を作る）
+        for (let i = 0; i < 100; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 10 + Math.random() * 50;
+            const r = 2 + Math.random() * 30;
             const grad = cCtx.createRadialGradient(x, y, 0, x, y, r);
-            const rustType = Math.random();
-            if (rustType < 0.6) grad.addColorStop(0, 'rgba(101, 67, 33, 0.6)');
-            else grad.addColorStop(0, 'rgba(139, 69, 19, 0.4)');
-            grad.addColorStop(1, 'rgba(101, 67, 33, 0)');
+            
+            const darkVal = Math.random() * 100;
+            grad.addColorStop(0, `rgba(${darkVal}, ${darkVal}, ${darkVal}, 0.6)`); 
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
             cCtx.fillStyle = grad;
             cCtx.beginPath();
             cCtx.arc(x, y, r, 0, Math.PI * 2);
             cCtx.fill();
         }
 
-        cCtx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        for (let i = 0; i < 100; i++) {
+        // 3. 細かい傷
+        cCtx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+        for (let i = 0; i < 200; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const len = 5 + Math.random() * 20;
+            const len = 2 + Math.random() * 10;
+            cCtx.lineWidth = 0.5;
             cCtx.beginPath();
             cCtx.moveTo(x, y);
             cCtx.lineTo(x + (Math.random() - 0.5) * len, y + (Math.random() - 0.5) * len);
             cCtx.stroke();
         }
 
+        // --- バンプマップ用（ボロさを出す） ---
         const bumpCanvas = document.createElement('canvas');
         bumpCanvas.width = size;
         bumpCanvas.height = size;
         const bCtx = bumpCanvas.getContext('2d');
         bCtx.fillStyle = '#808080';
         bCtx.fillRect(0, 0, size, size);
-        bCtx.strokeStyle = '#444444'; 
-        bCtx.lineWidth = 2;
-        for (let i = 0; i < 8; i++) {
-            const pos = (i / 8) * size;
-            bCtx.strokeRect(pos, pos, size/4, size/4);
-        }
 
-        bCtx.strokeStyle = '#000000';
-        bCtx.lineWidth = 1;
-        for (let i = 0; i < 30; i++) {
-            let x = Math.random() * size;
-            let y = Math.random() * size;
+        for (let i = 0; i < 120; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = 1 + Math.random() * 20;
+            const grad = bCtx.createRadialGradient(x, y, 0, x, y, r);
+            const isCorrosion = Math.random() > 0.4;
+            const val = isCorrosion ? 0 : 255;
+            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.4)`);
+            grad.addColorStop(1, 'rgba(128, 128, 128, 0)');
+            bCtx.fillStyle = grad;
             bCtx.beginPath();
-            bCtx.moveTo(x, y);
-            for (let j = 0; j < 3; j++) {
-                x += (Math.random() - 0.5) * 40;
-                y += (Math.random() - 0.5) * 40;
-                bCtx.lineTo(x, y);
-            }
-            bCtx.stroke();
+            bCtx.arc(x, y, r, 0, Math.PI * 2);
+            bCtx.fill();
         }
 
         const colorTex = new THREE.CanvasTexture(colorCanvas);

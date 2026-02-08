@@ -39,8 +39,8 @@ export class Scene15 extends SceneBase {
         this.noiseStrength = 50.0;
         this.noiseSpeed = 0.5;
         
-        this.noiseScaleLFO = new RandomLFO(0.005, 0.02, 0.2, 1.5);
-        this.noiseStrengthLFO = new RandomLFO(0.02, 0.1, 30.0, 100.0);
+        this.noiseScaleLFO = new RandomLFO(0.005, 0.02, 0.1, 0.5); // 最大値を1.5から0.5に下げて緩やかに
+        this.noiseStrengthLFO = new RandomLFO(0.02, 0.1, 30.0, 80.0); // 強度も少し抑える
         
         // 圧力エフェクト管理
         this.pressurePoints = []; // 叩かれた地点
@@ -563,8 +563,8 @@ export class Scene15 extends SceneBase {
 
         this.swimTime += deltaTime;
         
-        // ぴょん、ぴょーんのリズム（約8秒周期にして究極にゆったりさせる）
-        const cycle = (this.swimTime * 0.125) % 1.0;
+        // ぴょん、ぴょーんのリズム（約12秒周期にして究極にたゆたわせる）
+        const cycle = (this.swimTime * 0.08) % 1.0;
         
         // 0.0 - 0.4: 溜め（極限までゆっくり縮む）
         // 0.4 - 0.6: 蹴り（超マイルドに加速）
@@ -578,10 +578,10 @@ export class Scene15 extends SceneBase {
             
             // 新しい目標方向をランダムに決める（蹴り出しの最初だけ）
             if (cycle < 0.45 && this.swimPhase !== 1) {
-                const range = 1000; // 移動範囲もさらに限定
+                const range = 800; // 移動範囲をさらに絞る
                 this.targetPosition.set(
                     (Math.random() - 0.5) * range,
-                    400 + (Math.random() - 0.5) * 400, // 中央付近を漂う
+                    400 + (Math.random() - 0.5) * 300,
                     (Math.random() - 0.5) * range
                 );
                 this.swimPhase = 1;
@@ -590,31 +590,35 @@ export class Scene15 extends SceneBase {
             this.swimPhase = 0;
         }
 
-        // 移動処理
-        const dir = this.targetPosition.clone().sub(this.mainMesh.position).normalize();
-        const speed = power * 300 * deltaTime; // スピードを600から300にさらに半減
+        // 移動処理にノイズを混ぜて直線的な動きを排除
+        const noiseX = Math.sin(this.swimTime * 0.5) * 100.0;
+        const noiseY = Math.cos(this.swimTime * 0.3) * 100.0;
+        const noiseZ = Math.sin(this.swimTime * 0.4) * 100.0;
+        const noisyTarget = this.targetPosition.clone().add(new THREE.Vector3(noiseX, noiseY, noiseZ));
+
+        const dir = noisyTarget.sub(this.mainMesh.position).normalize();
+        const speed = power * 150 * deltaTime; // スピードを300から150にさらに半減
         this.swimVelocity.add(dir.multiplyScalar(speed));
-        this.swimVelocity.multiplyScalar(0.98); // 摩擦をさらに強めて、重厚な動きに
+        this.swimVelocity.multiplyScalar(0.99); // 摩擦をさらに強めて、たゆたう感じを出す
         this.mainMesh.position.add(this.swimVelocity);
 
-        // 境界チェック（スタジオ内に収める）
-        const limit = 4000;
-        if (Math.abs(this.mainMesh.position.x) > limit) this.swimVelocity.x *= -1;
-        if (Math.abs(this.mainMesh.position.z) > limit) this.swimVelocity.z *= -1;
-        if (this.mainMesh.position.y < 100 || this.mainMesh.position.y > 4000) this.swimVelocity.y *= -1;
+        // 境界チェック
+        const limit = 3500;
+        if (Math.abs(this.mainMesh.position.x) > limit) this.swimVelocity.x *= -0.5;
+        if (Math.abs(this.mainMesh.position.z) > limit) this.swimVelocity.z *= -0.5;
+        if (this.mainMesh.position.y < 50 || this.mainMesh.position.y > 3500) this.swimVelocity.y *= -0.5;
 
         // 回転処理（進行方向を向く）
-        if (this.swimVelocity.length() > 0.05) {
+        if (this.swimVelocity.length() > 0.02) {
             const lookTarget = this.mainMesh.position.clone().add(this.swimVelocity);
             const dummy = new THREE.Object3D();
             dummy.position.copy(this.mainMesh.position);
             dummy.lookAt(lookTarget);
-            this.mainMesh.quaternion.slerp(dummy.quaternion, 0.02); // 回転もさらにヌル〜ッと
+            this.mainMesh.quaternion.slerp(dummy.quaternion, 0.01); // 回転も極限までゆっくり
         }
 
-        // スクアッシュ＆ストレッチ（伸び縮み）
-        // 加速時に伸びて、溜めで縮む（さらに控えめに）
-        const stretch = 1.0 + power * 0.15 - (cycle < 0.4 ? Math.sin((cycle/0.4) * Math.PI) * 0.1 : 0);
+        // スクアッシュ＆ストレッチ（さらに控えめに）
+        const stretch = 1.0 + power * 0.1 - (cycle < 0.4 ? Math.sin((cycle/0.4) * Math.PI) * 0.05 : 0);
         const squash = 1.0 / Math.sqrt(stretch);
         this.mainMesh.scale.set(squash, stretch, squash);
     }

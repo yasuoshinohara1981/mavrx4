@@ -589,8 +589,8 @@ export class Scene13 extends SceneBase {
                     p.velocity.y *= 0.99; 
                     
                     // はみ出し粒子（Stray）は引力を極限まで弱めて「漂わせる」
-                    const spiralSpringK = 0.1 * p.strayFactor;
-                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0.4 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK);
+                    const spiralSpringK = 0.02 * p.strayFactor; // 0.1 -> 0.02
+                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0.1 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK); // 0.4 -> 0.1
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_TORUS) {
@@ -604,7 +604,7 @@ export class Scene13 extends SceneBase {
                     const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
                     
                     // はみ出し粒子は引力を弱める
-                    const torusSpringK = 0.04 * p.strayFactor;
+                    const torusSpringK = 0.01 * p.strayFactor; // 0.04 -> 0.01
                     tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
                     p.addForce(tempVec);
 
@@ -619,7 +619,7 @@ export class Scene13 extends SceneBase {
                     const tz = 0 + zOffset; // ど真ん中（z=0）に配置
                     
                     // はみ出し粒子は引力を弱める
-                    const wallSpringK = 0.05 * p.strayFactor;
+                    const wallSpringK = 0.01 * p.strayFactor; // 0.05 -> 0.01
                     tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
                     p.addForce(tempVec);
 
@@ -634,7 +634,7 @@ export class Scene13 extends SceneBase {
                     const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
                     
                     // はみ出し粒子は引力を弱める
-                    const waveSpringK = 0.05 * p.strayFactor;
+                    const waveSpringK = 0.01 * p.strayFactor; // 0.05 -> 0.01
                     tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
                     p.addForce(tempVec);
 
@@ -646,7 +646,7 @@ export class Scene13 extends SceneBase {
                         const tz = Math.sin(angle) * radius;
                         const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
                         
-                        const bhSpringK = 0.06 * p.strayFactor;
+                        const bhSpringK = 0.02 * p.strayFactor; // 0.06 -> 0.02
                         tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
                         p.addForce(tempVec);
                     } else {
@@ -655,7 +655,7 @@ export class Scene13 extends SceneBase {
                         const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
                         const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
                         
-                        const jetSpringK = 0.1 * p.strayFactor;
+                        const jetSpringK = 0.02 * p.strayFactor; // 0.1 -> 0.02
                         tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
                         p.addForce(tempVec);
                     }
@@ -671,12 +671,12 @@ export class Scene13 extends SceneBase {
                     const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
                     const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
                     
-                    const pillarSpringK = 0.05 * p.strayFactor;
+                    const pillarSpringK = 0.01 * p.strayFactor; // 0.05 -> 0.01
                     tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_CHAOS) {
-                    const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 2.0 * p.strayFactor;
+                    const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 0.5 * p.strayFactor; // 2.0 -> 0.5
                     tempVec.copy(p.position).normalize().multiplyScalar(force);
                     p.addForce(tempVec);
 
@@ -684,7 +684,7 @@ export class Scene13 extends SceneBase {
                     // 【新】変形モード：球体同相の物体を軸として、歪ませる
                     // 2万個の粒子で巨大な「アメーバ状の球体」を作る
                     const baseRadius = 600;
-                    const noiseSpeed = 1.0;
+                    const noiseSpeed = 0.5; // 1.0 -> 0.5
                     
                     // 球面上の基本位置
                     // idx % 1000 ではなく、全インデックスを使って均等に散らす
@@ -699,14 +699,14 @@ export class Scene13 extends SceneBase {
                     // 時間と位置によるグニャグニャ感
                     const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) * 
                                      Math.cos(ny * 5.0 + this.time * noiseSpeed) * 
-                                     Math.sin(nz * 5.0 + this.time * noiseSpeed) * 200;
+                                     Math.sin(nz * 5.0 + this.time * noiseSpeed) * 100; // 200 -> 100
                     
                     const r = (baseRadius + distortion) * p.radiusOffset;
                     const tx = nx * r;
                     const ty = ny * r + 300;
                     const tz = nz * r;
                     
-                    const springK = 0.04 * p.strayFactor;
+                    const springK = 0.01 * p.strayFactor; // 0.04 -> 0.01
                     tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
                     p.addForce(tempVec);
 
@@ -717,7 +717,7 @@ export class Scene13 extends SceneBase {
                     const tx = p.targetOffset.x;
                     const ty = p.targetOffset.y + 200;
                     const tz = p.targetOffset.z;
-                    const defSpringK = 0.001 * p.strayFactor;
+                    const defSpringK = 0.0005 * p.strayFactor; // 0.001 -> 0.0005
                     tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
                     p.addForce(tempVec);
                 }
@@ -731,11 +731,11 @@ export class Scene13 extends SceneBase {
                 
                 // 全体的な摩擦（空気抵抗）を大幅に強化（0.98 -> 0.92）
                 // これにより痙攣（微振動）を吸収し、しっとりとした動きにする
-                p.velocity.multiplyScalar(0.92); 
+                p.velocity.multiplyScalar(0.95); // 0.92 -> 0.95 少し戻してスムーズに
                 
                 if (this.useWallCollision) {
-                    if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
-                    if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
+                    if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.3; } // 0.5 -> 0.3
+                    if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.3; }
                     
                     // 天井の判定をスタジオサイズに合わせて拡張（1500 -> 4500）
                     // 螺旋モード以外でも高く昇れるようにする
@@ -745,21 +745,21 @@ export class Scene13 extends SceneBase {
                             p.velocity.y *= 0.5;
                         } else {
                             p.position.y = 4500; // 他は跳ね返り
-                            p.velocity.y *= -0.5; 
+                            p.velocity.y *= -0.3; // 0.5 -> 0.3
                         }
                     }
                     
                     if (p.position.y < -450) { 
                         p.position.y = -450; 
-                        p.velocity.y *= -0.2; 
-                        const rollFactor = 0.1 / (p.radius / 30); 
+                        p.velocity.y *= -0.1; // 0.2 -> 0.1
+                        const rollFactor = 0.05 / (p.radius / 30); // 0.1 -> 0.05
                         p.angularVelocity.z = -p.velocity.x * rollFactor;
                         p.angularVelocity.x = p.velocity.z * rollFactor;
-                        p.velocity.x *= 0.97;
-                        p.velocity.z *= 0.97;
+                        p.velocity.x *= 0.98; // 0.97 -> 0.98
+                        p.velocity.z *= 0.98;
                     }
-                    if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.5; }
-                    if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.5; }
+                    if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.3; } // 0.5 -> 0.3
+                    if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.3; }
                 }
                 p.updateRotation(dt);
             }

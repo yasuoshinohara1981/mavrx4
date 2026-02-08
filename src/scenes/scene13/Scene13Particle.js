@@ -56,9 +56,9 @@ export class Scene13Particle extends Particle {
         );
 
         // 物理パラメータの微調整（爆発的な動きに対応できるよう大幅に強化）
-        this.maxSpeed = 200.0;
-        this.maxForce = 500.0;
-        this.friction = 0.02;
+        this.maxSpeed = 30.0; // 200.0 -> 30.0 大幅に下げて落ち着かせる
+        this.maxForce = 2.0;  // 500.0 -> 2.0  引力が強すぎたのを修正
+        this.friction = 0.05; // 0.02 -> 0.05  摩擦を少し強めてブレーキを効かせる
     }
 
     /**

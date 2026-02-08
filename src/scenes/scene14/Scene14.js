@@ -547,7 +547,7 @@ export class Scene14 extends SceneBase {
                 let ty = targetPos.y + (p.isStray ? p.targetOffset.y * 0.5 : 0);
                 let tz = targetPos.z + (p.isStray ? p.targetOffset.z * 0.5 : 0);
 
-                const springK = 0.005 * p.strayFactor; // 0.02 -> 0.005 さらに1/4に！
+                const springK = 0.08 * p.strayFactor;
                 tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
                 p.addForce(tempVec);
 
@@ -557,13 +557,13 @@ export class Scene14 extends SceneBase {
                 const dz = p.position.z - centerZ;
                 const dist = Math.sqrt(dx * dx + dz * dz);
                 if (dist > 10) {
-                    const vortexStrength = p.isStray ? 0.05 : 0.2; // 0.2/0.8 -> 0.05/0.2 さらに1/4に！
+                    const vortexStrength = p.isStray ? 0.5 : 2.0; // はみ出し粒子はゆったり
                     p.addForce(new THREE.Vector3(-dz / dist * vortexStrength, 0, dx / dist * vortexStrength));
                 }
 
                 // 【うごめき】時間による微細な振動を追加（はみ出し粒子はさらにスローに）
-                const wiggleSpeed = p.isStray ? 0.1 : 0.4; // 0.3/1.0 -> 0.1/0.4
-                const wiggleStrength = p.isStray ? 0.3 : 0.6; // 1.0/2.0 -> 0.3/0.6
+                const wiggleSpeed = p.isStray ? 0.5 : 2.0;
+                const wiggleStrength = p.isStray ? 3.0 : 5.0;
                 p.addForce(new THREE.Vector3(
                     Math.sin(this.time * wiggleSpeed + idx) * wiggleStrength,
                     Math.cos(this.time * (wiggleSpeed * 0.8) + idx) * wiggleStrength,
@@ -573,27 +573,27 @@ export class Scene14 extends SceneBase {
                 const tx = p.targetOffset.x;
                 const ty = p.targetOffset.y + 200;
                 const tz = p.targetOffset.z;
-                const defSpringK = 0.0001 * p.strayFactor; // 0.0005 -> 0.0001
+                const defSpringK = 0.001 * p.strayFactor;
                 tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
                 p.addForce(tempVec);
             }
 
             p.update();
-            p.velocity.multiplyScalar(0.98); // 0.95 -> 0.98 減速をさらに強める（1.0に近いほど残るけど、update内の摩擦と合わさるで！）
+            p.velocity.multiplyScalar(0.92); 
             
             if (this.useWallCollision) {
-                if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.1; } // 跳ね返りほぼなし 0.3 -> 0.1
-                if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.1; }
-                if (p.position.y > 4500) { p.position.y = 4500; p.velocity.y *= -0.1; }
+                if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
+                if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
+                if (p.position.y > 4500) { p.position.y = 4500; p.velocity.y *= -0.5; }
                 if (p.position.y < -450) { 
                     p.position.y = -450; 
-                    p.velocity.y *= -0.05; // 0.1 -> 0.05
-                    const rollFactor = 0.02 / (p.radius / 30); // 0.05 -> 0.02
+                    p.velocity.y *= -0.2; 
+                    const rollFactor = 0.1 / (p.radius / 30); 
                     p.angularVelocity.z = -p.velocity.x * rollFactor;
                     p.angularVelocity.x = p.velocity.z * rollFactor;
                 }
-                if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.1; }
-                if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.1; }
+                if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.5; }
+                if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.5; }
             }
             p.updateRotation(deltaTime);
 

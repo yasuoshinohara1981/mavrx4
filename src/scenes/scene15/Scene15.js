@@ -31,7 +31,6 @@ export class Scene15 extends SceneBase {
         // メインメッシュ
         this.mainMesh = null;
         this.material = null;
-        this.cameraLight = null; // カメラ追従ライト
         this.fluorescentLights = [];
         
         // ノイズパラメータとランダムLFO
@@ -39,9 +38,9 @@ export class Scene15 extends SceneBase {
         this.noiseStrength = 50.0;
         this.noiseSpeed = 0.5;
         
-        // 周期（スピード）を大幅に落として、変化をゆったりさせる（第1, 第2引数を小さく）
-        this.noiseScaleLFO = new RandomLFO(0.001, 0.005, 0.1, 0.5); 
-        this.noiseStrengthLFO = new RandomLFO(0.005, 0.02, 30.0, 80.0);
+        // 周期（スピード）を大幅に落として、変化をゆったりさせる（第1, 第2引数をさらに小さく）
+        this.noiseScaleLFO = new RandomLFO(0.0002, 0.001, 0.02, 0.15); // スケールをさらに小さく（粗く）、周期も極限まで遅く
+        this.noiseStrengthLFO = new RandomLFO(0.001, 0.005, 100.0, 250.0); // 強度を大幅アップ、周期も遅く
         
         // 圧力エフェクト管理
         this.pressurePoints = []; // 叩かれた地点
@@ -188,10 +187,6 @@ export class Scene15 extends SceneBase {
         pointLight.shadow.camera.far = 10000;
         pointLight.shadow.bias = -0.001;
         this.scene.add(pointLight);
-
-        // カメラ追従ライト（正面を照らす用）
-        this.cameraLight = new THREE.PointLight(0xffffff, 1.5, 5000);
-        this.scene.add(this.cameraLight);
     }
 
     createStudioBox() {
@@ -217,6 +212,7 @@ export class Scene15 extends SceneBase {
             uniform float uPressureDirections[10];
             varying float vNoise;
             varying float vPressure;
+            varying float vDisplacement; // 変位量をフラグメントシェーダーに渡す
 
             vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
             float permute(float x){return mod(((x*34.0)+1.0)*x, 289.0);}
@@ -308,16 +304,17 @@ export class Scene15 extends SceneBase {
             // 通常のノイズ変形と各種パターン変形をミックス
             float baseDisplacement = noiseValue * uNoiseStrength - totalPressure;
             float displacement = baseDisplacement * (1.0 - uDeformModeTransition) + totalPatternDisplacement * uDeformModeTransition;
+            vDisplacement = displacement; // フラグメントシェーダー用に保存
             vec3 transformed = position + normal * displacement;
         `;
 
         this.material = new THREE.MeshPhysicalMaterial({ 
-            color: 0x111111, // ガッツリ黒に近づける
-            metalness: 0.95, // 金属感を高めて反射を鋭くする
-            roughness: 0.15, // 少し滑らかにしてハイライトを際立たせる
-            envMapIntensity: 2.5, // 環境マップの反射をさらに強めて、黒の中でも形がわかるようにする
-            clearcoat: 1.0,  // クリアコートを追加して高級感を出す
-            clearcoatRoughness: 0.1
+            color: 0x111111, // 漆黒は維持
+            metalness: 0.95, // 元に戻す
+            roughness: 0.15, // 元に戻す（滑らかに）
+            envMapIntensity: 0.5, // 2.5から0.5に大幅に下げて、周囲の白浮きを抑える
+            clearcoat: 0.2,  // クリアコートだけ抑えたままにする
+            clearcoatRoughness: 0.1 // 元に戻す
         });
         this.material.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
@@ -331,6 +328,25 @@ export class Scene15 extends SceneBase {
             shader.vertexShader = noiseShaderChunk + shader.vertexShader;
 
             shader.vertexShader = shader.vertexShader.replace('#include <begin_vertex>', vertexDisplacementChunk);
+            
+            // フラグメントシェーダーにヒートマップロジックを注入
+            shader.fragmentShader = `varying float vDisplacement;\n` + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <dithering_fragment>',
+                `
+                #include <dithering_fragment>
+                // ヒートマップ適用：しきい値を大幅に下げて、少しの変形でも赤くする
+                // 20.0（少し変形）〜150.0（大きく変形）でグラデーション
+                float heat = smoothstep(20.0, 150.0, vDisplacement);
+                vec3 heatColor = vec3(1.0, 0.0, 0.0); // 赤色単色
+                
+                // ベースカラーを赤く染める
+                gl_FragColor.rgb = mix(gl_FragColor.rgb, heatColor, heat * 0.9);
+                
+                // さらに発光（Emissive）成分として赤を足して、光らせる！
+                gl_FragColor.rgb += heatColor * heat * 0.5;
+                `
+            );
             this.material.userData.shader = shader;
         };
 
@@ -434,10 +450,6 @@ export class Scene15 extends SceneBase {
         // カメラを常に物体に向ける（このシーンだけの特別仕様）
         if (this.mainMesh) {
             this.camera.lookAt(this.mainMesh.position);
-            // ライトをカメラの位置に同期
-            if (this.cameraLight) {
-                this.cameraLight.position.copy(this.camera.position);
-            }
         }
 
         if (this.strobeActive) {

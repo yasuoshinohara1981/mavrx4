@@ -18,6 +18,8 @@ export class Scene12 extends SceneBase {
         super(renderer, camera);
         this.title = 'Xenosphere';  // シーンのタイトルを設定
         this.initialized = false;
+        this.sceneNumber = 12;
+        this.kitNo = 29;
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;

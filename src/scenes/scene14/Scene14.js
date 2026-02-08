@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { StudioBox } from '../../lib/StudioBox.js';
@@ -27,13 +28,14 @@ export class Scene14 extends SceneBase {
         
         // Boxの設定
         this.partTypes = 20; // 20種類
-        this.instancesPerType = 800; // 800個
-        this.sphereCount = this.partTypes * this.instancesPerType; // 16000個
+        this.instancesPerType = 500; // 500個 (20 * 500 = 10000)
+        this.sphereCount = this.partTypes * this.instancesPerType; // 10000個
         this.spawnRadius = 1200;  // さらに広げてスケール感を出す（1000 -> 1200）
         
-        // インスタンス管理
+        // メインメッシュ
         this.instancedMeshManagers = []; // 複数のマネージャーを管理
         this.particles = [];
+        this.fluorescentLights = [];
 
         // 空間分割用
         this.gridSize = 120; 
@@ -44,9 +46,11 @@ export class Scene14 extends SceneBase {
         
         // エフェクト設定
         this.useDOF = true;
+        this.useBloom = true; 
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
         this.bokehPass = null;
+        this.bloomPass = null;
         this.ssaoPass = null;
 
         // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
@@ -136,7 +140,7 @@ export class Scene14 extends SceneBase {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        this.showGridRuler3D = true;
+        this.showGridRuler3D = false; // デフォルトでオフ
         this.initGridRuler3D({
             center: { x: 0, y: 0, z: 0 },
             size: { x: 5000, y: 5000, z: 5000 },
@@ -230,7 +234,8 @@ export class Scene14 extends SceneBase {
             size: 10000,
             color: 0xbbbbbb, // 0x888888 -> 0xbbbbbb 少し明るくしてグレーすぎ問題を解消！
             roughness: 0.8,
-            metalness: 0.0
+            metalness: 0.0,
+            useFloorTile: true // タイル床を有効化
         });
     }
 
@@ -441,6 +446,10 @@ export class Scene14 extends SceneBase {
             this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
             this.ssaoPass.kernelRadius = 8;
             this.composer.addPass(this.ssaoPass);
+        }
+        if (this.useBloom) {
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
+            this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
             this.bokehPass = new BokehPass(this.scene, this.camera, {
@@ -910,7 +919,7 @@ export class Scene14 extends SceneBase {
         console.log('Scene14.dispose: クリーンアップ開始');
         if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
-            if (e.light) this.scene.remove(effect.light);
+            if (e.light) this.scene.remove(e.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }
         });
         if (this.instancedMeshManagers) {

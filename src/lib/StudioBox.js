@@ -11,10 +11,15 @@ export class StudioBox {
         this.roughness = options.roughness !== undefined ? options.roughness : 0.4;
         this.metalness = options.metalness !== undefined ? options.metalness : 0.0;
         this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 0.5; // バンプの強さを追加
+        this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true; // デフォルトでタイル床を有効化
+        this.useLights = options.useLights !== undefined ? options.useLights : true; // デフォルトで蛍光灯を有効化
         
         this.studioBox = null;
         this.studioFloor = null;
         this.textures = null;
+        this.floorTextures = null; // 床専用テクスチャ
+        this.fluorescentLights = []; // 蛍光灯メッシュ
+        this.pointLights = []; // 蛍光灯用ポイントライト
 
         this.setup();
     }
@@ -41,10 +46,20 @@ export class StudioBox {
 
         // 床
         const floorGeo = new THREE.PlaneGeometry(this.size, this.size);
+        
+        let floorMap = this.textures.map;
+        let floorBumpMap = this.textures.bumpMap;
+
+        if (this.useFloorTile) {
+            this.floorTextures = this.generateTileTexture();
+            floorMap = this.floorTextures.map;
+            floorBumpMap = this.floorTextures.bumpMap;
+        }
+
         const floorMat = new THREE.MeshStandardMaterial({
             color: this.color,
-            map: this.textures.map,
-            bumpMap: this.textures.bumpMap,
+            map: floorMap,
+            bumpMap: floorBumpMap,
             bumpScale: this.bumpScale * 1.5, // 床はさらに強調
             roughness: this.roughness * 0.75, // 床は少しツヤを出す
             metalness: this.metalness
@@ -54,6 +69,167 @@ export class StudioBox {
         this.studioFloor.position.y = -499;
         this.studioFloor.receiveShadow = true;
         this.scene.add(this.studioFloor);
+
+        // 蛍光灯の作成
+        if (this.useLights) {
+            this.createFluorescentLights();
+        }
+    }
+
+    /**
+     * 巨大な蛍光灯を作成
+     */
+    createFluorescentLights() {
+        const lightHeight = this.size; 
+        const lightRadius = 20; 
+        const cornerDist = (this.size / 2) - 100; 
+        
+        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0xffffff, 
+            emissive: 0xffffff, 
+            emissiveIntensity: 10.0, 
+            envMapIntensity: 1.0 
+        });
+
+        const positions = [
+            [cornerDist, 500, cornerDist], 
+            [-cornerDist, 500, cornerDist], 
+            [cornerDist, 500, -cornerDist], 
+            [-cornerDist, 500, -cornerDist]
+        ];
+
+        positions.forEach(pos => {
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(pos[0], pos[1], pos[2]);
+            this.scene.add(mesh);
+            this.fluorescentLights.push(mesh);
+
+            // 補助ライト（広範囲を照らす）
+            const pointLight = new THREE.PointLight(0xffffff, 1.5, this.size);
+            pointLight.position.set(pos[0], pos[1], pos[2]);
+            this.scene.add(pointLight);
+            this.pointLights.push(pointLight);
+        });
+    }
+
+    /**
+     * タイル床用のテクスチャを生成
+     */
+    generateTileTexture() {
+        const size = 2048; // 解像度を上げて文字を綺麗に
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        // 1. ベースカラー
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(0, 0, size, size);
+
+        // 2. タイルの目地を描画（GridRuler3DのfloorDivisions=100に合わせる）
+        // スタジオサイズ10000に対してdivisions=100なので、1目盛り=100ユニット
+        // テクスチャを repeat(1, 1) で使うように変更して、絶対座標で描画する
+        const divisions = 100;
+        const step = size / divisions;
+        
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.15)';
+        ctx.lineWidth = 1;
+        
+        for (let i = 0; i <= divisions; i++) {
+            const pos = i * step;
+            // 垂直線
+            ctx.beginPath();
+            ctx.moveTo(pos, 0);
+            ctx.lineTo(pos, size);
+            ctx.stroke();
+            // 水平線
+            ctx.beginPath();
+            ctx.moveTo(0, pos);
+            ctx.lineTo(size, pos);
+            ctx.stroke();
+        }
+
+        // 3. 赤い十字と目盛りテキスト（GridRuler3Dのロジックを移植）
+        // labelMax=256, 16刻みでラベル
+        // 座標系は中心(0,0)がテクスチャの中心(size/2, size/2)
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 20px monospace';
+
+        const labelMax = 256;
+        const labelStep = 16;
+        
+        // 座標計算用のヘルパー（-5000〜5000を0〜sizeに変換）
+        const worldToTex = (v) => ((v + 5000) / 10000) * size;
+
+        ctx.font = '500 8px "Inter", "Roboto", "Helvetica Neue", sans-serif'; // さらに小さく、ミニマルなサンセリフ体
+
+        for (let v = -labelMax; v <= labelMax; v += labelStep) {
+            if (v % 16 !== 0) continue; // 16刻み
+            
+            const worldVal = v * (5000 / labelMax);
+            const tx = worldToTex(worldVal);
+            const tyCenter = worldToTex(0);
+
+            // 赤い十字（極小・極細）
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)'; // 少し透明度を上げる
+            ctx.lineWidth = 0.5; // 極細
+            const cs = 3; // 極小
+            ctx.beginPath();
+            ctx.moveTo(tx - cs, tyCenter); ctx.lineTo(tx + cs, tyCenter);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(tx, tyCenter - cs); ctx.lineTo(tx, tyCenter + cs);
+            ctx.stroke();
+
+            // テキスト（極小・ミニマル）
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.35)'; // さらに馴染ませる
+            ctx.fillText(Math.abs(v), tx, tyCenter + 10);
+
+            // Z軸上のラベルと十字
+            const tz = worldToTex(worldVal);
+            const txCenter = worldToTex(0);
+            
+            if (v !== 0) {
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+                ctx.beginPath();
+                ctx.moveTo(txCenter - cs, tz); ctx.lineTo(txCenter + cs, tz);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(txCenter, tz - cs); ctx.lineTo(txCenter, tz + cs);
+                ctx.stroke();
+                ctx.fillText(Math.abs(v), txCenter + 12, tz);
+            }
+        }
+
+        const map = new THREE.CanvasTexture(canvas);
+        map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping; // 繰り返さない
+        map.repeat.set(1, 1);
+
+        // バンプマップ（目地を凹ませる）
+        const bCanvas = document.createElement('canvas');
+        bCanvas.width = size;
+        bCanvas.height = size;
+        const bCtx = bCanvas.getContext('2d');
+        bCtx.fillStyle = '#808080';
+        bCtx.fillRect(0, 0, size, size);
+
+        bCtx.strokeStyle = '#606060';
+        bCtx.lineWidth = 2;
+        for (let i = 0; i <= divisions; i++) {
+            const pos = i * step;
+            bCtx.beginPath();
+            bCtx.moveTo(pos, 0); bCtx.lineTo(pos, size); bCtx.stroke();
+            bCtx.beginPath();
+            bCtx.moveTo(0, pos); bCtx.lineTo(size, pos); bCtx.stroke();
+        }
+
+        const bumpMap = new THREE.CanvasTexture(bCanvas);
+        bumpMap.wrapS = bumpMap.wrapT = THREE.ClampToEdgeWrapping;
+        bumpMap.repeat.set(1, 1);
+
+        return { map, bumpMap };
     }
 
     /**
@@ -183,5 +359,20 @@ export class StudioBox {
             this.textures.map.dispose();
             this.textures.bumpMap.dispose();
         }
+        if (this.floorTextures) {
+            this.floorTextures.map.dispose();
+            this.floorTextures.bumpMap.dispose();
+        }
+        // 蛍光灯のクリーンアップ
+        this.fluorescentLights.forEach(light => {
+            this.scene.remove(light);
+            light.geometry.dispose();
+            light.material.dispose();
+        });
+        this.pointLights.forEach(light => {
+            this.scene.remove(light);
+        });
+        this.fluorescentLights = [];
+        this.pointLights = [];
     }
 }

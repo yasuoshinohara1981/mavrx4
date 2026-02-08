@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { StudioBox } from '../../lib/StudioBox.js';
@@ -34,6 +35,7 @@ export class Scene13 extends SceneBase {
         // インスタンス管理
         this.instancedMeshManager = null;
         this.particles = [];
+        this.fluorescentLights = [];
 
         // 空間分割用
         this.gridSize = 120; 
@@ -44,9 +46,11 @@ export class Scene13 extends SceneBase {
         
         // エフェクト設定
         this.useDOF = true;
+        this.useBloom = true; 
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
         this.bokehPass = null;
+        this.bloomPass = null;
         this.ssaoPass = null;
 
         // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
@@ -106,7 +110,7 @@ export class Scene13 extends SceneBase {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        this.showGridRuler3D = true;
+        this.showGridRuler3D = false; // デフォルトでオフ
         this.initGridRuler3D({
             center: { x: 0, y: 0, z: 0 },
             size: { x: 5000, y: 5000, z: 5000 },
@@ -354,6 +358,10 @@ export class Scene13 extends SceneBase {
             this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
             this.ssaoPass.kernelRadius = 8;
             this.composer.addPass(this.ssaoPass);
+        }
+        if (this.useBloom) {
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
+            this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
             // ボケ味を再調整：ミニチュア感を抑えつつ、適度な被写界深度を出す

@@ -120,7 +120,7 @@ export class Scene15 extends SceneBase {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        this.showGridRuler3D = true;
+        this.showGridRuler3D = false; // デフォルトでオフ
         this.initGridRuler3D({
             center: { x: 0, y: 0, z: 0 },
             size: { x: 5000, y: 5000, z: 5000 },
@@ -135,7 +135,6 @@ export class Scene15 extends SceneBase {
         this.setupLights();
         this.createStudioBox();
         this.createDeformableMesh();
-        this.createFluorescentLights();
         this.initPostProcessing();
         this.initialized = true;
     }
@@ -196,7 +195,8 @@ export class Scene15 extends SceneBase {
             color: 0xbbbbbb, // 色は元に戻す
             roughness: 0.8,
             metalness: 0.0,
-            bumpScale: 5.0 // 凹凸感は維持（シミや割れの凹凸を出すため）
+            bumpScale: 5.0, // 凹凸感は維持（シミや割れの凹凸を出すため）
+            useFloorTile: true // タイル床を有効化
         });
     }
 
@@ -389,22 +389,6 @@ export class Scene15 extends SceneBase {
         this.mainMesh.castShadow = true;
         this.mainMesh.receiveShadow = true;
         this.scene.add(this.mainMesh);
-    }
-
-    createFluorescentLights() {
-        const lightHeight = 10000; const lightRadius = 20; const cornerDist = 4900; 
-        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
-        const material = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 10.0, envMapIntensity: 1.0 });
-        const positions = [[cornerDist, 500, cornerDist], [-cornerDist, 500, cornerDist], [cornerDist, 500, -cornerDist], [-cornerDist, 500, -cornerDist]];
-        positions.forEach(pos => {
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(pos[0], pos[1], pos[2]);
-            this.scene.add(mesh);
-            this.fluorescentLights.push(mesh);
-            const pointLight = new THREE.PointLight(0xffffff, 1.5, 10000);
-            pointLight.position.set(pos[0], pos[1], pos[2]);
-            this.scene.add(pointLight);
-        });
     }
 
     generateFleshTextures() {
@@ -677,7 +661,6 @@ export class Scene15 extends SceneBase {
             this.mainMesh.material.dispose();
             if (this.mainMesh.customDepthMaterial) this.mainMesh.customDepthMaterial.dispose();
         }
-        this.fluorescentLights.forEach(light => { light.geometry.dispose(); light.material.dispose(); this.scene.remove(light); });
         this.fluorescentLights = [];
         this.scanners.forEach(s => { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose(); });
         this.scanners = [];

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
@@ -36,6 +37,7 @@ export class Scene12 extends SceneBase {
         this.instancedMeshManager = null;
         this.lineManager = null; // タコの足（赤い毛）
         this.particles = [];
+        this.fluorescentLights = [];
 
         // 空間分割用
         this.gridSize = 150; // マス目を少し大きくして効率化
@@ -46,10 +48,12 @@ export class Scene12 extends SceneBase {
         
         // エフェクト設定
         this.useDOF = true;
+        this.useBloom = true; 
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
         this.useTacoFeet = true;      // 赤い足オン
         this.bokehPass = null;
+        this.bloomPass = null;
         this.ssaoPass = null;
 
         // トラック3,4(色収差、グリッチ)をデフォルトオフに設定
@@ -120,7 +124,7 @@ export class Scene12 extends SceneBase {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        this.showGridRuler3D = true;
+        this.showGridRuler3D = false; // デフォルトでオフ
         this.initGridRuler3D({
             center: { x: 0, y: 0, z: 0 },
             size: { x: 5000, y: 5000, z: 5000 },
@@ -371,6 +375,10 @@ export class Scene12 extends SceneBase {
             this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
             this.ssaoPass.kernelRadius = 8;
             this.composer.addPass(this.ssaoPass);
+        }
+        if (this.useBloom) {
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
+            this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
             // ピントの芯をクッキリさせつつ、ボケへの移行を自然にするための調整

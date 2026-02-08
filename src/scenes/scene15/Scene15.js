@@ -61,7 +61,8 @@ export class Scene15 extends SceneBase {
 
         // 変形モード管理（時間で自動変化）
         this.deformModeTransition = 0.0; 
-        this.patternTransition = new Float32Array(10).fill(0); // 10パターンの影響度
+        this.patternCount = 15; // 15種類に増やす
+        this.patternTransition = new Float32Array(this.patternCount).fill(0); // パターンの影響度
 
         // クリオネ遊泳アニメーション管理
         this.swimTime = 0;
@@ -200,13 +201,13 @@ export class Scene15 extends SceneBase {
     }
 
     createDeformableMesh() {
-        const geometry = new THREE.IcosahedronGeometry(400, 128); 
+        const geometry = new THREE.IcosahedronGeometry(400, 44); 
         const noiseShaderChunk = `
             uniform float uTime;
             uniform float uNoiseScale;
             uniform float uNoiseStrength;
             uniform float uDeformModeTransition;
-            uniform float uPatternTransition[10];
+            uniform float uPatternTransition[15];
             uniform vec3 uPressurePoints[10];
             uniform float uPressureStrengths[10];
             uniform float uPressureDirections[10];
@@ -274,8 +275,8 @@ export class Scene15 extends SceneBase {
             float latitude = asin(nPos.y);
             float longitude = atan(nPos.z, nPos.x);
             
-            // 10種類の非対称・有機的変形パターン
-            float p[10];
+            // 15種類の非対称・有機的変形パターン
+            float p[15];
             p[0] = sin(longitude * 3.0 + nPos.y * 5.0 + uTime * 2.0 + sin(latitude * 2.0)) * 150.0; // Asymmetric Spiral
             p[1] = snoise(vec4(nPos * 2.5, uTime * 0.5)) * 180.0; // Organic Swell
             p[2] = (sin(nPos.x * 4.0 + uTime) * cos(nPos.y * 3.0 - uTime) * sin(nPos.z * 5.0 + uTime * 0.5)) * 150.0; // Pulsing Distortion
@@ -286,9 +287,16 @@ export class Scene15 extends SceneBase {
             p[7] = sin(nPos.x * 3.0 + nPos.z * 3.0 + uTime * 2.0) * 140.0; // Lateral Sway
             p[8] = (abs(snoise(vec4(nPos * 2.0, uTime * 0.4))) * 200.0) - 100.0; // Bulky Growth
             p[9] = sin(latitude * 8.0 + longitude * 4.0 + uTime * 5.0) * 90.0; // Helical Wave
+            
+            // 追加の奇妙なパターン
+            p[10] = (sin(nPos.x * 15.0) * cos(nPos.z * 15.0) * sin(nPos.y * 2.0 + uTime)) * 100.0; // Spiky Barnacles
+            p[11] = snoise(vec4(nPos.xyz * 0.5, uTime * 0.1)) * 300.0 * pow(abs(nPos.y), 2.0); // Top/Bottom Heavy
+            p[12] = (sin(longitude * 2.0 - uTime) * exp(nPos.y * 2.0)) * 80.0; // Expanding Crown
+            p[13] = (snoise(vec4(nPos * 4.0, uTime)) * snoise(vec4(nPos * 0.5, uTime * 0.2))) * 250.0; // Fractal Chaos
+            p[14] = (sin(latitude * 20.0 + uTime * 10.0) * 30.0) + (sin(longitude * 5.0) * 100.0); // Corrugated Ring
 
             float totalPatternDisplacement = 0.0;
-            for(int i = 0; i < 10; i++) {
+            for(int i = 0; i < 15; i++) {
                 totalPatternDisplacement += p[i] * uPatternTransition[i];
             }
             
@@ -308,13 +316,11 @@ export class Scene15 extends SceneBase {
             vec3 transformed = position + normal * displacement;
         `;
 
-        this.material = new THREE.MeshPhysicalMaterial({ 
-            color: 0x111111, // 漆黒は維持
-            metalness: 0.95, // 元に戻す
-            roughness: 0.15, // 元に戻す（滑らかに）
-            envMapIntensity: 0.5, // 2.5から0.5に大幅に下げて、周囲の白浮きを抑える
-            clearcoat: 0.2,  // クリアコートだけ抑えたままにする
-            clearcoatRoughness: 0.1 // 元に戻す
+        this.material = new THREE.MeshStandardMaterial({ 
+            color: 0x050505, // 深い黒
+            metalness: 1.0,  // 金属感
+            roughness: 0.1,  // ツルツル
+            envMapIntensity: 0.2, // 1.5から0.2に大幅に下げて、縁の白浮きを抑える
         });
         this.material.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
@@ -335,16 +341,27 @@ export class Scene15 extends SceneBase {
                 '#include <dithering_fragment>',
                 `
                 #include <dithering_fragment>
-                // ヒートマップ適用：しきい値を大幅に下げて、少しの変形でも赤くする
-                // 20.0（少し変形）〜150.0（大きく変形）でグラデーション
-                float heat = smoothstep(20.0, 150.0, vDisplacement);
-                vec3 heatColor = vec3(1.0, 0.0, 0.0); // 赤色単色
+                // ヒートマップ適用：しきい値を極限まで下げて、わずかな変形でも色が変わるように
+                // 2.0（ごくわずかな変形）〜80.0（中程度の変形）でグラデーション
+                float heat = smoothstep(2.0, 80.0, vDisplacement);
                 
-                // ベースカラーを赤く染める
-                gl_FragColor.rgb = mix(gl_FragColor.rgb, heatColor, heat * 0.9);
+                // 標準的なヒートマップ色（青 -> 緑 -> 黄 -> 赤）
+                vec3 heatColor;
+                if (heat < 0.25) {
+                    heatColor = mix(vec3(0.0, 0.0, 1.0), vec3(0.0, 1.0, 1.0), heat * 4.0); // 青 -> シアン
+                } else if (heat < 0.5) {
+                    heatColor = mix(vec3(0.0, 1.0, 1.0), vec3(0.0, 1.0, 0.0), (heat - 0.25) * 4.0); // シアン -> 緑
+                } else if (heat < 0.75) {
+                    heatColor = mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), (heat - 0.5) * 4.0); // 緑 -> 黄
+                } else {
+                    heatColor = mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), (heat - 0.75) * 4.0); // 黄 -> 赤
+                }
                 
-                // さらに発光（Emissive）成分として赤を足して、光らせる！
-                gl_FragColor.rgb += heatColor * heat * 0.5;
+                // ベースカラーを染める
+                gl_FragColor.rgb = mix(gl_FragColor.rgb, heatColor, heat * 1.0); // 黒を完全に上書き
+                
+                // さらに発光（Emissive）成分として足して、サーモグラフィっぽく光らせる！
+                gl_FragColor.rgb += heatColor * heat * 1.5; // 発光強度をさらにアップ
                 `
             );
             this.material.userData.shader = shader;
@@ -375,16 +392,16 @@ export class Scene15 extends SceneBase {
     }
 
     createFluorescentLights() {
-        const lightHeight = 5000; const lightRadius = 5; const cornerDist = 4500; 
-        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 16);
-        const material = new THREE.MeshPhysicalMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 40.0, envMapIntensity: 1.0 });
+        const lightHeight = 10000; const lightRadius = 20; const cornerDist = 4900; 
+        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
+        const material = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 10.0, envMapIntensity: 1.0 });
         const positions = [[cornerDist, 500, cornerDist], [-cornerDist, 500, cornerDist], [cornerDist, 500, -cornerDist], [-cornerDist, 500, -cornerDist]];
         positions.forEach(pos => {
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(pos[0], pos[1], pos[2]);
             this.scene.add(mesh);
             this.fluorescentLights.push(mesh);
-            const pointLight = new THREE.PointLight(0xffffff, 1.5, 5000);
+            const pointLight = new THREE.PointLight(0xffffff, 1.5, 10000);
             pointLight.position.set(pos[0], pos[1], pos[2]);
             this.scene.add(pointLight);
         });
@@ -407,7 +424,7 @@ export class Scene15 extends SceneBase {
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
         if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2), 0.2, 0.1, 1.2);
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
@@ -429,23 +446,29 @@ export class Scene15 extends SceneBase {
         // 約30秒周期で通常と特殊変形を行き来する
         this.deformModeTransition = Math.pow(Math.sin(this.time * 0.07), 2.0); 
 
-        // どのパターンを表示するかを時間で切り替える（10パターンを巡回）
-        const cycleSpeed = 0.1;
-        for (let i = 0; i < 10; i++) {
-            const offset = (i / 10) * Math.PI * 2;
+        // どのパターンを表示するかを時間で切り替える（15パターンを巡回）
+        const cycleSpeed = 0.15; // 少し速めて変化を見やすく
+        for (let i = 0; i < this.patternCount; i++) {
+            const offset = (i / this.patternCount) * Math.PI * 2;
             this.patternTransition[i] = Math.max(0, Math.sin(this.time * cycleSpeed + offset));
         }
         
         // 合計が1になるように正規化（滑らかなブレンドのため）
         let sum = 0;
-        for (let i = 0; i < 10; i++) sum += this.patternTransition[i];
+        for (let i = 0; i < this.patternCount; i++) sum += this.patternTransition[i];
         if (sum > 0) {
-            for (let i = 0; i < 10; i++) this.patternTransition[i] /= sum;
+            for (let i = 0; i < this.patternCount; i++) this.patternTransition[i] /= sum;
         }
 
         if (this.mainMesh) this.mainMesh.visible = this.showMainMesh;
         
-        this.updateSwimming(deltaTime);
+        // 漂う動きを停止（位置を固定）
+        if (this.mainMesh) {
+            this.mainMesh.position.set(0, 400, 0);
+            this.mainMesh.scale.set(1, 1, 1);
+            // 回転もリセットしたい場合は以下を追加
+            // this.mainMesh.rotation.set(0, 0, 0);
+        }
 
         // カメラを常に物体に向ける（このシーンだけの特別仕様）
         if (this.mainMesh) {

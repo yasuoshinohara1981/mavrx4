@@ -165,7 +165,6 @@ export class Scene14 extends SceneBase {
         this.setupLights();
         this.createStudioBox();
         this.createSpheres();
-        this.createFluorescentLights(); // シーン14固有の蛍光灯を作成
         this.initPostProcessing();
         this.initialized = true;
     }
@@ -242,43 +241,8 @@ export class Scene14 extends SceneBase {
             roughness: 0.8,
             metalness: 0.0,
             useFloorTile: true, // タイル床を有効化
-            useLights: false    // デフォルトの蛍光灯はオフにして、個別で作成する
+            useLights: true    // デフォルトの蛍光灯（4隅）を有効化
         });
-    }
-
-    createFluorescentLights() {
-        const numLights = 6;
-        const lightHeight = 2500; 
-        const lightRadius = 15;   
-        const circleRadius = 3000; // シーン14固有の円形配置
-        
-        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0xffffff, 
-            emissive: 0xffffff, 
-            emissiveIntensity: 10.0, // 強度を戻す
-            envMapIntensity: 1.0 
-        });
-
-        for (let i = 0; i < numLights; i++) {
-            const angle = (i / numLights) * Math.PI * 2;
-            const x = Math.cos(angle) * circleRadius;
-            const z = Math.sin(angle) * circleRadius;
-            const y = 500; 
-
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(x, y, z);
-            this.scene.add(mesh);
-            this.fluorescentLights.push(mesh);
-
-            // 補助ライト（テスト：一旦コメントアウトして消してみる）
-            /*
-            const pointLight = new THREE.PointLight(0xffffff, 1.5, 5000);
-            pointLight.position.set(x, y, z);
-            this.scene.add(pointLight);
-            this.fluorescentLights.push(pointLight);
-            */
-        }
     }
 
     /**

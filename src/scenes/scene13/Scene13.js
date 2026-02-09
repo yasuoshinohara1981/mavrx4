@@ -90,6 +90,15 @@ export class Scene13 extends SceneBase {
     }
     
     /**
+     * カメラパーティクルの距離パラメータを設定
+     */
+    setupCameraParticleDistance(cameraParticle) {
+        cameraParticle.minDistance = 400;
+        cameraParticle.maxDistance = 3000;
+        cameraParticle.minY = -450; // 地面より下に行かないように制限
+    }
+
+    /**
      * セットアップ処理
      */
     async setup() {

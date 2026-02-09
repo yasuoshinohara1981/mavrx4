@@ -77,7 +77,7 @@ export class StudioBox {
     }
 
     /**
-     * 巨大な蛍光灯を作成
+     * 巨大な蛍光灯を作成（デフォルト：四隅に4本）
      */
     createFluorescentLights() {
         const lightHeight = this.size; 
@@ -105,11 +105,13 @@ export class StudioBox {
             this.scene.add(mesh);
             this.fluorescentLights.push(mesh);
 
-            // 補助ライト（広範囲を照らす）
+            // 補助ライト（テスト：一旦全部切ってみる）
+            /*
             const pointLight = new THREE.PointLight(0xffffff, 1.5, this.size);
             pointLight.position.set(pos[0], pos[1], pos[2]);
             this.scene.add(pointLight);
             this.pointLights.push(pointLight);
+            */
         });
     }
 

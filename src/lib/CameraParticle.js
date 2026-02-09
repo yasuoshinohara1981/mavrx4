@@ -24,6 +24,7 @@ export class CameraParticle extends Particle {
         // 立方体の境界（nullの場合は球体の制限を使用）
         this.boxMin = null;
         this.boxMax = null;
+        this.minY = -Infinity; // Y座標の下限
         this.bounceDamping = 0.8;
         
         // 回転
@@ -141,6 +142,14 @@ export class CameraParticle extends Particle {
             if (this.position.length() > this.maxDistance) {
                 this.position.normalize();
                 this.position.multiplyScalar(this.maxDistance);
+            }
+        }
+
+        // Y座標の下限を適用
+        if (this.position.y < this.minY) {
+            this.position.y = this.minY;
+            if (this.velocity.y < 0) {
+                this.velocity.y *= -this.bounceDamping; // 地面で跳ね返る
             }
         }
         

@@ -120,6 +120,15 @@ export class Scene14 extends SceneBase {
     }
 
     /**
+     * カメラパーティクルの距離パラメータを設定
+     */
+    setupCameraParticleDistance(cameraParticle) {
+        cameraParticle.minDistance = 400;
+        cameraParticle.maxDistance = 3000;
+        cameraParticle.minY = -450; // 地面より下に行かないように制限
+    }
+
+    /**
      * 初期セットアップ
      */
     async setup() {
@@ -153,6 +162,7 @@ export class Scene14 extends SceneBase {
         this.setupLights();
         this.createStudioBox();
         this.createSpheres();
+        this.createFluorescentLights(); // シーン14固有の蛍光灯を作成
         this.initPostProcessing();
         this.initialized = true;
     }
@@ -168,7 +178,7 @@ export class Scene14 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        // 環境マッピング（質感のために残す）
+        // 環境マッピング（質感のために標準的なものに戻す）
         const genEnvMap = () => {
             const size = 512;
             const canvas = document.createElement('canvas');
@@ -176,16 +186,14 @@ export class Scene14 extends SceneBase {
             canvas.height = size;
             const ctx = canvas.getContext('2d');
             
-            // 天井を真っ白にしたグラデーション（金属の映り込み用）
             const grad = ctx.createLinearGradient(0, 0, 0, size);
-            grad.addColorStop(0, '#ffffff'); // 天井側（真っ白！）
-            grad.addColorStop(0.3, '#ffffff'); // 少し広めに白を確保
-            grad.addColorStop(0.7, '#111111'); // 壁面（暗い）
-            grad.addColorStop(1, '#000000'); // 床側（真っ黒）
+            grad.addColorStop(0, '#ffffff'); 
+            grad.addColorStop(0.3, '#ffffff'); 
+            grad.addColorStop(0.7, '#111111'); 
+            grad.addColorStop(1, '#000000'); 
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, size, size);
             
-            // スタジオ照明の映り込みをシミュレート（強烈な白）
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(size * 0.1, size * 0.1, size * 0.2, size * 0.6); 
             ctx.fillRect(size * 0.6, size * 0.3, size * 0.3, size * 0.2);
@@ -198,30 +206,25 @@ export class Scene14 extends SceneBase {
         const envMap = genEnvMap();
         this.scene.environment = envMap; 
 
-        // 3. DirectionalLight (影の範囲を極限まで広げて、黒い三角を消滅させるで！)
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(2000, 3000, 2000); // 位置も少し遠ざけて全体をカバー
+        directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
-        
-        // 影の範囲をスタジオサイズに合わせて超拡大！
         directionalLight.shadow.camera.left = -8000;
         directionalLight.shadow.camera.right = 8000;
         directionalLight.shadow.camera.top = 8000;
         directionalLight.shadow.camera.bottom = -8000;
         directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 15000; // 5000 -> 15000 これが短いと端っこが欠けるんや！
-        
+        directionalLight.shadow.camera.far = 15000;
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.bias = -0.0001; // バイアスも微調整
+        directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        // 4. PointLight (中心からの影も範囲拡大)
         const pointLight = new THREE.PointLight(0xffffff, 2.5, 5000); 
         pointLight.position.set(0, 500, 0); 
         pointLight.castShadow = true; 
         pointLight.shadow.camera.near = 10;
-        pointLight.shadow.camera.far = 10000; // 4000 -> 10000
+        pointLight.shadow.camera.far = 10000;
         pointLight.shadow.bias = -0.001;
         this.scene.add(pointLight);
     }
@@ -235,8 +238,44 @@ export class Scene14 extends SceneBase {
             color: 0xbbbbbb, // 0x888888 -> 0xbbbbbb 少し明るくしてグレーすぎ問題を解消！
             roughness: 0.8,
             metalness: 0.0,
-            useFloorTile: true // タイル床を有効化
+            useFloorTile: true, // タイル床を有効化
+            useLights: false    // デフォルトの蛍光灯はオフにして、個別で作成する
         });
+    }
+
+    createFluorescentLights() {
+        const numLights = 6;
+        const lightHeight = 2500; 
+        const lightRadius = 15;   
+        const circleRadius = 3000; // シーン14固有の円形配置
+        
+        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0xffffff, 
+            emissive: 0xffffff, 
+            emissiveIntensity: 10.0, // 強度を戻す
+            envMapIntensity: 1.0 
+        });
+
+        for (let i = 0; i < numLights; i++) {
+            const angle = (i / numLights) * Math.PI * 2;
+            const x = Math.cos(angle) * circleRadius;
+            const z = Math.sin(angle) * circleRadius;
+            const y = 500; 
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            this.scene.add(mesh);
+            this.fluorescentLights.push(mesh);
+
+            // 補助ライト（テスト：一旦コメントアウトして消してみる）
+            /*
+            const pointLight = new THREE.PointLight(0xffffff, 1.5, 5000);
+            pointLight.position.set(x, y, z);
+            this.scene.add(pointLight);
+            this.fluorescentLights.push(pointLight);
+            */
+        }
     }
 
     /**
@@ -245,13 +284,13 @@ export class Scene14 extends SceneBase {
     createSpheres() {
         const textures = this.generateFleshTextures();
         const metalMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, // テクスチャの色をそのまま出すために白に設定
+            color: 0xffffff, // テクスチャの色をそのまま出す
             map: textures.map, 
             bumpMap: textures.bumpMap,
-            bumpScale: 5.0,  // 凹凸を強めてボロさを出す
-            metalness: 0.6,  // 金属感を少し戻してハイライトを出す
-            roughness: 0.6,  // 少し滑らかにして光を拾いやすくする
-            envMapIntensity: 1.0 // 環境マップの映り込みを標準に戻す
+            bumpScale: 5.0,  // ボロさを維持
+            metalness: 0.5,  // 標準的な金属感
+            roughness: 0.6,  // 少しマット
+            envMapIntensity: 1.0 // 標準的な映り込み
         });
 
         // 20種類のジオメトリを定義（AKIRAっぽいメカニカルパーツ）
@@ -947,6 +986,12 @@ export class Scene14 extends SceneBase {
             this.instancedMeshManagers.forEach(m => m.dispose());
             this.instancedMeshManagers = [];
         }
+        this.fluorescentLights.forEach(obj => {
+            this.scene.remove(obj);
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) obj.material.dispose();
+        });
+        this.fluorescentLights = [];
         if (this.bokehPass) {
             if (this.composer) {
                 const idx = this.composer.passes.indexOf(this.bokehPass);

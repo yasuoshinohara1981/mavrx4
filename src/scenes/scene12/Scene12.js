@@ -110,6 +110,15 @@ export class Scene12 extends SceneBase {
     }
     
     /**
+     * カメラパーティクルの距離パラメータを設定
+     */
+    setupCameraParticleDistance(cameraParticle) {
+        cameraParticle.minDistance = 400;
+        cameraParticle.maxDistance = 3000;
+        cameraParticle.minY = -450; // 地面より下に行かないように制限
+    }
+    
+    /**
      * セットアップ処理
      */
     async setup() {
@@ -166,12 +175,6 @@ export class Scene12 extends SceneBase {
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         this.scene.add(directionalLight);
-
-        // デバッグ用（必要に応じてコメント解除）
-        // const helper = new THREE.DirectionalLightHelper(directionalLight, 100);
-        // this.scene.add(helper);
-        // const shadowHelper = new THREE.CameraHelper(directionalLight.shadow.camera);
-        // this.scene.add(shadowHelper);
 
         // 「光の漏れ」を演出するための中心光源（シャドウあり）
         const pointLight = new THREE.PointLight(0xffffff, 2.5, 2500); // 強度を2.0から2.5にアップ

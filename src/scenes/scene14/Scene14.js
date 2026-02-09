@@ -66,31 +66,34 @@ export class Scene14 extends SceneBase {
             9: false  // 未割り当て
         };
 
-        // モード管理（20パターンの幾何学モード！）
+        // モード管理（超能力・サイキックモード！）
         this.MODE_DEFAULT = 0;
-        this.MODE_RINGS   = 1;
-        this.MODE_CUBE    = 2;
-        this.MODE_PYRAMID = 3;
-        this.MODE_CYLINDER = 4;
-        this.MODE_DOUBLE_HELIX = 5;
-        this.MODE_GRID_WALL = 6;
-        this.MODE_SINE_WAVE = 7;
-        this.MODE_CROSS = 8;
-        this.MODE_STAR = 9;
-        this.MODE_HOURGLASS = 10;
-        this.MODE_DIAMOND = 11;
-        this.MODE_HEXAGON = 12;
-        this.MODE_DNA = 13;
-        this.MODE_SATURN = 14;
-        this.MODE_CUBE_FRAME = 15;
-        this.MODE_GALAXY = 16;
-        this.MODE_CONE = 17;
-        this.MODE_MOBIUS = 18;
-        this.MODE_FRACTAL_CUBES = 19;
+        this.MODE_TELEKINESIS_SWIRL = 1;
+        this.MODE_PSYCHIC_SHIELD = 2;
+        this.MODE_SPATIAL_DISTORTION = 3;
+        this.MODE_NEURAL_NETWORK = 4;
+        this.MODE_GRAVITY_WELL = 5;
+        this.MODE_LEVITATION_FIELD = 6;
+        this.MODE_SINGULARITY = 7;
+        this.MODE_PSYCHOMETRY = 8;
+        this.MODE_TELEPORT_BLINK = 9;
+        this.MODE_CHRONOS_STASIS = 10;
+        this.MODE_PSYCHIC_RINGS = 11; // 復活！サークル4つ斜め配置
+        this.MODE_PYROKINESIS = 12;
+        this.MODE_CRYOKINESIS = 13;
+        this.MODE_ELECTROKINESIS = 14;
+        this.MODE_AURA_BURST = 15;
+        this.MODE_VOID_EATER = 16;
+        this.MODE_DIMENSION_GATE = 17;
+        this.MODE_MIND_CONTROL = 18;
+        this.MODE_ASTRAL_PROJECTION = 19;
+        this.MODE_COSMIC_REVELATION = 20; // 1つずらして20個に調整や！
+        this.MODE_PSYCHIC_COLLAPSE = 21; // 静止 → 中心へ引力
+        this.MODE_GRAVITY_SHOCK = 22;    // 爆発 → 重力落下
 
         this.currentMode = this.MODE_DEFAULT;
         this.modeTimer = 0;
-        this.modeInterval = 10.0; // 10秒ごとにモードチェンジ
+        this.modeInterval = 12.0; // 少し長めにして演出を見せるで！
 
         // 物理演算パラメータ
         this.useGravity = false;
@@ -560,8 +563,20 @@ export class Scene14 extends SceneBase {
         this.modeTimer += deltaTime;
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
-            this.currentMode = (this.currentMode + 1) % 20;
+            const oldMode = this.currentMode;
+            this.currentMode = (this.currentMode + 1) % 23; // 21 -> 23 に修正や！
             console.log(`Mode Switched: ${this.currentMode}`);
+            
+            // モード切り替え時の演出
+            if (this.currentMode === this.MODE_SINGULARITY || oldMode === this.MODE_GRAVITY_WELL) {
+                this.triggerExpandEffect(100); // 弾けるような演出
+            } else {
+                // 通常の切り替えでも少し揺らす
+                this.particles.forEach(p => {
+                    p.velocity.add(new THREE.Vector3((Math.random()-0.5)*50, (Math.random()-0.5)*50, (Math.random()-0.5)*50));
+                });
+            }
+
             this.applyCameraModeForMovement();
         }
 
@@ -611,33 +626,79 @@ export class Scene14 extends SceneBase {
             if (this.currentMode !== this.MODE_DEFAULT && targets) {
                 const targetPos = targets[idx % targets.length];
                 
-                // はみ出し粒子（isStray）の散らしを「ハエ」にならない程度に抑制（2.0 -> 0.5）
+                // はみ出し粒子（isStray）の散らしを「ハエ」にならない程度に抑制
                 let tx = targetPos.x + (p.isStray ? p.targetOffset.x * 0.5 : 0);
                 let ty = targetPos.y + (p.isStray ? p.targetOffset.y * 0.5 : 0);
                 let tz = targetPos.z + (p.isStray ? p.targetOffset.z * 0.5 : 0);
 
-                const springK = 0.08 * p.strayFactor;
+                // 【サイキック・エフェクト：空間の呼吸】
+                const breatheScale = 1.0 + Math.sin(this.time * 2.0 + (idx % 10)) * 0.05;
+                tx *= breatheScale;
+                ty *= breatheScale;
+                tz *= breatheScale;
+
+                let springK = 0.08 * p.strayFactor;
+
+                // --- 特殊モード固有の物理ロジック ---
+                if (this.currentMode === this.MODE_PSYCHIC_COLLAPSE) {
+                    // 静止 → 中心へ引力
+                    const pauseDuration = 3.0; // 3秒間静止
+                    if (this.modeTimer < pauseDuration) {
+                        springK = 0; // 力をゼロにして静止
+                        p.velocity.multiplyScalar(0.85); // 急ブレーキ
+                    } else {
+                        // 引力フェーズ
+                        const pullProgress = (this.modeTimer - pauseDuration) / (this.modeInterval - pauseDuration);
+                        springK = 0.01 + pullProgress * 0.2; // 徐々に引力を強く
+                    }
+                } else if (this.currentMode === this.MODE_GRAVITY_SHOCK) {
+                    // 爆発 → 重力落下
+                    const explosionDuration = 1.0; // 1秒間爆発
+                    if (this.modeTimer < explosionDuration) {
+                        springK = 0;
+                        if (this.modeTimer < 0.1) { // 最初の瞬間だけ外側へ
+                            const dir = p.position.clone().normalize();
+                            p.velocity.add(dir.multiplyScalar(200));
+                        }
+                    } else {
+                        // 重力落下フェーズ（ターゲットは既に床に設定されている）
+                        springK = 0.05;
+                        p.addForce(new THREE.Vector3(0, -20, 0)); // 追加の重力
+                    }
+                }
+
                 tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
                 p.addForce(tempVec);
 
-                // 【循環フォース】図形の中でパーツをぐるぐる回すで！🌀
+                // 【循環フォース】
                 const centerX = 0; const centerZ = 0;
                 const dx = p.position.x - centerX;
                 const dz = p.position.z - centerZ;
                 const dist = Math.sqrt(dx * dx + dz * dz);
                 if (dist > 10) {
-                    const vortexStrength = p.isStray ? 0.5 : 2.0; // はみ出し粒子はゆったり
+                    let vortexStrength = p.isStray ? 0.5 : 2.0;
+                    // モードによって回転の強さを変える
+                    if (this.currentMode === this.MODE_SINGULARITY) vortexStrength *= 5.0;
+                    if (this.currentMode === this.MODE_CHRONOS_STASIS || this.currentMode === this.MODE_PSYCHIC_COLLAPSE || this.currentMode === this.MODE_GRAVITY_SHOCK) vortexStrength *= 0.1;
+                    
                     p.addForce(new THREE.Vector3(-dz / dist * vortexStrength, 0, dx / dist * vortexStrength));
                 }
 
-                // 【うごめき】時間による微細な振動を追加（はみ出し粒子はさらにスローに）
-                const wiggleSpeed = p.isStray ? 0.5 : 2.0;
-                const wiggleStrength = p.isStray ? 3.0 : 5.0;
+                // 【うごめき】
+                let wiggleSpeed = p.isStray ? 0.5 : 2.0;
+                let wiggleStrength = p.isStray ? 3.0 : 5.0;
+                if (this.currentMode === this.MODE_PSYCHIC_COLLAPSE && this.modeTimer < 3.0) wiggleStrength = 0; // 静止中はうごめかない
+                
                 p.addForce(new THREE.Vector3(
                     Math.sin(this.time * wiggleSpeed + idx) * wiggleStrength,
                     Math.cos(this.time * (wiggleSpeed * 0.8) + idx) * wiggleStrength,
                     Math.sin(this.time * (wiggleSpeed * 0.9) + idx) * wiggleStrength
                 ));
+
+                // 【サイキック・グリッチ：テレポート風の瞬き】
+                if (this.currentMode === this.MODE_TELEPORT_BLINK && Math.random() < 0.01) {
+                    p.position.add(new THREE.Vector3((Math.random()-0.5)*200, (Math.random()-0.5)*200, (Math.random()-0.5)*200));
+                }
             } else {
                 const tx = p.targetOffset.x;
                 const ty = p.targetOffset.y + 200;
@@ -679,7 +740,128 @@ export class Scene14 extends SceneBase {
         const center = new THREE.Vector3(0, 400, 0);
 
         switch(mode) {
-            case this.MODE_RINGS: 
+            case this.MODE_TELEKINESIS_SWIRL: // 念動力の渦
+                for (let i = 0; i < count; i++) {
+                    const r = 200 + Math.random() * 1000;
+                    const theta = (i / count) * Math.PI * 20 + Math.random() * 0.5;
+                    const h = (Math.random() - 0.5) * 1500;
+                    targets.push(new THREE.Vector3(
+                        Math.cos(theta) * r,
+                        h + 400,
+                        Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_PSYCHIC_SHIELD: // サイキック・バリア
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(Math.random()); // 半球
+                    const r = 1200 + Math.sin(theta * 5) * 50; // 波打つ表面
+                    targets.push(new THREE.Vector3(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.cos(phi) - 200,
+                        r * Math.sin(phi) * Math.sin(theta)
+                    ));
+                }
+                break;
+
+            case this.MODE_SPATIAL_DISTORTION: // 空間歪曲
+                for (let i = 0; i < count; i++) {
+                    const r = Math.sqrt(Math.random()) * 1500;
+                    const theta = Math.random() * Math.PI * 2;
+                    // 中心が凹んだレンズ状
+                    const h = (Math.pow(r / 1500, 2) - 0.5) * 800;
+                    targets.push(new THREE.Vector3(
+                        Math.cos(theta) * r,
+                        h + 400,
+                        Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_NEURAL_NETWORK: // 精神感応（ニューラルネットワーク）
+                const nodes = [];
+                for(let j=0; j<20; j++) nodes.push(new THREE.Vector3((Math.random()-0.5)*2000, (Math.random()-0.5)*1500 + 400, (Math.random()-0.5)*2000));
+                for (let i = 0; i < count; i++) {
+                    const nodeIdx = Math.floor(Math.random() * nodes.length);
+                    const nextNodeIdx = (nodeIdx + 1) % nodes.length;
+                    const t = Math.random();
+                    const p = nodes[nodeIdx].clone().lerp(nodes[nextNodeIdx], t);
+                    p.add(new THREE.Vector3((Math.random()-0.5)*100, (Math.random()-0.5)*100, (Math.random()-0.5)*100));
+                    targets.push(p);
+                }
+                break;
+
+            case this.MODE_GRAVITY_WELL: // 重力井戸
+                for (let i = 0; i < count; i++) {
+                    const r = Math.pow(Math.random(), 2.0) * 2000;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    targets.push(new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * r,
+                        Math.cos(phi) * r + 400,
+                        Math.sin(phi) * Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_LEVITATION_FIELD: // 浮遊フィールド
+                for (let i = 0; i < count; i++) {
+                    targets.push(new THREE.Vector3(
+                        (Math.random() - 0.5) * 3000,
+                        (Math.random() - 0.5) * 1000 + 800,
+                        (Math.random() - 0.5) * 3000
+                    ));
+                }
+                break;
+
+            case this.MODE_SINGULARITY: // 特異点
+                for (let i = 0; i < count; i++) {
+                    const r = Math.pow(Math.random(), 5.0) * 500;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    targets.push(new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * r,
+                        Math.cos(phi) * r + 400,
+                        Math.sin(phi) * Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_PSYCHOMETRY: // サイコメトリー（断片的な記憶）
+                for (let i = 0; i < count; i++) {
+                    const cluster = Math.floor(Math.random() * 5);
+                    const cPos = new THREE.Vector3((cluster-2)*600, 400 + Math.sin(cluster)*200, (Math.random()-0.5)*400);
+                    targets.push(cPos.add(new THREE.Vector3((Math.random()-0.5)*300, (Math.random()-0.5)*300, (Math.random()-0.5)*300)));
+                }
+                break;
+
+            case this.MODE_TELEPORT_BLINK: // テレポート・ブリンク
+                for (let i = 0; i < count; i++) {
+                    const side = Math.random() > 0.5 ? 1 : -1;
+                    targets.push(new THREE.Vector3(
+                        side * (800 + Math.random() * 400),
+                        400 + (Math.random()-0.5)*800,
+                        (Math.random()-0.5)*1200
+                    ));
+                }
+                break;
+
+            case this.MODE_CHRONOS_STASIS: // 時間停止（静止した爆発）
+                for (let i = 0; i < count; i++) {
+                    const r = 500 + Math.random() * 1500;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    targets.push(new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * r,
+                        Math.cos(phi) * r + 400,
+                        Math.sin(phi) * Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_PSYCHIC_RINGS: // 復活！サイキック・リング（サークル4つ斜め）
                 const ringRadius = 800;
                 const zSpacing = 800;
                 for (let r = 0; r < 4; r++) {
@@ -695,214 +877,34 @@ export class Scene14 extends SceneBase {
                 }
                 break;
 
-            case this.MODE_CUBE: 
-                const size = 1200;
+            case this.MODE_PSYCHIC_COLLAPSE: // 静止 → 中心へ引力
+                // ターゲットは中心一点
                 for (let i = 0; i < count; i++) {
-                    const side = Math.floor(Math.random() * 6);
-                    const u = Math.random() - 0.5;
-                    const v = Math.random() - 0.5;
-                    const p = new THREE.Vector3();
-                    if (side === 0) p.set(0.5, u, v);
-                    else if (side === 1) p.set(-0.5, u, v);
-                    else if (side === 2) p.set(u, 0.5, v);
-                    else if (side === 3) p.set(u, -0.5, v);
-                    else if (side === 4) p.set(u, v, 0.5);
-                    else p.set(u, v, -0.5);
-                    targets.push(p.multiplyScalar(size).add(center));
+                    targets.push(new THREE.Vector3(0, 400, 0));
                 }
                 break;
 
-            case this.MODE_PYRAMID: 
-                const pSize = 1500;
+            case this.MODE_GRAVITY_SHOCK: // 爆発 → 重力落下
+                // ターゲットは床一面に広がる
                 for (let i = 0; i < count; i++) {
-                    const r1 = Math.random();
-                    const p = new THREE.Vector3();
-                    if (r1 < 0.25) { 
-                        p.set(Math.random() - 0.5, 0, Math.random() - 0.5);
-                    } else { 
-                        const h = Math.random();
-                        const s = 1.0 - h;
-                        const theta = Math.floor(Math.random() * 4) * Math.PI / 2;
-                        p.set(Math.cos(theta) * s * 0.5, h, Math.sin(theta) * s * 0.5);
-                    }
-                    targets.push(p.multiplyScalar(pSize).add(center));
+                    targets.push(new THREE.Vector3(
+                        (Math.random() - 0.5) * 8000,
+                        -450,
+                        (Math.random() - 0.5) * 8000
+                    ));
                 }
                 break;
 
-            case this.MODE_CYLINDER: 
-                const cRadius = 700;
-                const cHeight = 1500;
+            default: // その他（AURA_BURSTなど）はカオスな球状分布
                 for (let i = 0; i < count; i++) {
+                    const r = Math.random() * 1500;
                     const theta = Math.random() * Math.PI * 2;
-                    const h = Math.random() - 0.5;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * cRadius, h * cHeight + 400, Math.sin(theta) * cRadius));
-                }
-                break;
-
-            case this.MODE_DOUBLE_HELIX: 
-                for (let i = 0; i < count; i++) {
-                    const h = (i / count) * 3000 - 1500;
-                    const theta = (i / count) * Math.PI * 10;
-                    const side = (i % 2 === 0) ? 0 : Math.PI;
-                    targets.push(new THREE.Vector3(Math.cos(theta + side) * 500, h + 400, Math.sin(theta + side) * 500));
-                }
-                break;
-
-            case this.MODE_GRID_WALL: 
-                const gSize = 2500;
-                for (let i = 0; i < count; i++) {
-                    const x = (Math.random() - 0.5) * gSize;
-                    const y = (Math.random() - 0.5) * gSize + 400;
-                    targets.push(new THREE.Vector3(x, y, 0));
-                }
-                break;
-
-            case this.MODE_SINE_WAVE: 
-                const wSize = 3000;
-                for (let i = 0; i < count; i++) {
-                    const x = (Math.random() - 0.5) * wSize;
-                    const z = (Math.random() - 0.5) * wSize;
-                    const y = Math.sin(x * 0.005) * Math.cos(z * 0.005) * 500 + 400;
-                    targets.push(new THREE.Vector3(x, y, z));
-                }
-                break;
-
-            case this.MODE_CROSS: 
-                for (let i = 0; i < count; i++) {
-                    const p = new THREE.Vector3();
-                    if (Math.random() < 0.5) p.set((Math.random() - 0.5) * 2000, 400, 0);
-                    else p.set(0, (Math.random() - 0.5) * 2000 + 400, 0);
-                    targets.push(p);
-                }
-                break;
-
-            case this.MODE_STAR: 
-                for (let i = 0; i < count; i++) {
-                    const axis = Math.floor(Math.random() * 3);
-                    const p = new THREE.Vector3();
-                    const len = (Math.random() - 0.5) * 2500;
-                    if (axis === 0) p.set(len, 400, 0);
-                    else if (axis === 1) p.set(0, len + 400, 0);
-                    else p.set(0, 400, len);
-                    targets.push(p);
-                }
-                break;
-
-            case this.MODE_HOURGLASS: 
-                for (let i = 0; i < count; i++) {
-                    const h = (Math.random() - 0.5) * 2;
-                    const r = Math.abs(h) * 600;
-                    const theta = Math.random() * Math.PI * 2;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h * 800 + 400, Math.sin(theta) * r));
-                }
-                break;
-
-            case this.MODE_DIAMOND: 
-                const dSize = 1000;
-                for (let i = 0; i < count; i++) {
-                    const p = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5);
-                    p.normalize().multiplyScalar(dSize);
-                    const total = Math.abs(p.x) + Math.abs(p.y) + Math.abs(p.z);
-                    p.divideScalar(total).multiplyScalar(dSize);
-                    targets.push(p.add(center));
-                }
-                break;
-
-            case this.MODE_HEXAGON: 
-                for (let i = 0; i < count; i++) {
-                    const theta = Math.floor(Math.random() * 6) * Math.PI / 3;
-                    const h = Math.random() - 0.5;
-                    const r = 800;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h * 1500 + 400, Math.sin(theta) * r));
-                }
-                break;
-
-            case this.MODE_DNA: 
-                for (let i = 0; i < count; i++) {
-                    const h = (i / count) * 3000 - 1500;
-                    const theta = (i / count) * Math.PI * 8;
-                    const side = (i % 2 === 0) ? 0 : Math.PI;
-                    const p = new THREE.Vector3(Math.cos(theta + side) * 400, h + 400, Math.sin(theta + side) * 400);
-                    if (i % 20 < 5) { 
-                        const t = Math.random();
-                        p.set(Math.cos(theta) * 400 * (1-2*t), h + 400, Math.sin(theta) * 400 * (1-2*t));
-                    }
-                    targets.push(p);
-                }
-                break;
-
-            case this.MODE_SATURN: 
-                for (let i = 0; i < count; i++) {
-                    if (Math.random() < 0.4) { 
-                        const theta = Math.random() * Math.PI * 2;
-                        const phi = Math.random() * Math.PI;
-                        const r = 500;
-                        targets.push(new THREE.Vector3(Math.sin(phi) * Math.cos(theta) * r, Math.cos(phi) * r + 400, Math.sin(phi) * Math.sin(theta) * r));
-                    } else { 
-                        const theta = Math.random() * Math.PI * 2;
-                        const r = 700 + Math.random() * 400;
-                        targets.push(new THREE.Vector3(Math.cos(theta) * r, 400 + (Math.random()-0.5) * 20, Math.sin(theta) * r));
-                    }
-                }
-                break;
-
-            case this.MODE_CUBE_FRAME: 
-                const fSize = 1200;
-                for (let i = 0; i < count; i++) {
-                    const edge = Math.floor(Math.random() * 12);
-                    const t = Math.random() - 0.5;
-                    const p = new THREE.Vector3();
-                    if (edge === 0) p.set(t, 0.5, 0.5);
-                    else if (edge === 1) p.set(t, -0.5, 0.5);
-                    else if (edge === 2) p.set(t, 0.5, -0.5);
-                    else if (edge === 3) p.set(t, -0.5, -0.5);
-                    else if (edge === 4) p.set(0.5, t, 0.5);
-                    else if (edge === 5) p.set(-0.5, t, 0.5);
-                    else if (edge === 6) p.set(0.5, t, -0.5);
-                    else if (edge === 7) p.set(-0.5, t, -0.5);
-                    else if (edge === 8) p.set(0.5, 0.5, t);
-                    else if (edge === 9) p.set(-0.5, 0.5, t);
-                    else if (edge === 10) p.set(0.5, -0.5, t);
-                    else p.set(-0.5, -0.5, t);
-                    targets.push(p.multiplyScalar(fSize).add(center));
-                }
-                break;
-
-            case this.MODE_GALAXY: 
-                for (let i = 0; i < count; i++) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const r = Math.pow(Math.random(), 0.5) * 1500;
-                    const spiral = r * 0.01;
-                    targets.push(new THREE.Vector3(Math.cos(angle + spiral) * r, 400 + (Math.random()-0.5) * 100 * (1 - r/1500), Math.sin(angle + spiral) * r));
-                }
-                break;
-
-            case this.MODE_CONE: 
-                for (let i = 0; i < count; i++) {
-                    const h = Math.random();
-                    const r = h * 800;
-                    const theta = Math.random() * Math.PI * 2;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * r, (1-h) * 1500 - 350, Math.sin(theta) * r));
-                }
-                break;
-
-            case this.MODE_MOBIUS: 
-                for (let i = 0; i < count; i++) {
-                    const u = (i / count) * Math.PI * 2;
-                    const v = (Math.random() - 0.5) * 400;
-                    const x = (1000 + v * Math.cos(u/2)) * Math.cos(u);
-                    const y = (1000 + v * Math.cos(u/2)) * Math.sin(u);
-                    const z = v * Math.sin(u/2);
-                    targets.push(new THREE.Vector3(x, z + 400, y));
-                }
-                break;
-
-            case this.MODE_FRACTAL_CUBES: 
-                for (let i = 0; i < count; i++) {
-                    const cx = (Math.floor(Math.random() * 3) - 1) * 1000;
-                    const cy = (Math.floor(Math.random() * 3) - 1) * 1000 + 400;
-                    const cz = (Math.floor(Math.random() * 3) - 1) * 1000;
-                    targets.push(new THREE.Vector3(cx + (Math.random()-0.5) * 400, cy + (Math.random()-0.5) * 400, cz + (Math.random()-0.5) * 400));
+                    const phi = Math.random() * Math.PI;
+                    targets.push(new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * r,
+                        Math.cos(phi) * r + 400,
+                        Math.sin(phi) * Math.sin(theta) * r
+                    ));
                 }
                 break;
         }

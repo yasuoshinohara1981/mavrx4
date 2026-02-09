@@ -29,6 +29,8 @@ export class StudioBox {
         this.textures = this.generateTileTexture(true);
 
         // スタジオ（箱）
+        // 天井だけタイルにならないように、マテリアルを配列で定義する
+        // BoxGeometryの面順: 0:右, 1:左, 2:上(天井), 3:下(床), 4:前, 5:後
         const wallMat = new THREE.MeshStandardMaterial({
             color: this.color,
             map: this.textures.map,
@@ -38,9 +40,25 @@ export class StudioBox {
             roughness: this.roughness * 0.5, // 壁も少し反射させる
             metalness: this.metalness + 0.1  // わずかに金属感
         });
+
+        const ceilingMat = new THREE.MeshStandardMaterial({
+            color: this.color,
+            side: THREE.BackSide,
+            roughness: this.roughness,
+            metalness: this.metalness
+        });
+
+        const materials = [
+            wallMat, // 0: 右
+            wallMat, // 1: 左
+            ceilingMat, // 2: 上 (天井)
+            wallMat, // 3: 下 (床)
+            wallMat, // 4: 前
+            wallMat  // 5: 後
+        ];
         
         const geometry = new THREE.BoxGeometry(this.size, this.size, this.size);
-        this.studioBox = new THREE.Mesh(geometry, wallMat);
+        this.studioBox = new THREE.Mesh(geometry, materials);
         this.studioBox.position.set(0, 500, 0);
         this.studioBox.receiveShadow = true;
         this.scene.add(this.studioBox);
@@ -221,7 +239,11 @@ export class StudioBox {
         if (this.studioBox) {
             this.scene.remove(this.studioBox);
             this.studioBox.geometry.dispose();
-            this.studioBox.material.dispose();
+            if (Array.isArray(this.studioBox.material)) {
+                this.studioBox.material.forEach(m => m.dispose());
+            } else {
+                this.studioBox.material.dispose();
+            }
         }
         if (this.studioFloor) {
             this.scene.remove(this.studioFloor);
@@ -229,18 +251,18 @@ export class StudioBox {
             this.studioFloor.material.dispose();
         }
         if (this.textures) {
-            this.textures.map.dispose();
-            this.textures.bumpMap.dispose();
+            if (this.textures.map) this.textures.map.dispose();
+            if (this.textures.bumpMap) this.textures.bumpMap.dispose();
         }
         if (this.floorTextures) {
-            this.floorTextures.map.dispose();
-            this.floorTextures.bumpMap.dispose();
+            if (this.floorTextures.map) this.floorTextures.map.dispose();
+            if (this.floorTextures.bumpMap) this.floorTextures.bumpMap.dispose();
         }
         // 蛍光灯のクリーンアップ
         this.fluorescentLights.forEach(light => {
             this.scene.remove(light);
-            light.geometry.dispose();
-            light.material.dispose();
+            if (light.geometry) light.geometry.dispose();
+            if (light.material) light.material.dispose();
         });
         this.pointLights.forEach(light => {
             this.scene.remove(light);

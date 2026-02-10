@@ -329,7 +329,7 @@ export class Scene16 extends SceneBase {
             this.composer = new EffectComposer(this.renderer);
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
-        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
+        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.05, 0.1, 1.5);
         this.composer.addPass(this.bloomPass);
         this.bokehPass = new BokehPass(this.scene, this.camera, { focus: 1500, aperture: 0.00001, maxblur: 0.005, width: window.innerWidth, height: window.innerHeight });
         this.composer.addPass(this.bokehPass);

@@ -290,33 +290,67 @@ export class Scene16 extends SceneBase {
     }
 
     generateFleshTextures() {
-        const size = 512;
+        const size = 1024; // 解像度を上げてより細かく
         const colorCanvas = document.createElement('canvas');
         colorCanvas.width = size; colorCanvas.height = size;
         const cCtx = colorCanvas.getContext('2d');
-        cCtx.fillStyle = '#eeeeee'; cCtx.fillRect(0, 0, size, size);
-        cCtx.strokeStyle = 'rgba(180, 0, 50, 0.4)';
-        for (let i = 0; i < 100; i++) {
-            cCtx.lineWidth = 0.5 + Math.random() * 1.5;
-            let x = Math.random() * size; let y = Math.random() * size;
-            cCtx.beginPath(); cCtx.moveTo(x, y);
-            for (let j = 0; j < 10; j++) { x += (Math.random() - 0.5) * 60; y += (Math.random() - 0.5) * 60; cCtx.lineTo(x, y); }
+        
+        // ベースは明るい肉色
+        cCtx.fillStyle = '#f0f0f0'; 
+        cCtx.fillRect(0, 0, size, size);
+        
+        // 毛細血管の描画
+        const drawVessel = (x, y, angle, length, width, depth) => {
+            if (depth <= 0) return;
+            
+            cCtx.beginPath();
+            cCtx.moveTo(x, y);
+            
+            // 血管らしい「うねり」を加える
+            const nx = x + Math.cos(angle) * length;
+            const ny = y + Math.sin(angle) * length;
+            
+            // ベジェ曲線で滑らかに
+            const cp1x = x + Math.cos(angle + (Math.random() - 0.5)) * length * 0.5;
+            const cp1y = y + Math.sin(angle + (Math.random() - 0.5)) * length * 0.5;
+            
+            cCtx.quadraticCurveTo(cp1x, cp1y, nx, ny);
+            
+            cCtx.lineWidth = width;
+            cCtx.strokeStyle = `rgba(${150 + Math.random() * 50}, 0, ${20 + Math.random() * 30}, ${0.2 + (depth / 10) * 0.5})`;
             cCtx.stroke();
+            
+            // 枝分かれ
+            if (Math.random() > 0.4) {
+                const newAngle = angle + (Math.random() - 0.5) * 1.5;
+                drawVessel(nx, ny, newAngle, length * 0.8, width * 0.7, depth - 1);
+            }
+            if (Math.random() > 0.6) {
+                const newAngle = angle - (Math.random() - 0.5) * 1.5;
+                drawVessel(nx, ny, newAngle, length * 0.7, width * 0.6, depth - 1);
+            }
+        };
+
+        for (let i = 0; i < 40; i++) {
+            drawVessel(Math.random() * size, Math.random() * size, Math.random() * Math.PI * 2, 30 + Math.random() * 40, 2.5, 8);
         }
+
         const bumpCanvas = document.createElement('canvas');
         bumpCanvas.width = size; bumpCanvas.height = size;
         const bCtx = bumpCanvas.getContext('2d');
         bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 0, size, size);
-        bCtx.strokeStyle = 'rgba(0, 0, 0, 0.2)'; bCtx.lineWidth = 0.5;
-        for (let i = 0; i < 2000; i++) {
+        
+        // 血管部分をバンプマップにも反映させて浮き上がらせる
+        bCtx.globalAlpha = 0.3;
+        bCtx.drawImage(colorCanvas, 0, 0);
+        bCtx.globalAlpha = 1.0;
+
+        for (let i = 0; i < 5000; i++) {
             const x = Math.random() * size; const y = Math.random() * size;
-            bCtx.beginPath(); bCtx.moveTo(x, y); bCtx.lineTo(x + (Math.random() - 0.5) * 10, y + (Math.random() - 0.5) * 10); bCtx.stroke();
-        }
-        for (let i = 0; i < 10000; i++) {
-            const x = Math.random() * size; const y = Math.random() * size;
-            const r = 0.3 + Math.random() * 0.5; const val = Math.random() * 30;
+            const r = 0.5 + Math.random() * 1.0; const val = Math.random() * 40;
             bCtx.fillStyle = `rgb(${val}, ${val}, ${val})`; bCtx.beginPath(); bCtx.arc(x, y, r, 0, Math.PI * 2); bCtx.fill();
         }
+        
         const map = new THREE.CanvasTexture(colorCanvas);
         const bumpMap = new THREE.CanvasTexture(bumpCanvas);
         map.wrapS = map.wrapT = THREE.RepeatWrapping;
@@ -393,30 +427,33 @@ export class Scene16 extends SceneBase {
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
         // 【赤系・マゼンタ禁止】ベースカラーを極彩色（カメレオン）化！
-        // 輝度を大幅に下げて「自発光」に見えないように抑制
+        // 輝度を上げて白っぽく調整（肉の質感を明るく）
         const baseCycle = this.colorCycleLFO.getValue(); 
         const skinColor = new THREE.Color();
         if (baseCycle < 0.1) {
-            skinColor.setRGB(0.1, 0.1, 0.1); 
+            skinColor.setRGB(0.8, 0.8, 0.8); // ほぼ白
         } else if (baseCycle < 0.25) {
             const t = (baseCycle - 0.1) * 6.6;
-            skinColor.setRGB(0.1, 0.1, 0.1 + t * 0.4); // 漆黒〜暗い紺
+            skinColor.setRGB(0.8 - t * 0.2, 0.8 - t * 0.2, 0.8); // 白〜薄い青
         } else if (baseCycle < 0.4) {
             const t = (baseCycle - 0.25) * 6.6;
-            skinColor.setRGB(0.1, 0.1 + t * 0.4, 0.5 + t * 0.3); // 暗い青〜水色
+            skinColor.setRGB(0.6, 0.6 + t * 0.2, 0.8 + t * 0.1); // 薄い青〜薄い水色
         } else if (baseCycle < 0.55) {
             const t = (baseCycle - 0.4) * 6.6;
-            skinColor.setRGB(0.1, 0.5 + t * 0.3, 0.8 - t * 0.4); // 暗い水色〜緑
+            skinColor.setRGB(0.6 + t * 0.1, 0.8 + t * 0.1, 0.9 - t * 0.2); // 薄い水色〜薄い緑
         } else if (baseCycle < 0.7) {
             const t = (baseCycle - 0.55) * 6.6;
-            skinColor.setRGB(0.1 + t * 0.4, 0.8, 0.1); // 暗い緑〜黄緑
+            skinColor.setRGB(0.7 + t * 0.2, 0.9, 0.7); // 薄い緑〜薄い黄緑
         } else if (baseCycle < 0.85) {
             const t = (baseCycle - 0.7) * 6.6;
-            skinColor.setRGB(0.5 + t * 0.3, 0.1, 0.1 + t * 0.4); // 暗い黄緑〜深い紫
+            skinColor.setRGB(0.9, 0.7 + t * 0.1, 0.7 + t * 0.2); // 薄い黄緑〜薄い紫
         } else {
             const t = (baseCycle - 0.85) * 6.6;
-            skinColor.setRGB(0.8 - t * 0.7, 0.1, 0.5 - t * 0.4); // 深い紫〜漆黒
+            skinColor.setRGB(0.9 - t * 0.1, 0.8 - t * 0.1, 0.9 - t * 0.1); // 薄い紫〜白
         }
+
+        // ヒートマップの色味自体を時間で変化させるためのLFO（0.0〜1.0）
+        const heatmapCycle = (this.time * 0.1) % 1.0;
 
         // 全触手で同期したヒートマップ用のグローバルな「熱量」
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
@@ -430,6 +467,33 @@ export class Scene16 extends SceneBase {
         const globalHeatCycle = (this.time * speed * 0.5) % 1.0;
         const globalCoreHeat = Math.min(1.0, (Math.sin(this.time * distortionSpeed) * 0.5 + 0.5));
 
+        // 生物全体に対するノイズベースのヒートマップ関数
+        const getGlobalHeatColor = (baseColor, time, u = 0, tentacleIdx = -1) => {
+            // 【重要】中心から外へ広がる波（u に完全に依存させる）
+            // u=0 がコア・根元、u=1 が触手先端
+            const waveSpeed = 2.5;
+            const waveFreq = 8.0;
+            
+            // 全触手共通のパルス（中心から放射状に広がる）
+            const pulse = Math.sin(u * waveFreq - time * waveSpeed) * 0.5 + 0.5;
+            
+            // 共通のヒートマップ色（時間で変化）
+            const heatColor = new THREE.Color();
+            const hue = (this.colorCycleLFO.getValue()) % 1.0;
+            heatColor.setHSL(hue, 0.9, 0.4); 
+            
+            // ベースカラー（白）とヒートマップ色をブレンド
+            // u が大きいほど、つまり先端ほど「同じパルス」の影響を強く受けるようにする
+            const finalColor = baseColor.clone().lerp(heatColor, pulse * 0.7);
+            
+            // 発光防止クランプ
+            finalColor.r = Math.min(0.95, finalColor.r);
+            finalColor.g = Math.min(0.95, finalColor.g);
+            finalColor.b = Math.min(0.95, finalColor.b);
+            
+            return finalColor;
+        };
+
         if (this.coreMesh && this.coreMesh.geometry.attributes.color) {
             this.coreMesh.rotation.y += deltaTime * 0.05;
             const corePosAttr = this.coreMesh.geometry.attributes.position;
@@ -440,26 +504,22 @@ export class Scene16 extends SceneBase {
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
-                // 複数のノイズを掛け合わせて複雑な歪みを作る
-                const lowFreqNoise = (
+                // 歪みノイズ
+                const noiseVal = (
                     Math.sin(v.x * 0.002 + this.time * distortionSpeed * 0.3) * 
-                    Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4) * 
-                    Math.sin(v.z * 0.002 + this.time * distortionSpeed * 0.2)
+                    Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4)
+                ) + (
+                    Math.sin(v.x * 0.01 + this.time * distortionSpeed) * 0.3
                 );
-                
-                const midFreqNoise = (
-                    Math.sin(v.x * 0.01 + this.time * distortionSpeed) + 
-                    Math.cos(v.y * 0.01 + this.time * distortionSpeed * 0.8) + 
-                    Math.sin(v.z * 0.01 + this.time * distortionSpeed * 1.1)
-                ) * 0.3;
 
-                const noiseVal = lowFreqNoise + midFreqNoise;
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
-                // コアの色を skinColor に固定（発光ロジック削除）
-                coreColorAttr.setXYZ(i, skinColor.r, skinColor.g, skinColor.b);
+                // コアは u=0（中心）として計算
+                const finalColor = getGlobalHeatColor(skinColor, this.time, 0);
+                coreColorAttr.setXYZ(i, finalColor.r, finalColor.g, finalColor.b);
             }
+            
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
         }
 
@@ -534,10 +594,9 @@ export class Scene16 extends SceneBase {
                 const u = s / 64; 
                 const time = this.time * individualSpeed * totalForce; 
                 
-                // 【重要】根元から先端へ伝わるウェーブ（位相を u に依存させる）
-                // u が大きい（先端）ほど、過去の time を参照するようにして伝播を表現
+                // 【重要】根元から先端へ伝わるウェーブ
                 const wavePhase = u * waveFreq + i * 2.0;
-                const propagation = u * 4.0; // 伝播の遅延係数
+                const propagation = u * 4.0; 
                 
                 const currentAmp = individualAmp * totalForce;
 
@@ -557,8 +616,7 @@ export class Scene16 extends SceneBase {
                 ) * currentAmp * u;
                 
                 // 【先端の巻き強化】
-                // 先端に行くほど（u が大きいほど）螺旋状の回転を加える
-                const curlIntensity = Math.pow(u, 2.5) * 150.0 * totalForce; // 先端で急激に強く
+                const curlIntensity = Math.pow(u, 2.5) * 150.0 * totalForce; 
                 const curlAngle = time * 2.0 + u * 10.0;
                 offsetX += Math.sin(curlAngle) * curlIntensity;
                 offsetY += Math.cos(curlAngle) * curlIntensity;
@@ -571,9 +629,9 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
-                // 触手全体を skinColor に固定（発光・ヒートマップロジック削除）
-                // 特定の触手だけがネオンのように光るのを防ぐため、i や u に依存した emissive 的な計算は行わない
-                const color = skinColor;
+                // 触手の色計算：全体ヒートマップ
+                // 全触手で共通の u（根元からの距離）を使い、個別のランダム要素を排除
+                const color = getGlobalHeatColor(skinColor, this.time, u, i);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;
@@ -584,6 +642,7 @@ export class Scene16 extends SceneBase {
                     }
                 }
             }
+
             posAttr.needsUpdate = true; colorAttr.needsUpdate = true; t.mesh.geometry.computeVertexNormals();
         });
         

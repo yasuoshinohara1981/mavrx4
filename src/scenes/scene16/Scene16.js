@@ -22,7 +22,7 @@ export class Scene16 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // 触手（Tentacles）の設定
-        this.tentacleCount = 250; 
+        this.tentacleCount = 220; 
         this.tentacles = [];
         this.tentacleGroup = new THREE.Group();
         this.coreMesh = null; // 真ん中の球体
@@ -69,9 +69,10 @@ export class Scene16 extends SceneBase {
     setupCameraParticleDistance(cameraParticle) {
         // 距離を調整（2500 -> 3000）
         cameraParticle.minDistance = 3000; 
-        cameraParticle.maxDistance = 10000;
-        cameraParticle.maxDistanceReset = 8000;
+        cameraParticle.maxDistance = 4500; // 箱を突き抜けないように最大距離を制限（StudioBox size=10000 なので半径5000以内）
+        cameraParticle.maxDistanceReset = 4000;
         cameraParticle.minY = -400; // 標準の床の高さに合わせる
+        cameraParticle.maxY = 4500; // 天井を突き抜けないように制限
         
         // 即座に位置を更新
         if (cameraParticle.initializePosition) {
@@ -140,17 +141,17 @@ export class Scene16 extends SceneBase {
     createTentacles() {
         const textures = this.generateFleshTextures();
         this.scene.add(this.tentacleGroup);
-        const tentacleCount = 250; 
-        const baseRadius = 300; // コアを小さく（600 -> 300）
+        const tentacleCount = this.tentacleCount; 
+        const baseRadius = 450; // コアをさらに巨大化（300 -> 450）
 
         this.time = Math.random() * 100;
 
         const coreGeo = new THREE.IcosahedronGeometry(baseRadius, 6);
         coreGeo.userData.initialPositions = coreGeo.attributes.position.array.slice();
         
-        // 頂点カラー属性を初期化（確実に肌色にする）
+        // 頂点カラー属性を初期化
         const coreColors = new Float32Array(coreGeo.attributes.position.count * 3);
-        const skinColor = new THREE.Color('#ffccbb'); // 明るい肌色
+        const skinColor = new THREE.Color('#000011');
         for(let i=0; i<coreColors.length/3; i++){
             coreColors[i*3] = skinColor.r;
             coreColors[i*3+1] = skinColor.g;
@@ -175,7 +176,6 @@ export class Scene16 extends SceneBase {
         this.tentacleGroup.add(this.coreMesh);
 
         for (let i = 0; i < tentacleCount; i++) {
-            const segments = 30;
             const points = [];
             
             // 生える場所を極端に偏らせる
@@ -186,8 +186,8 @@ export class Scene16 extends SceneBase {
             const phi = clusterPhi + (Math.random() - 0.5) * 1.2;
             const theta = clusterTheta + (Math.random() - 0.5) * 1.2;
 
-            const baseThickness = 8 + Math.pow(Math.random(), 2.0) * 50; // 太さも調整（15+100 -> 8+50）
-            const r = baseRadius + 400; // 距離も調整
+            const baseThickness = 8 + Math.pow(Math.random(), 2.0) * 50;
+            const r = baseRadius + 400;
 
             points.push(new THREE.Vector3(0,0,0));
             const midDist = baseRadius + 200;
@@ -234,7 +234,7 @@ export class Scene16 extends SceneBase {
             this.tentacleGroup.add(mesh);
             this.tentacles.push({ mesh, curve, basePositions, phi, theta, baseRadius, baseThickness });
         }
-        this.tentacleGroup.position.set(0, 400, 0); // さらに上に（100 -> 400）
+        this.tentacleGroup.position.set(0, 400, 0);
         this.setParticleCount(this.tentacles.length);
     }
 
@@ -324,31 +324,47 @@ export class Scene16 extends SceneBase {
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
-        // 深海のタコ風カメレオンカラー（黒〜赤）
-        // 時間とともにゆっくりと変化
-        const colorCycle = (Math.sin(this.time * 0.3) * 0.5 + 0.5); // 0.0 - 1.0
-        const baseColor = new THREE.Color('#110000'); // ほぼ黒
-        const peakColor = new THREE.Color('#880000'); // 深い赤
-        const skinColor = baseColor.clone().lerp(peakColor, colorCycle);
-        
+        // 【赤系禁止】ベースカラーを極彩色（カメレオン）化！
+        // 時間とともに「青 → 水色 → 緑 → 黄緑 → 紫 → 紺」と変化
+        const baseCycle = (this.time * 0.2) % 1.0;
+        const skinColor = new THREE.Color();
+        if (baseCycle < 0.2) {
+            skinColor.setRGB(0, 0, 0.5 + baseCycle * 2.5); // 紺〜青
+        } else if (baseCycle < 0.4) {
+            const t = (baseCycle - 0.2) * 5.0;
+            skinColor.setRGB(0, t, 1.0); // 青〜水色
+        } else if (baseCycle < 0.6) {
+            const t = (baseCycle - 0.4) * 5.0;
+            skinColor.setRGB(0, 1.0, 1.0 - t); // 水色〜緑
+        } else if (baseCycle < 0.8) {
+            const t = (baseCycle - 0.6) * 5.0;
+            skinColor.setRGB(t * 0.5, 1.0, 0); // 緑〜黄緑
+        } else {
+            const t = (baseCycle - 0.8) * 5.0;
+            skinColor.setRGB(0.5 + t * 0.5, 0, 1.0 - t * 0.5); // 黄緑〜紫
+        }
+
+        // 全触手で同期したヒートマップ用のグローバルな「熱量」
+        const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
+        const globalHeatCycle = (this.time * speed * 0.5) % 1.0;
+        const globalCoreHeat = Math.min(1.0, (Math.sin(this.time * distortionSpeed) * 0.5 + 0.5));
+
         if (this.coreMesh && this.coreMesh.geometry.attributes.color) {
             this.coreMesh.rotation.y += deltaTime * 0.15;
             const corePosAttr = this.coreMesh.geometry.attributes.position;
             const coreColorAttr = this.coreMesh.geometry.attributes.color;
             const initialPos = this.coreMesh.geometry.userData.initialPositions;
             const v = new THREE.Vector3();
-            const { distortionSpeed, distortionAmp } = this.currentAnimParams;
+            
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
-                // 低周波のノイズで大きなうねりを作る（個体感を出す）
                 const lowFreqNoise = (
                     Math.sin(v.x * 0.003 + this.time * distortionSpeed * 0.5) * 
                     Math.cos(v.y * 0.003 + this.time * distortionSpeed * 0.6) * 
                     Math.sin(v.z * 0.003 + this.time * distortionSpeed * 0.4)
                 );
                 
-                // 中周波のノイズで表面の有機的な凹凸を作る
                 const midFreqNoise = (
                     Math.sin(v.x * 0.01 + this.time * distortionSpeed) + 
                     Math.cos(v.y * 0.01 + this.time * distortionSpeed * 0.8) + 
@@ -359,8 +375,18 @@ export class Scene16 extends SceneBase {
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
-                // コアの色もカメレオンカラー（skinColor）に同期！
-                coreColorAttr.setXYZ(i, skinColor.r, skinColor.g, skinColor.b);
+                // コアのヒートマップ（ベース色からの変化）
+                const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
+                const coreHeatColor = new THREE.Color();
+                if (localHeat < 0.5) {
+                    coreHeatColor.setRGB(localHeat, 1.0 - localHeat, 1.0); // ベース色を活かしつつ青白く
+                } else {
+                    const t = (localHeat - 0.5) * 2.0;
+                    coreHeatColor.setRGB(1.0, 1.0, 1.0); // 激しい部分は白
+                }
+                
+                const finalColor = skinColor.clone().lerp(coreHeatColor, localHeat);
+                coreColorAttr.setXYZ(i, finalColor.r, finalColor.g, finalColor.b);
             }
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
         }
@@ -370,7 +396,7 @@ export class Scene16 extends SceneBase {
             const colorAttr = t.mesh.geometry.attributes.color;
             if (!posAttr || !colorAttr) return;
 
-            const { speed, waveFreq, waveAmp, focusWeight, moveSpeed } = this.currentAnimParams;
+            const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
             const angleOffsetPhi = Math.sin(this.time * moveSpeed + i) * 0.15;
             const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.8 + i * 1.5) * 0.15;
             t.mesh.rotation.set(angleOffsetTheta, angleOffsetPhi, 0);
@@ -380,8 +406,36 @@ export class Scene16 extends SceneBase {
                 focusVec.copy(this.focusTarget).sub(this.tentacleGroup.position).applyQuaternion(this.tentacleGroup.quaternion.clone().invert()).normalize(); 
             }
             
-            // 触手の長さをノイズでコントロール（動的に伸び縮み）
-            const lengthNoise = (Math.sin(this.time * 0.5 + i * 1.5) * 0.5 + 0.5) * 0.4 + 0.8; // 0.8 - 1.2倍
+            const lengthNoise = (Math.sin(this.time * 0.5 + i * 1.5) * 0.5 + 0.5) * 0.4 + 0.8;
+
+            // 【最重要】触手の根元の色をコアの「その場所」の色と完全同期させる
+            // 触手の生え際（phi, theta）からコア表面の座標を計算
+            const rx = t.baseRadius * Math.sin(t.theta) * Math.cos(t.phi);
+            const ry = t.baseRadius * Math.cos(t.theta);
+            const rz = t.baseRadius * Math.sin(t.theta) * Math.sin(t.phi);
+
+            // コアと同じノイズロジックで「その地点」の熱量を計算
+            const lowFreqNoise = (
+                Math.sin(rx * 0.003 + this.time * distortionSpeed * 0.5) * 
+                Math.cos(ry * 0.003 + this.time * distortionSpeed * 0.6) * 
+                Math.sin(rz * 0.003 + this.time * distortionSpeed * 0.4)
+            );
+            const midFreqNoise = (
+                Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
+                Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
+                Math.sin(rz * 0.01 + this.time * distortionSpeed * 1.1)
+            ) * 0.3;
+            const noiseVal = lowFreqNoise + midFreqNoise;
+            const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
+            
+            const coreHeatColor = new THREE.Color();
+            if (localHeat < 0.5) {
+                coreHeatColor.setRGB(0, localHeat * 0.5, localHeat * 2.0);
+            } else {
+                const tVal = (localHeat - 0.5) * 2.0;
+                coreHeatColor.setRGB(tVal, 0.5 + tVal * 0.5, 1.0);
+            }
+            const rootColor = skinColor.clone().lerp(coreHeatColor, localHeat);
 
             const color = new THREE.Color();
             for (let s = 0; s <= 64; s++) {
@@ -398,40 +452,49 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
-                color.copy(skinColor);
-                
-                // 触手の根元(u=0)からヒートマップを開始！
-                const heatBlend = Math.pow(u, 0.8); // 根元から先端にかけて徐々に強まる
+                // 触手のヒートマップ計算（全触手で同期した極彩色）
                 const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (waveAmp * 1.5);
-                let heatFactor = heatBlend * 0.6 + motionVal * 0.4; 
-                heatFactor = Math.min(1.0, heatFactor);
                 
-                // 「黒 → 青 → 水色 → 緑 → 白」のクールサイバーヒートマップ
-                const cyberColor = new THREE.Color();
-                if (heatFactor < 0.25) {
-                    // 黒 -> 青
-                    cyberColor.setRGB(0, 0, heatFactor * 4.0);
-                } else if (heatFactor < 0.5) {
-                    // 青 -> 水色
-                    const t = (heatFactor - 0.25) * 4.0;
-                    cyberColor.setRGB(0, t, 1.0);
-                } else if (heatFactor < 0.75) {
-                    // 水色 -> 緑
-                    const t = (heatFactor - 0.5) * 4.0;
-                    cyberColor.setRGB(0, 1.0, 1.0 - t);
+                // 【同期の鍵】個別の motionVal ではなく、グローバルな globalHeatCycle をベースにする
+                // u (位置) によるグラデーションは残しつつ、色の周期を全触手で一致させる
+                let heatFactor = (globalHeatCycle + u * 0.5 + motionVal * 0.2) % 1.0;
+                
+                const cyberHeatColor = new THREE.Color();
+                // さらに多色な極彩色（赤抜きレインボー ＋ 黒）
+                if (heatFactor < 0.1) {
+                    cyberHeatColor.setRGB(0, 0, 0); // 【追加】漆黒
+                } else if (heatFactor < 0.25) {
+                    const tVal = (heatFactor - 0.1) * 6.6;
+                    cyberHeatColor.setRGB(0, 0, 0.2 + tVal * 0.8); // 黒〜青
+                } else if (heatFactor < 0.4) {
+                    const tVal = (heatFactor - 0.25) * 6.6;
+                    cyberHeatColor.setRGB(0, tVal, 1.0); // 青〜シアン
+                } else if (heatFactor < 0.55) {
+                    const tVal = (heatFactor - 0.4) * 6.6;
+                    cyberHeatColor.setRGB(0, 1.0, 1.0 - tVal); // シアン〜緑
+                } else if (heatFactor < 0.7) {
+                    const tVal = (heatFactor - 0.55) * 6.6;
+                    cyberHeatColor.setRGB(tVal, 1.0, 0); // 緑〜黄色
+                } else if (heatFactor < 0.85) {
+                    const tVal = (heatFactor - 0.7) * 6.6;
+                    cyberHeatColor.setRGB(1.0 - tVal * 0.5, tVal * 0.2, 1.0); // 黄色〜紫
                 } else {
-                    // 緑 -> 白
-                    const t = (heatFactor - 0.75) * 4.0;
-                    cyberColor.setRGB(t, 1.0, t);
+                    const tVal = (heatFactor - 0.85) * 6.6;
+                    cyberHeatColor.setRGB(1.0, tVal, 1.0); // 紫〜白
                 }
                 
-                color.lerp(cyberColor, heatBlend);
+                // 【解決策】根元付近（u < 0.35）はコアの「その地点の色」を完全維持！
+                if (u < 0.35) {
+                    color.copy(rootColor);
+                } else {
+                    const blendT = (u - 0.35) / 0.65; 
+                    color.copy(rootColor).lerp(cyberHeatColor, blendT);
+                }
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;
                     if (idx < posAttr.count) {
                         const bx = t.basePositions[idx * 3 + 0]; const by = t.basePositions[idx * 3 + 1]; const bz = t.basePositions[idx * 3 + 2];
-                        // 長さのノイズを適用
                         posAttr.setXYZ(idx, (bx + offsetX * intensity) * lengthNoise, (by + offsetY * intensity) * lengthNoise, (bz + offsetZ * intensity) * lengthNoise);
                         colorAttr.setXYZ(idx, color.r, color.g, color.b);
                     }

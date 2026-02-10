@@ -203,9 +203,9 @@ export class Scene16 extends SceneBase {
             color: 0xffffff, 
             map: textures.map, 
             bumpMap: textures.bumpMap,
-            bumpScale: 10.0, 
-            metalness: 0.0, 
-            roughness: 0.2, 
+            bumpScale: 15.0, 
+            metalness: 0.1, 
+            roughness: 0.4, 
             vertexColors: true,
             emissive: 0x000000,
             transparent: false
@@ -281,7 +281,7 @@ export class Scene16 extends SceneBase {
     createTentacleMesh(geometry, textures) {
         const material = new THREE.MeshStandardMaterial({
             color: 0xffffff, map: textures.map, bumpMap: textures.bumpMap,
-            bumpScale: 25.0, metalness: 0.0, roughness: 0.2, vertexColors: true,
+            bumpScale: 30.0, metalness: 0.1, roughness: 0.4, vertexColors: true,
             emissive: 0x000000, transparent: false
         });
         const mesh = new THREE.Mesh(geometry, material);
@@ -329,7 +329,8 @@ export class Scene16 extends SceneBase {
             this.composer = new EffectComposer(this.renderer);
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
-        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.05, 0.1, 1.5);
+        // ブルームを完全に無効化（強度0）
+        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.0, 0.1, 1.0);
         this.composer.addPass(this.bloomPass);
         this.bokehPass = new BokehPass(this.scene, this.camera, { focus: 1500, aperture: 0.00001, maxblur: 0.005, width: window.innerWidth, height: window.innerHeight });
         this.composer.addPass(this.bokehPass);
@@ -391,35 +392,41 @@ export class Scene16 extends SceneBase {
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
-        // 【赤系禁止】ベースカラーを極彩色（カメレオン）化！
-        // 時間とともに「漆黒 → 紺 → 青 → 水色 → 緑 → 黄緑 → 紫 → 漆黒」と変化
-        // colorCycleLFO を使って周期自体をランダムに揺らす
+        // 【赤系・マゼンタ禁止】ベースカラーを極彩色（カメレオン）化！
+        // 輝度を大幅に下げて「自発光」に見えないように抑制
         const baseCycle = this.colorCycleLFO.getValue(); 
         const skinColor = new THREE.Color();
         if (baseCycle < 0.1) {
-            skinColor.setRGB(0, 0, 0); // 【漆黒】
+            skinColor.setRGB(0.1, 0.1, 0.1); 
         } else if (baseCycle < 0.25) {
             const t = (baseCycle - 0.1) * 6.6;
-            skinColor.setRGB(0, 0, t * 0.5); // 漆黒〜紺
+            skinColor.setRGB(0.1, 0.1, 0.1 + t * 0.4); // 漆黒〜暗い紺
         } else if (baseCycle < 0.4) {
             const t = (baseCycle - 0.25) * 6.6;
-            skinColor.setRGB(0, t * 0.5, 0.5 + t * 0.5); // 紺〜青〜水色
+            skinColor.setRGB(0.1, 0.1 + t * 0.4, 0.5 + t * 0.3); // 暗い青〜水色
         } else if (baseCycle < 0.55) {
             const t = (baseCycle - 0.4) * 6.6;
-            skinColor.setRGB(0, 1.0, 1.0 - t); // 水色〜緑
+            skinColor.setRGB(0.1, 0.5 + t * 0.3, 0.8 - t * 0.4); // 暗い水色〜緑
         } else if (baseCycle < 0.7) {
             const t = (baseCycle - 0.55) * 6.6;
-            skinColor.setRGB(t * 0.5, 1.0, 0); // 緑〜黄緑
+            skinColor.setRGB(0.1 + t * 0.4, 0.8, 0.1); // 暗い緑〜黄緑
         } else if (baseCycle < 0.85) {
             const t = (baseCycle - 0.7) * 6.6;
-            skinColor.setRGB(0.5 + t * 0.5, 0, 1.0 - t * 0.5); // 黄緑〜紫
+            skinColor.setRGB(0.5 + t * 0.3, 0.1, 0.1 + t * 0.4); // 暗い黄緑〜深い紫
         } else {
             const t = (baseCycle - 0.85) * 6.6;
-            skinColor.setRGB(1.0 - t, 0, 1.0 - t); // 紫〜漆黒
+            skinColor.setRGB(0.8 - t * 0.7, 0.1, 0.5 - t * 0.4); // 深い紫〜漆黒
         }
 
         // 全触手で同期したヒートマップ用のグローバルな「熱量」
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
+        
+        // トラック6のMIDI信号（力）を取得
+        const track6Force = (this.sharedResourceManager && typeof this.sharedResourceManager.getTrackLevel === 'function') 
+            ? this.sharedResourceManager.getTrackLevel(6) 
+            : 0;
+        const totalForce = 1.0 + track6Force * 2.0; // トラック6で動きを増幅
+
         const globalHeatCycle = (this.time * speed * 0.5) % 1.0;
         const globalCoreHeat = Math.min(1.0, (Math.sin(this.time * distortionSpeed) * 0.5 + 0.5));
 
@@ -450,21 +457,8 @@ export class Scene16 extends SceneBase {
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
-                // コアのヒートマップ
-                const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
-                const coreHeatColor = new THREE.Color();
-                if (localHeat < 0.33) {
-                    coreHeatColor.setRGB(0, 0, localHeat * 1.5); 
-                } else if (localHeat < 0.66) {
-                    const t = (localHeat - 0.33) * 3.0;
-                    coreHeatColor.setRGB(0, t * 0.8, 0.5 + t * 0.5); 
-                } else {
-                    const t = (localHeat - 0.66) * 3.0;
-                    coreHeatColor.setRGB(t, 0.8 + t * 0.2, 1.0); 
-                }
-                
-                const finalColor = skinColor.clone().lerp(coreHeatColor, localHeat);
-                coreColorAttr.setXYZ(i, finalColor.r, finalColor.g, finalColor.b);
+                // コアの色を skinColor に固定（発光ロジック削除）
+                coreColorAttr.setXYZ(i, skinColor.r, skinColor.g, skinColor.b);
             }
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
         }
@@ -536,61 +530,35 @@ export class Scene16 extends SceneBase {
             
             const lengthNoise = (Math.sin(this.time * 0.3 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75;
 
-            // 触手の根元の色を同期
-            const rx = t.baseRadius * Math.sin(t.theta) * Math.cos(t.phi);
-            const ry = t.baseRadius * Math.cos(t.theta);
-            const rz = t.baseRadius * Math.sin(t.theta) * Math.sin(t.phi);
-
-            const lowFreqNoise = (
-                Math.sin(rx * 0.003 + this.time * distortionSpeed * 0.5) * 
-                Math.cos(ry * 0.003 + this.time * distortionSpeed * 0.6) * 
-                Math.sin(rz * 0.003 + this.time * distortionSpeed * 0.4)
-            );
-            const midFreqNoise = (
-                Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
-                Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
-                Math.sin(rz * 0.01 + this.time * distortionSpeed * 1.1)
-            ) * 0.3;
-            const noiseVal = lowFreqNoise + midFreqNoise;
-            const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
-            
-            const coreHeatColor = new THREE.Color();
-            if (localHeat < 0.5) {
-                coreHeatColor.setRGB(0, localHeat * 0.5, localHeat * 2.0);
-            } else {
-                const tVal = (localHeat - 0.5) * 2.0;
-                coreHeatColor.setRGB(tVal, 0.5 + tVal * 0.5, 1.0);
-            }
-            const rootColor = skinColor.clone().lerp(coreHeatColor, localHeat);
-
-            const color = new THREE.Color();
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; 
-                const time = this.time * individualSpeed; 
+                const time = this.time * individualSpeed * totalForce; 
                 
                 // 【重要】根元から先端へ伝わるウェーブ（位相を u に依存させる）
                 // u が大きい（先端）ほど、過去の time を参照するようにして伝播を表現
                 const wavePhase = u * waveFreq + i * 2.0;
                 const propagation = u * 4.0; // 伝播の遅延係数
                 
+                const currentAmp = individualAmp * totalForce;
+
                 let offsetX = (
                     Math.sin(time - propagation + wavePhase) * 1.2 + 
                     Math.sin(time * 2.5 - propagation * 1.5 + wavePhase * 2.0) * 0.8
-                ) * individualAmp * u;
+                ) * currentAmp * u;
                 
                 let offsetY = (
                     Math.cos(time * 0.8 - propagation * 1.2 + wavePhase + i) * 1.2 + 
                     Math.cos(time * 3.2 - propagation * 2.0 + wavePhase * 2.5) * 0.7
-                ) * individualAmp * u;
+                ) * currentAmp * u;
                 
                 let offsetZ = (
                     Math.sin(time * 1.1 - propagation * 0.8 + wavePhase + i * 1.5) * 1.2 + 
                     Math.sin(time * 2.8 - propagation * 1.8 + wavePhase * 3.0) * 0.8
-                ) * individualAmp * u;
+                ) * currentAmp * u;
                 
                 // 【先端の巻き強化】
                 // 先端に行くほど（u が大きいほど）螺旋状の回転を加える
-                const curlIntensity = Math.pow(u, 2.5) * 150.0; // 先端で急激に強く
+                const curlIntensity = Math.pow(u, 2.5) * 150.0 * totalForce; // 先端で急激に強く
                 const curlAngle = time * 2.0 + u * 10.0;
                 offsetX += Math.sin(curlAngle) * curlIntensity;
                 offsetY += Math.cos(curlAngle) * curlIntensity;
@@ -603,46 +571,9 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
-                // 触手のヒートマップ計算
-                // 【修正】ヒートマップは「力（動き）」に応じて。バイアスを掛けずに全体でトーンを統一。
-                const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (individualAmp * 1.5);
-                const motionIntensity = Math.min(1.0, motionVal * 2.0); // 感度を少し調整
-                
-                // 色の周期は globalHeatCycle で全触手一致させる（触手ごとのズレをなくす）
-                let heatFactor = (globalHeatCycle + u * 0.2) % 1.0; 
-                
-                const cyberHeatColor = new THREE.Color();
-                if (heatFactor < 0.1) {
-                    cyberHeatColor.setRGB(0, 0, 0); 
-                } else if (heatFactor < 0.25) {
-                    const tVal = (heatFactor - 0.1) * 6.6;
-                    cyberHeatColor.setRGB(0, 0, 0.2 + tVal * 0.8); 
-                } else if (heatFactor < 0.4) {
-                    const tVal = (heatFactor - 0.25) * 6.6;
-                    cyberHeatColor.setRGB(0, tVal, 1.0); 
-                } else if (heatFactor < 0.55) {
-                    const tVal = (heatFactor - 0.4) * 6.6;
-                    cyberHeatColor.setRGB(0, 1.0, 1.0 - tVal); 
-                } else if (heatFactor < 0.7) {
-                    const tVal = (heatFactor - 0.55) * 6.6;
-                    cyberHeatColor.setRGB(tVal, 1.0, 0); 
-                } else if (heatFactor < 0.85) {
-                    const tVal = (heatFactor - 0.7) * 6.6;
-                    cyberHeatColor.setRGB(1.0 - tVal * 0.5, tVal * 0.2, 1.0); 
-                } else {
-                    const tVal = (heatFactor - 0.85) * 6.6;
-                    cyberHeatColor.setRGB(1.0, tVal, 1.0); 
-                }
-                
-                if (u < 0.35) {
-                    color.copy(rootColor);
-                } else {
-                    // 動き（motionIntensity）が弱いときは、ベースの色（rootColor）に沈ませる
-                    // これにより「力に応じて」ヒートマップが出るようになる
-                    const finalCyberColor = cyberHeatColor.clone().lerp(rootColor, 1.0 - motionIntensity);
-                    const blendT = (u - 0.35) / 0.65; 
-                    color.copy(rootColor).lerp(finalCyberColor, blendT);
-                }
+                // 触手全体を skinColor に固定（発光・ヒートマップロジック削除）
+                // 特定の触手だけがネオンのように光るのを防ぐため、i や u に依存した emissive 的な計算は行わない
+                const color = skinColor;
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;

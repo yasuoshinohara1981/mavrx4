@@ -65,10 +65,10 @@ function initCamera() {
     // Processing版のデフォルトFOVは60度
     // Three.jsのFOVを60度に変更（75度 → 60度）
     camera = new THREE.PerspectiveCamera(
-        60,  // FOVを60度に変更（Processing版と同じ）
+        60,  
         window.innerWidth / window.innerHeight,
         0.1,
-        10000
+        50000 // 10000 -> 50000 に拡大してクリッピングを防止！
     );
     camera.position.z = 1000;
 }

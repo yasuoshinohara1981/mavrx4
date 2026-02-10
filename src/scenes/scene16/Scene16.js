@@ -565,11 +565,36 @@ export class Scene16 extends SceneBase {
 
             const color = new THREE.Color();
             for (let s = 0; s <= 64; s++) {
-                const u = s / 64; const time = this.time * individualSpeed; const phase = u * waveFreq + i * 2.0;
-                let offsetX = (Math.sin(time + phase) * 1.0 + Math.sin(time * 2.8 + phase * 3.0) * 1.5 + Math.sin(time * 5.5 + phase * 6.0) * 1.0) * individualAmp * u;
-                let offsetY = (Math.cos(time * 0.8 + phase * 1.2 + i) * 1.0 + Math.cos(time * 3.5 + phase * 3.8) * 1.2 + Math.sin(time * 6.2 + phase * 7.0) * 1.0) * individualAmp * u;
-                let offsetZ = (Math.sin(time * 1.2 + phase * 0.8 + i * 1.5) * 1.0 + Math.sin(time * 3.2 + phase * 3.3) * 1.5 + Math.cos(time * 5.8 + phase * 6.5) * 1.0) * individualAmp * u;
+                const u = s / 64; 
+                const time = this.time * individualSpeed; 
                 
+                // 【重要】根元から先端へ伝わるウェーブ（位相を u に依存させる）
+                // u が大きい（先端）ほど、過去の time を参照するようにして伝播を表現
+                const wavePhase = u * waveFreq + i * 2.0;
+                const propagation = u * 4.0; // 伝播の遅延係数
+                
+                let offsetX = (
+                    Math.sin(time - propagation + wavePhase) * 1.2 + 
+                    Math.sin(time * 2.5 - propagation * 1.5 + wavePhase * 2.0) * 0.8
+                ) * individualAmp * u;
+                
+                let offsetY = (
+                    Math.cos(time * 0.8 - propagation * 1.2 + wavePhase + i) * 1.2 + 
+                    Math.cos(time * 3.2 - propagation * 2.0 + wavePhase * 2.5) * 0.7
+                ) * individualAmp * u;
+                
+                let offsetZ = (
+                    Math.sin(time * 1.1 - propagation * 0.8 + wavePhase + i * 1.5) * 1.2 + 
+                    Math.sin(time * 2.8 - propagation * 1.8 + wavePhase * 3.0) * 0.8
+                ) * individualAmp * u;
+                
+                // 【先端の巻き強化】
+                // 先端に行くほど（u が大きいほど）螺旋状の回転を加える
+                const curlIntensity = Math.pow(u, 2.5) * 150.0; // 先端で急激に強く
+                const curlAngle = time * 2.0 + u * 10.0;
+                offsetX += Math.sin(curlAngle) * curlIntensity;
+                offsetY += Math.cos(curlAngle) * curlIntensity;
+
                 if (focusWeight > 0) {
                     const focusStrength = u * 250.0 * focusWeight;
                     offsetX = offsetX * (1.0 - focusWeight * 0.5) + focusVec.x * focusStrength;

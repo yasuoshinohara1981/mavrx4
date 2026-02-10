@@ -9,6 +9,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
+import { RandomLFO } from '../../lib/RandomLFO.js';
 
 export class Scene16 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -40,15 +41,23 @@ export class Scene16 extends SceneBase {
         
         // なだらかな遷移のためのパラメータ
         this.currentAnimParams = {
-            speed: 1.0,
-            waveFreq: 2.0,
-            waveAmp: 30.0,
+            speed: 0.08,
+            waveFreq: 1.2,
+            waveAmp: 40.0,
             focusWeight: 0.0,
-            moveSpeed: 0.3,
-            distortionSpeed: 1.2,
-            distortionAmp: 0.8 
+            moveSpeed: 0.02,
+            distortionSpeed: 0.03,
+            distortionAmp: 0.2 
         };
         this.targetAnimParams = { ...this.currentAnimParams };
+
+        // 究極のランダムさのための RandomLFO 群
+        // (minRate, maxRate, minValue, maxValue)
+        this.speedLFO = new RandomLFO(0.01, 0.05, 0.02, 0.15); // 動きの速さ
+        this.ampLFO = new RandomLFO(0.005, 0.02, 10.0, 80.0);   // 動きの大きさ
+        this.distortionSpeedLFO = new RandomLFO(0.01, 0.04, 0.01, 0.1); // コアの歪み速さ
+        this.distortionAmpLFO = new RandomLFO(0.005, 0.03, 0.1, 0.5);   // コアの歪み強さ
+        this.colorCycleLFO = new RandomLFO(0.002, 0.01, 0.0, 1.0);      // 色の移り変わり
 
         // エフェクト設定
         this.useDOF = true;
@@ -330,37 +339,65 @@ export class Scene16 extends SceneBase {
         if (!this.initialized) return;
         this.time += deltaTime;
         this.stateTimer += deltaTime;
+
+        // RandomLFO 群の更新
+        this.speedLFO.update(deltaTime);
+        this.ampLFO.update(deltaTime);
+        this.distortionSpeedLFO.update(deltaTime);
+        this.distortionAmpLFO.update(deltaTime);
+        this.colorCycleLFO.update(deltaTime);
+
+        // LFOから動的にパラメータを取得（ステートマシンによる急激な変化を抑制しつつ、常に揺らす）
+        this.targetAnimParams.speed = this.speedLFO.getValue();
+        this.targetAnimParams.waveAmp = this.ampLFO.getValue();
+        this.targetAnimParams.distortionSpeed = this.distortionSpeedLFO.getValue();
+        this.targetAnimParams.distortionAmp = this.distortionAmpLFO.getValue();
+
         if (this.stateTimer >= this.stateDuration) {
             this.stateTimer = 0;
             this.creatureState = Math.floor(Math.random() * 4);
-            this.stateDuration = 6.0 + Math.random() * 8.0;
+            this.stateDuration = 10.0 + Math.random() * 15.0; // 周期をさらに長く
             if (this.creatureState === this.STATE_FOCUS) {
                 this.focusTarget.copy(this.camera.position).add(new THREE.Vector3((Math.random()-0.5)*1500, (Math.random()-0.5)*800, (Math.random()-0.5)*1500));
             }
+            // ステートはあくまで「味付け」として残し、LFOの範囲を微調整する
             switch(this.creatureState) {
-                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.08, waveFreq: 1.2, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.02, distortionSpeed: 0.03, distortionAmp: 0.2 }; break;
-                case this.STATE_WILD: this.targetAnimParams = { speed: 0.15, waveFreq: 2.0, waveAmp: 60.0, focusWeight: 0.0, moveSpeed: 0.05, distortionSpeed: 0.08, distortionAmp: 0.4 }; break;
-                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.06, waveFreq: 0.8, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.01, distortionSpeed: 0.02, distortionAmp: 0.15 }; break;
-                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.04, waveFreq: 0.5, waveAmp: 10.0, focusWeight: 0.0, moveSpeed: 0.005, distortionSpeed: 0.01, distortionAmp: 0.1 }; break;
+                case this.STATE_IDLE: 
+                    this.speedLFO.setValueRange(0.04, 0.1);
+                    this.ampLFO.setValueRange(20.0, 50.0);
+                    break;
+                case this.STATE_WILD: 
+                    this.speedLFO.setValueRange(0.1, 0.2);
+                    this.ampLFO.setValueRange(60.0, 100.0);
+                    break;
+                case this.STATE_FOCUS: 
+                    this.speedLFO.setValueRange(0.02, 0.08);
+                    this.ampLFO.setValueRange(10.0, 30.0);
+                    break;
+                case this.STATE_STASIS: 
+                    this.speedLFO.setValueRange(0.01, 0.04);
+                    this.ampLFO.setValueRange(5.0, 15.0);
+                    break;
             }
         }
-        const lerpFactor = deltaTime * 1.5;
+        const lerpFactor = deltaTime * 0.5; // 遷移をさらにゆっくりに
         for (let key in this.currentAnimParams) { this.currentAnimParams[key] += (this.targetAnimParams[key] - this.currentAnimParams[key]) * lerpFactor; }
         
-        const heartbeat = Math.pow(Math.sin(this.time * 2.0), 8.0);
-        const scale = 1.0 + heartbeat * 0.05;
+        const heartbeat = Math.pow(Math.sin(this.time * 1.0), 8.0); // 心拍もゆっくりに
+        const scale = 1.0 + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
         
-        const rotationSpeed = this.creatureState === this.STATE_FOCUS ? 0.05 : 0.2;
+        const rotationSpeed = this.creatureState === this.STATE_FOCUS ? 0.02 : 0.08;
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
         // 【赤系禁止】ベースカラーを極彩色（カメレオン）化！
         // 時間とともに「漆黒 → 紺 → 青 → 水色 → 緑 → 黄緑 → 紫 → 漆黒」と変化
-        const baseCycle = (this.time * 0.15) % 1.0; // 少しゆっくりに
+        // colorCycleLFO を使って周期自体をランダムに揺らす
+        const baseCycle = this.colorCycleLFO.getValue(); 
         const skinColor = new THREE.Color();
         if (baseCycle < 0.1) {
-            skinColor.setRGB(0, 0, 0); // 【漆黒】深海の闇に完全に溶け込む
+            skinColor.setRGB(0, 0, 0); // 【漆黒】
         } else if (baseCycle < 0.25) {
             const t = (baseCycle - 0.1) * 6.6;
             skinColor.setRGB(0, 0, t * 0.5); // 漆黒〜紺
@@ -387,7 +424,7 @@ export class Scene16 extends SceneBase {
         const globalCoreHeat = Math.min(1.0, (Math.sin(this.time * distortionSpeed) * 0.5 + 0.5));
 
         if (this.coreMesh && this.coreMesh.geometry.attributes.color) {
-            this.coreMesh.rotation.y += deltaTime * 0.15;
+            this.coreMesh.rotation.y += deltaTime * 0.05;
             const corePosAttr = this.coreMesh.geometry.attributes.position;
             const coreColorAttr = this.coreMesh.geometry.attributes.color;
             const initialPos = this.coreMesh.geometry.userData.initialPositions;
@@ -396,10 +433,11 @@ export class Scene16 extends SceneBase {
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
+                // 複数のノイズを掛け合わせて複雑な歪みを作る
                 const lowFreqNoise = (
-                    Math.sin(v.x * 0.003 + this.time * distortionSpeed * 0.5) * 
-                    Math.cos(v.y * 0.003 + this.time * distortionSpeed * 0.6) * 
-                    Math.sin(v.z * 0.003 + this.time * distortionSpeed * 0.4)
+                    Math.sin(v.x * 0.002 + this.time * distortionSpeed * 0.3) * 
+                    Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4) * 
+                    Math.sin(v.z * 0.002 + this.time * distortionSpeed * 0.2)
                 );
                 
                 const midFreqNoise = (
@@ -412,17 +450,17 @@ export class Scene16 extends SceneBase {
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
-                // コアのヒートマップ（赤禁止：漆黒〜青〜水色〜白）
+                // コアのヒートマップ
                 const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
                 const coreHeatColor = new THREE.Color();
                 if (localHeat < 0.33) {
-                    coreHeatColor.setRGB(0, 0, localHeat * 1.5); // 漆黒〜深い青
+                    coreHeatColor.setRGB(0, 0, localHeat * 1.5); 
                 } else if (localHeat < 0.66) {
                     const t = (localHeat - 0.33) * 3.0;
-                    coreHeatColor.setRGB(0, t * 0.8, 0.5 + t * 0.5); // 青〜水色
+                    coreHeatColor.setRGB(0, t * 0.8, 0.5 + t * 0.5); 
                 } else {
                     const t = (localHeat - 0.66) * 3.0;
-                    coreHeatColor.setRGB(t, 0.8 + t * 0.2, 1.0); // 水色〜白
+                    coreHeatColor.setRGB(t, 0.8 + t * 0.2, 1.0); 
                 }
                 
                 const finalColor = skinColor.clone().lerp(coreHeatColor, localHeat);
@@ -445,9 +483,9 @@ export class Scene16 extends SceneBase {
 
                 // コアと同じノイズロジックで表面の変位を計算
                 const lowFreqNoise = (
-                    Math.sin(rx * 0.003 + this.time * distortionSpeed * 0.5) * 
-                    Math.cos(ry * 0.003 + this.time * distortionSpeed * 0.6) * 
-                    Math.sin(rz * 0.003 + this.time * distortionSpeed * 0.4)
+                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * 
+                    Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * 
+                    Math.sin(rz * 0.002 + this.time * distortionSpeed * 0.2)
                 );
                 const midFreqNoise = (
                     Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
@@ -482,9 +520,14 @@ export class Scene16 extends SceneBase {
             const colorAttr = t.mesh.geometry.attributes.color;
             if (!posAttr || !colorAttr) return;
 
-            const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
-            const angleOffsetPhi = Math.sin(this.time * moveSpeed + i) * 0.15;
-            const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.8 + i * 1.5) * 0.15;
+            // 触手ごとの個別のバイアス（ノイズ）
+            // これにより、一本一本が独立して動いたり動かなかったりする
+            const tentacleNoise = Math.sin(this.time * 0.2 + i * 0.5) * 0.5 + 0.5; // 0.0 - 1.0
+            const individualSpeed = speed * (0.5 + tentacleNoise * 1.5);
+            const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.1 + i * 0.8) * 0.7);
+
+            const angleOffsetPhi = Math.sin(this.time * moveSpeed + i) * 0.1;
+            const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.8 + i * 1.5) * 0.1;
             t.mesh.rotation.set(angleOffsetTheta, angleOffsetPhi, 0);
             
             const focusVec = new THREE.Vector3();
@@ -492,15 +535,13 @@ export class Scene16 extends SceneBase {
                 focusVec.copy(this.focusTarget).sub(this.tentacleGroup.position).applyQuaternion(this.tentacleGroup.quaternion.clone().invert()).normalize(); 
             }
             
-            const lengthNoise = (Math.sin(this.time * 0.5 + i * 1.5) * 0.5 + 0.5) * 0.4 + 0.8;
+            const lengthNoise = (Math.sin(this.time * 0.3 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75;
 
-            // 【最重要】触手の根元の色をコアの「その場所」の色と完全同期させる
-            // 触手の生え際（phi, theta）からコア表面の座標を計算
+            // 触手の根元の色を同期
             const rx = t.baseRadius * Math.sin(t.theta) * Math.cos(t.phi);
             const ry = t.baseRadius * Math.cos(t.theta);
             const rz = t.baseRadius * Math.sin(t.theta) * Math.sin(t.phi);
 
-            // コアと同じノイズロジックで「その地点」の熱量を計算
             const lowFreqNoise = (
                 Math.sin(rx * 0.003 + this.time * distortionSpeed * 0.5) * 
                 Math.cos(ry * 0.003 + this.time * distortionSpeed * 0.6) * 
@@ -525,10 +566,10 @@ export class Scene16 extends SceneBase {
 
             const color = new THREE.Color();
             for (let s = 0; s <= 64; s++) {
-                const u = s / 64; const time = this.time * speed; const phase = u * waveFreq + i * 2.0;
-                let offsetX = (Math.sin(time + phase) * 1.0 + Math.sin(time * 2.8 + phase * 3.0) * 1.5 + Math.sin(time * 5.5 + phase * 6.0) * 1.0) * waveAmp * u;
-                let offsetY = (Math.cos(time * 0.8 + phase * 1.2 + i) * 1.0 + Math.cos(time * 3.5 + phase * 3.8) * 1.2 + Math.sin(time * 6.2 + phase * 7.0) * 1.0) * waveAmp * u;
-                let offsetZ = (Math.sin(time * 1.2 + phase * 0.8 + i * 1.5) * 1.0 + Math.sin(time * 3.2 + phase * 3.3) * 1.5 + Math.cos(time * 5.8 + phase * 6.5) * 1.0) * waveAmp * u;
+                const u = s / 64; const time = this.time * individualSpeed; const phase = u * waveFreq + i * 2.0;
+                let offsetX = (Math.sin(time + phase) * 1.0 + Math.sin(time * 2.8 + phase * 3.0) * 1.5 + Math.sin(time * 5.5 + phase * 6.0) * 1.0) * individualAmp * u;
+                let offsetY = (Math.cos(time * 0.8 + phase * 1.2 + i) * 1.0 + Math.cos(time * 3.5 + phase * 3.8) * 1.2 + Math.sin(time * 6.2 + phase * 7.0) * 1.0) * individualAmp * u;
+                let offsetZ = (Math.sin(time * 1.2 + phase * 0.8 + i * 1.5) * 1.0 + Math.sin(time * 3.2 + phase * 3.3) * 1.5 + Math.cos(time * 5.8 + phase * 6.5) * 1.0) * individualAmp * u;
                 
                 if (focusWeight > 0) {
                     const focusStrength = u * 250.0 * focusWeight;
@@ -538,46 +579,39 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
-                // 触手のヒートマップ計算（全触手で同期した極彩色）
-                const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (waveAmp * 1.5);
-                
-                // 【動きに応じた感度】動きが激しいほどヒートマップが強く出るようにする
+                // 触手のヒートマップ計算
+                const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (individualAmp * 1.5);
                 const motionIntensity = Math.min(1.0, motionVal * 3.0); 
                 
-                // 【同期の鍵】色の周期は globalHeatCycle で全触手一致させる
+                // 色の周期も全触手で同期しつつ、位置によるズレを持たせる
                 let heatFactor = (globalHeatCycle + u * 0.3) % 1.0;
                 
                 const cyberHeatColor = new THREE.Color();
-                // 極彩色ヒートマップ（赤抜きレインボー ＋ 黒）
                 if (heatFactor < 0.1) {
-                    cyberHeatColor.setRGB(0, 0, 0); // 漆黒
+                    cyberHeatColor.setRGB(0, 0, 0); 
                 } else if (heatFactor < 0.25) {
                     const tVal = (heatFactor - 0.1) * 6.6;
-                    cyberHeatColor.setRGB(0, 0, 0.2 + tVal * 0.8); // 黒〜青
+                    cyberHeatColor.setRGB(0, 0, 0.2 + tVal * 0.8); 
                 } else if (heatFactor < 0.4) {
                     const tVal = (heatFactor - 0.25) * 6.6;
-                    cyberHeatColor.setRGB(0, tVal, 1.0); // 青〜シアン
+                    cyberHeatColor.setRGB(0, tVal, 1.0); 
                 } else if (heatFactor < 0.55) {
                     const tVal = (heatFactor - 0.4) * 6.6;
-                    cyberHeatColor.setRGB(0, 1.0, 1.0 - tVal); // シアン〜緑
+                    cyberHeatColor.setRGB(0, 1.0, 1.0 - tVal); 
                 } else if (heatFactor < 0.7) {
                     const tVal = (heatFactor - 0.55) * 6.6;
-                    cyberHeatColor.setRGB(tVal, 1.0, 0); // 緑〜黄色
+                    cyberHeatColor.setRGB(tVal, 1.0, 0); 
                 } else if (heatFactor < 0.85) {
                     const tVal = (heatFactor - 0.7) * 6.6;
-                    cyberHeatColor.setRGB(1.0 - tVal * 0.5, tVal * 0.2, 1.0); // 黄色〜紫
+                    cyberHeatColor.setRGB(1.0 - tVal * 0.5, tVal * 0.2, 1.0); 
                 } else {
                     const tVal = (heatFactor - 0.85) * 6.6;
-                    cyberHeatColor.setRGB(1.0, tVal, 1.0); // 紫〜白
+                    cyberHeatColor.setRGB(1.0, tVal, 1.0); 
                 }
                 
-                // 【解決策】根元付近（u < 0.35）はコアの「その地点の色」を完全維持！
-                // さらに、動き（motionIntensity）がない場合は先端もコアの色（単色）に近付くようにする
                 if (u < 0.35) {
                     color.copy(rootColor);
                 } else {
-                    // 動きが激しいほど、かつ先端に近いほど、ヒートマップの極彩色が強く出る
-                    // 動きがない（motionIntensityが小さい）時は、cyberHeatColor 自体も rootColor に近付けることで「単色化」を強調
                     const finalCyberColor = cyberHeatColor.clone().lerp(rootColor, 1.0 - motionIntensity);
                     const blendT = (u - 0.35) / 0.65; 
                     color.copy(rootColor).lerp(finalCyberColor, blendT);

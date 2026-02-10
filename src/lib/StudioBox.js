@@ -78,7 +78,7 @@ export class StudioBox {
         });
         this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
         this.studioFloor.rotation.x = -Math.PI / 2;
-        this.studioFloor.position.y = -499;
+        this.studioFloor.position.y = -498; // -499 -> -498 に微上げして Z-Fighting を防止！
         this.studioFloor.receiveShadow = true;
         this.scene.add(this.studioFloor);
 

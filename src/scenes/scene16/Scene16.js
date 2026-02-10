@@ -67,11 +67,11 @@ export class Scene16 extends SceneBase {
      * カメラ距離の徹底修正
      */
     setupCameraParticleDistance(cameraParticle) {
-        // 距離をガッツリ離す（2500 -> 4000）
-        cameraParticle.minDistance = 4000; 
-        cameraParticle.maxDistance = 15000;
-        cameraParticle.maxDistanceReset = 10000;
-        cameraParticle.minY = -400;
+        // 距離を調整（2500 -> 3000）
+        cameraParticle.minDistance = 3000; 
+        cameraParticle.maxDistance = 10000;
+        cameraParticle.maxDistanceReset = 8000;
+        cameraParticle.minY = -400; // 標準の床の高さに合わせる
         
         // 即座に位置を更新
         if (cameraParticle.initializePosition) {
@@ -86,9 +86,9 @@ export class Scene16 extends SceneBase {
         // 基底クラスのカメラ設定を上書き
         this.setupCameraParticleDistances();
 
-        // 初期カメラ位置をさらに遠く（z=8000）
-        this.camera.position.set(0, 2000, 8000); 
-        this.camera.lookAt(0, 1000, 0);
+        // 初期カメラ位置を調整
+        this.camera.position.set(0, 500, 4000); 
+        this.camera.lookAt(0, 0, 0);
         
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -111,14 +111,14 @@ export class Scene16 extends SceneBase {
         directionalLight.position.set(2000, 5000, 2000);
         directionalLight.castShadow = true;
         
-        // 影の範囲をクリーチャーの周辺に限定しつつ、十分な広さを確保
-        const sSize = 8000; 
+        // 影の範囲をクリーチャーの周辺に限定
+        const sSize = 4000; 
         directionalLight.shadow.camera.left = -sSize;
         directionalLight.shadow.camera.right = sSize;
         directionalLight.shadow.camera.top = sSize;
         directionalLight.shadow.camera.bottom = -sSize;
         directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 20000;
+        directionalLight.shadow.camera.far = 10000;
         
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
@@ -128,7 +128,7 @@ export class Scene16 extends SceneBase {
         this.scene.add(directionalLight);
 
         const pointLight = new THREE.PointLight(0xffffff, 1.5, 5000); 
-        pointLight.position.set(0, 800, 0); 
+        pointLight.position.set(0, 1000, 0); 
         pointLight.castShadow = false; 
         this.scene.add(pointLight);
     }
@@ -141,7 +141,7 @@ export class Scene16 extends SceneBase {
         const textures = this.generateFleshTextures();
         this.scene.add(this.tentacleGroup);
         const tentacleCount = 250; 
-        const baseRadius = 600; // コアを巨大化
+        const baseRadius = 300; // コアを小さく（600 -> 300）
 
         this.time = Math.random() * 100;
 
@@ -162,7 +162,7 @@ export class Scene16 extends SceneBase {
             color: 0xffffff, 
             map: textures.map, 
             bumpMap: textures.bumpMap,
-            bumpScale: 15.0, 
+            bumpScale: 10.0, 
             metalness: 0.0, 
             roughness: 0.2, 
             vertexColors: true,
@@ -186,11 +186,11 @@ export class Scene16 extends SceneBase {
             const phi = clusterPhi + (Math.random() - 0.5) * 1.2;
             const theta = clusterTheta + (Math.random() - 0.5) * 1.2;
 
-            const baseThickness = 15 + Math.pow(Math.random(), 2.0) * 100; // さらに太く！
-            const r = baseRadius + 800;
+            const baseThickness = 8 + Math.pow(Math.random(), 2.0) * 50; // 太さも調整（15+100 -> 8+50）
+            const r = baseRadius + 400; // 距離も調整
 
             points.push(new THREE.Vector3(0,0,0));
-            const midDist = baseRadius + 400;
+            const midDist = baseRadius + 200;
             const midPoint = new THREE.Vector3(
                 midDist * Math.sin(theta + (Math.random()-0.5)*1.5) * Math.cos(phi + (Math.random()-0.5)*1.5),
                 midDist * Math.cos(theta + (Math.random()-0.5)*1.5),
@@ -234,7 +234,7 @@ export class Scene16 extends SceneBase {
             this.tentacleGroup.add(mesh);
             this.tentacles.push({ mesh, curve, basePositions, phi, theta, baseRadius, baseThickness });
         }
-        this.tentacleGroup.position.set(0, 800, 0);
+        this.tentacleGroup.position.set(0, 400, 0); // さらに上に（100 -> 400）
         this.setParticleCount(this.tentacles.length);
     }
 
@@ -307,10 +307,10 @@ export class Scene16 extends SceneBase {
                 this.focusTarget.copy(this.camera.position).add(new THREE.Vector3((Math.random()-0.5)*1500, (Math.random()-0.5)*800, (Math.random()-0.5)*1500));
             }
             switch(this.creatureState) {
-                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.8, waveFreq: 1.5, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.2, distortionSpeed: 0.8, distortionAmp: 0.3 }; break;
-                case this.STATE_WILD: this.targetAnimParams = { speed: 3.0, waveFreq: 4.0, waveAmp: 100.0, focusWeight: 0.0, moveSpeed: 0.5, distortionSpeed: 2.0, distortionAmp: 0.8 }; break;
-                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.5, waveFreq: 1.0, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.1, distortionSpeed: 0.5, distortionAmp: 0.2 }; break;
-                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.4, waveFreq: 1.2, waveAmp: 15.0, focusWeight: 0.0, moveSpeed: 0.1, distortionSpeed: 0.3, distortionAmp: 0.2 }; break;
+                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.4, waveFreq: 1.2, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.1, distortionSpeed: 0.2, distortionAmp: 0.2 }; break;
+                case this.STATE_WILD: this.targetAnimParams = { speed: 1.2, waveFreq: 3.0, waveAmp: 100.0, focusWeight: 0.0, moveSpeed: 0.3, distortionSpeed: 0.5, distortionAmp: 0.4 }; break;
+                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.2, waveFreq: 0.8, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.05, distortionSpeed: 0.1, distortionAmp: 0.15 }; break;
+                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.1, waveFreq: 0.5, waveAmp: 5.0, focusWeight: 0.0, moveSpeed: 0.02, distortionSpeed: 0.05, distortionAmp: 0.1 }; break;
             }
         }
         const lerpFactor = deltaTime * 1.5;
@@ -324,7 +324,12 @@ export class Scene16 extends SceneBase {
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
-        const skinColor = new THREE.Color('#ffccbb'); 
+        // 深海のタコ風カメレオンカラー（黒〜赤）
+        // 時間とともにゆっくりと変化
+        const colorCycle = (Math.sin(this.time * 0.3) * 0.5 + 0.5); // 0.0 - 1.0
+        const baseColor = new THREE.Color('#110000'); // ほぼ黒
+        const peakColor = new THREE.Color('#880000'); // 深い赤
+        const skinColor = baseColor.clone().lerp(peakColor, colorCycle);
         
         if (this.coreMesh && this.coreMesh.geometry.attributes.color) {
             this.coreMesh.rotation.y += deltaTime * 0.15;
@@ -335,9 +340,26 @@ export class Scene16 extends SceneBase {
             const { distortionSpeed, distortionAmp } = this.currentAnimParams;
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
-                const noiseVal = (Math.sin(v.x * 0.01 + this.time * distortionSpeed) + Math.cos(v.y * 0.01 + this.time * distortionSpeed * 0.8) + Math.sin(v.z * 0.01 + this.time * distortionSpeed * 1.1));
+                
+                // 低周波のノイズで大きなうねりを作る（個体感を出す）
+                const lowFreqNoise = (
+                    Math.sin(v.x * 0.003 + this.time * distortionSpeed * 0.5) * 
+                    Math.cos(v.y * 0.003 + this.time * distortionSpeed * 0.6) * 
+                    Math.sin(v.z * 0.003 + this.time * distortionSpeed * 0.4)
+                );
+                
+                // 中周波のノイズで表面の有機的な凹凸を作る
+                const midFreqNoise = (
+                    Math.sin(v.x * 0.01 + this.time * distortionSpeed) + 
+                    Math.cos(v.y * 0.01 + this.time * distortionSpeed * 0.8) + 
+                    Math.sin(v.z * 0.01 + this.time * distortionSpeed * 1.1)
+                ) * 0.3;
+
+                const noiseVal = lowFreqNoise + midFreqNoise;
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
+
+                // コアの色もカメレオンカラー（skinColor）に同期！
                 coreColorAttr.setXYZ(i, skinColor.r, skinColor.g, skinColor.b);
             }
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
@@ -358,6 +380,9 @@ export class Scene16 extends SceneBase {
                 focusVec.copy(this.focusTarget).sub(this.tentacleGroup.position).applyQuaternion(this.tentacleGroup.quaternion.clone().invert()).normalize(); 
             }
             
+            // 触手の長さをノイズでコントロール（動的に伸び縮み）
+            const lengthNoise = (Math.sin(this.time * 0.5 + i * 1.5) * 0.5 + 0.5) * 0.4 + 0.8; // 0.8 - 1.2倍
+
             const color = new THREE.Color();
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; const time = this.time * speed; const phase = u * waveFreq + i * 2.0;
@@ -374,20 +399,40 @@ export class Scene16 extends SceneBase {
                 const intensity = Math.pow(u, 1.1);
                 
                 color.copy(skinColor);
-                if (u > 0.6) { // 根本付近(60%)からヒートマップ開始
-                    const heatBlend = (u - 0.6) / 0.4;
-                    const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (waveAmp * 1.5);
-                    let heatFactor = heatBlend * 0.7 + motionVal * 0.3; 
-                    heatFactor = Math.min(1.0, heatFactor);
-                    const heatColor = new THREE.Color(); heatColor.setHSL((1.0 - heatFactor) * 0.7, 1.0, 0.5);
-                    color.lerp(heatColor, heatBlend);
+                
+                // 触手の根元(u=0)からヒートマップを開始！
+                const heatBlend = Math.pow(u, 0.8); // 根元から先端にかけて徐々に強まる
+                const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (waveAmp * 1.5);
+                let heatFactor = heatBlend * 0.6 + motionVal * 0.4; 
+                heatFactor = Math.min(1.0, heatFactor);
+                
+                // 「黒 → 青 → 水色 → 緑 → 白」のクールサイバーヒートマップ
+                const cyberColor = new THREE.Color();
+                if (heatFactor < 0.25) {
+                    // 黒 -> 青
+                    cyberColor.setRGB(0, 0, heatFactor * 4.0);
+                } else if (heatFactor < 0.5) {
+                    // 青 -> 水色
+                    const t = (heatFactor - 0.25) * 4.0;
+                    cyberColor.setRGB(0, t, 1.0);
+                } else if (heatFactor < 0.75) {
+                    // 水色 -> 緑
+                    const t = (heatFactor - 0.5) * 4.0;
+                    cyberColor.setRGB(0, 1.0, 1.0 - t);
+                } else {
+                    // 緑 -> 白
+                    const t = (heatFactor - 0.75) * 4.0;
+                    cyberColor.setRGB(t, 1.0, t);
                 }
+                
+                color.lerp(cyberColor, heatBlend);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;
                     if (idx < posAttr.count) {
                         const bx = t.basePositions[idx * 3 + 0]; const by = t.basePositions[idx * 3 + 1]; const bz = t.basePositions[idx * 3 + 2];
-                        posAttr.setXYZ(idx, bx + offsetX * intensity, by + offsetY * intensity, bz + offsetZ * intensity);
+                        // 長さのノイズを適用
+                        posAttr.setXYZ(idx, (bx + offsetX * intensity) * lengthNoise, (by + offsetY * intensity) * lengthNoise, (bz + offsetZ * intensity) * lengthNoise);
                         colorAttr.setXYZ(idx, color.r, color.g, color.b);
                     }
                 }

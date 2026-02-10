@@ -80,12 +80,13 @@ export class Scene16 extends SceneBase {
      * カメラ距離の徹底修正
      */
     setupCameraParticleDistance(cameraParticle) {
-        // 距離を調整（2500 -> 3000）
-        cameraParticle.minDistance = 3000; 
-        cameraParticle.maxDistance = 4500; // 箱を突き抜けないように最大距離を制限（StudioBox size=10000 なので半径5000以内）
-        cameraParticle.maxDistanceReset = 4000;
-        cameraParticle.minY = -400; // 標準の床の高さに合わせる
-        cameraParticle.maxY = 4500; // 天井を突き抜けないように制限
+        // 距離を離しつつ、StudioBox（size=10000, 半径5000）を突き抜けないように制限
+        // z-fighting 防止のため、最大距離を 4850 程度に抑える
+        cameraParticle.minDistance = 3500; 
+        cameraParticle.maxDistance = 4850; 
+        cameraParticle.maxDistanceReset = 4500;
+        cameraParticle.minY = -200; 
+        cameraParticle.maxY = 4500; 
         
         // 即座に位置を更新
         if (cameraParticle.initializePosition) {
@@ -98,11 +99,13 @@ export class Scene16 extends SceneBase {
         await super.setup();
         
         // 基底クラスのカメラ設定を上書き
-        this.setupCameraParticleDistances();
+        if (this.cameraParticle) {
+            this.setupCameraParticleDistance(this.cameraParticle);
+        }
 
-        // 初期カメラ位置を調整
-        this.camera.position.set(0, 500, 4000); 
-        this.camera.lookAt(0, 0, 0);
+        // 初期カメラ位置も箱の内側に収める
+        this.camera.position.set(0, 1000, 4500); 
+        this.camera.lookAt(0, 400, 0);
         
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -168,7 +171,7 @@ export class Scene16 extends SceneBase {
         
         this.scene.add(directionalLight);
 
-        const pointLight = new THREE.PointLight(0xffffff, 1.5, 5000); 
+        const pointLight = new THREE.PointLight(0xffffff, 0.8, 5000); 
         pointLight.position.set(0, 1000, 0); 
         pointLight.castShadow = false; 
         this.scene.add(pointLight);
@@ -363,10 +366,22 @@ export class Scene16 extends SceneBase {
             this.composer = new EffectComposer(this.renderer);
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
+        
+        // 既存のパスをクリアして、二重に追加されるのを防ぐ（ホットリロード対策）
+        const passesToRemove = this.composer.passes.filter(p => p instanceof UnrealBloomPass || p instanceof BokehPass);
+        passesToRemove.forEach(p => this.composer.removePass(p));
+
         // ブルームを完全に無効化（強度0）
         this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.0, 0.1, 1.0);
         this.composer.addPass(this.bloomPass);
-        this.bokehPass = new BokehPass(this.scene, this.camera, { focus: 1500, aperture: 0.00001, maxblur: 0.005, width: window.innerWidth, height: window.innerHeight });
+        
+        this.bokehPass = new BokehPass(this.scene, this.camera, { 
+            focus: 1500, 
+            aperture: 0.00001, 
+            maxblur: 0.005, 
+            width: window.innerWidth, 
+            height: window.innerHeight 
+        });
         this.composer.addPass(this.bokehPass);
     }
 
@@ -419,43 +434,27 @@ export class Scene16 extends SceneBase {
         for (let key in this.currentAnimParams) { this.currentAnimParams[key] += (this.targetAnimParams[key] - this.currentAnimParams[key]) * lerpFactor; }
         
         const heartbeat = Math.pow(Math.sin(this.time * 1.0), 8.0); // 心拍もゆっくりに
-        const scale = 1.0 + heartbeat * 0.03;
+        
+        // 【コアの基準サイズ変動】周期的に巨大化したり縮小したりする
+        const coreBaseScaleLFO = this.speedLFO.getValue(); // 既存のLFOを流用して周期を揺らす
+        const coreBaseScale = 1.0 + Math.sin(this.time * 0.2 + coreBaseScaleLFO) * 0.4; // 0.6倍〜1.4倍
+        
+        const scale = coreBaseScale + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
         
         const rotationSpeed = this.creatureState === this.STATE_FOCUS ? 0.02 : 0.08;
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
-        // 【赤系・マゼンタ禁止】ベースカラーを極彩色（カメレオン）化！
-        // 輝度を上げて白っぽく調整（肉の質感を明るく）
+        // 【ベースカラーの刷新】白と濃いグレーをランダムに行ったり来たり
         const baseCycle = this.colorCycleLFO.getValue(); 
         const skinColor = new THREE.Color();
-        if (baseCycle < 0.1) {
-            skinColor.setRGB(0.8, 0.8, 0.8); // ほぼ白
-        } else if (baseCycle < 0.25) {
-            const t = (baseCycle - 0.1) * 6.6;
-            skinColor.setRGB(0.8 - t * 0.2, 0.8 - t * 0.2, 0.8); // 白〜薄い青
-        } else if (baseCycle < 0.4) {
-            const t = (baseCycle - 0.25) * 6.6;
-            skinColor.setRGB(0.6, 0.6 + t * 0.2, 0.8 + t * 0.1); // 薄い青〜薄い水色
-        } else if (baseCycle < 0.55) {
-            const t = (baseCycle - 0.4) * 6.6;
-            skinColor.setRGB(0.6 + t * 0.1, 0.8 + t * 0.1, 0.9 - t * 0.2); // 薄い水色〜薄い緑
-        } else if (baseCycle < 0.7) {
-            const t = (baseCycle - 0.55) * 6.6;
-            skinColor.setRGB(0.7 + t * 0.2, 0.9, 0.7); // 薄い緑〜薄い黄緑
-        } else if (baseCycle < 0.85) {
-            const t = (baseCycle - 0.7) * 6.6;
-            skinColor.setRGB(0.9, 0.7 + t * 0.1, 0.7 + t * 0.2); // 薄い黄緑〜薄い紫
-        } else {
-            const t = (baseCycle - 0.85) * 6.6;
-            skinColor.setRGB(0.9 - t * 0.1, 0.8 - t * 0.1, 0.9 - t * 0.1); // 薄い紫〜白
-        }
+        
+        // baseCycle (0.0〜1.0) を使って、白(0.9)と濃いグレー(0.2)の間を補完
+        // LFOが揺れているので、周期的に色が入れ替わる
+        const grayVal = 0.2 + (baseCycle * 0.7); 
+        skinColor.setRGB(grayVal, grayVal, grayVal);
 
-        // ヒートマップの色味自体を時間で変化させるためのLFO（0.0〜1.0）
-        const heatmapCycle = (this.time * 0.1) % 1.0;
-
-        // 全触手で同期したヒートマップ用のグローバルな「熱量」
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
         
         // トラック6のMIDI信号（力）を取得
@@ -464,28 +463,51 @@ export class Scene16 extends SceneBase {
             : 0;
         const totalForce = 1.0 + track6Force * 2.0; // トラック6で動きを増幅
 
-        const globalHeatCycle = (this.time * speed * 0.5) % 1.0;
-        const globalCoreHeat = Math.min(1.0, (Math.sin(this.time * distortionSpeed) * 0.5 + 0.5));
+        // 【標高ベースのヒートマップロジック】地球儀のようにノイズの高さで多段階に色を変える
+        const getElevationHeatColor = (vPos, baseColor, time) => {
+            // 3次元ノイズで「標高（Elevation）」を計算
+            // 【修正】ノイズスケールを緩めて、大きな色の塊（偏り）を作る
+            const noiseScale = 0.003; // 0.012 -> 0.003 (緩やかに)
+            const elevation1 = (
+                Math.sin(vPos.x * noiseScale + time * 0.25) * 
+                Math.cos(vPos.y * noiseScale + time * 0.35) * 
+                Math.sin(vPos.z * noiseScale + time * 0.2)
+            );
+            // サブノイズもスケールを落として、全体的にゆったりした偏りにする
+            const elevation2 = (
+                Math.sin(vPos.x * noiseScale * 1.5 - time * 0.4) * 
+                Math.cos(vPos.y * noiseScale * 1.5 + time * 0.5)
+            ) * 0.4;
+            const elevation3 = (
+                Math.sin(vPos.z * noiseScale * 2.0 + time * 0.8)
+            ) * 0.2;
 
-        // 生物全体に対するノイズベースのヒートマップ関数
-        const getGlobalHeatColor = (baseColor, time, u = 0, tentacleIdx = -1) => {
-            // 【重要】中心から外へ広がる波（u に完全に依存させる）
-            // u=0 がコア・根元、u=1 が触手先端
-            const waveSpeed = 2.5;
-            const waveFreq = 8.0;
+            const totalElevation = (elevation1 + elevation2 + elevation3) * 0.5 + 0.5; // 0.0〜1.0 に正規化
             
-            // 全触手共通のパルス（中心から放射状に広がる）
-            const pulse = Math.sin(u * waveFreq - time * waveSpeed) * 0.5 + 0.5;
+            // 標高を多段階（ヒートマップ）にする
+            // 【維持】段階の細かさ（64段階）はそのままにして、密度を保つ
+            const steps = 64.0;
+            const steppedElevation = Math.floor(totalElevation * steps) / steps;
             
-            // 共通のヒートマップ色（時間で変化）
-            const heatColor = new THREE.Color();
-            const hue = (this.colorCycleLFO.getValue()) % 1.0;
-            heatColor.setHSL(hue, 0.9, 0.4); 
+            // 【色味自体のダイナミック変化】
+            const colorShiftSpeed = 0.2; 
+            const baseHueOffset = (this.time * colorShiftSpeed) % 1.0;
             
-            // ベースカラー（白）とヒートマップ色をブレンド
-            // u が大きいほど、つまり先端ほど「同じパルス」の影響を強く受けるようにする
-            const finalColor = baseColor.clone().lerp(heatColor, pulse * 0.7);
+            // 標高に応じた色相の変化（青〜紫の範囲に限定）
+            // Hue を 0.5（水色・青）〜 0.9（紫・マゼンタ手前）の範囲に絞る
+            // 赤系（0.0〜0.1）と緑系（0.2〜0.4）を完全に避ける
+            let hue = 0.5 + ((baseHueOffset + steppedElevation * 0.4) % 1.0) * 0.4;
             
+            const targetColor = new THREE.Color();
+            // 段階ごとの明暗パターンも維持
+            const lightnessPattern = Math.sin(steppedElevation * Math.PI * 8.0) * 0.15 + 0.4;
+            const saturation = 0.6 + steppedElevation * 0.4; 
+            targetColor.setHSL(hue, saturation, lightnessPattern);
+            
+            // ベースカラー（白〜グレー）と多段階標高色をブレンド
+            const blendFactor = 0.15 + steppedElevation * 0.8;
+            const finalColor = baseColor.clone().lerp(targetColor, blendFactor);
+
             // 発光防止クランプ
             finalColor.r = Math.min(0.95, finalColor.r);
             finalColor.g = Math.min(0.95, finalColor.g);
@@ -505,18 +527,23 @@ export class Scene16 extends SceneBase {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
                 // 歪みノイズ
-                const noiseVal = (
+                const lowFreqNoise = (
                     Math.sin(v.x * 0.002 + this.time * distortionSpeed * 0.3) * 
-                    Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4)
-                ) + (
-                    Math.sin(v.x * 0.01 + this.time * distortionSpeed) * 0.3
+                    Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4) * 
+                    Math.sin(v.z * 0.002 + this.time * distortionSpeed * 0.2)
                 );
-
+                const midFreqNoise = (
+                    Math.sin(v.x * 0.01 + this.time * distortionSpeed) + 
+                    Math.cos(v.y * 0.01 + this.time * distortionSpeed * 0.8) + 
+                    Math.sin(v.z * 0.01 + this.time * distortionSpeed * 1.1)
+                ) * 0.3;
+                const noiseVal = lowFreqNoise + midFreqNoise;
+                
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
-                // コアは u=0（中心）として計算
-                const finalColor = getGlobalHeatColor(skinColor, this.time, 0);
+                // 多段階標高ヒートマップ（コア）
+                const finalColor = getElevationHeatColor(v, skinColor, this.time);
                 coreColorAttr.setXYZ(i, finalColor.r, finalColor.g, finalColor.b);
             }
             
@@ -531,9 +558,15 @@ export class Scene16 extends SceneBase {
 
             for (let i = 0; i < this.hairCount; i++) {
                 const data = this.hairData[i];
-                const rx = baseRadius * Math.sin(data.theta) * Math.cos(data.phi);
-                const ry = baseRadius * Math.cos(data.theta);
-                const rz = baseRadius * Math.sin(data.theta) * Math.sin(data.phi);
+                // 初期位置を計算
+                const sinT = Math.sin(data.theta);
+                const cosT = Math.cos(data.theta);
+                const sinP = Math.sin(data.phi);
+                const cosP = Math.cos(data.phi);
+                
+                const rx = baseRadius * sinT * cosP;
+                const ry = baseRadius * cosT;
+                const rz = baseRadius * sinT * sinP;
 
                 // コアと同じノイズロジックで表面の変位を計算
                 const lowFreqNoise = (
@@ -556,11 +589,6 @@ export class Scene16 extends SceneBase {
                 const hairLength = 15 + Math.sin(this.time * 2.0 + i) * 5;
                 const endRadius = startRadius + hairLength;
 
-                const sinT = Math.sin(data.theta);
-                const cosT = Math.cos(data.theta);
-                const sinP = Math.sin(data.phi);
-                const cosP = Math.cos(data.phi);
-
                 // 開始点
                 hairPosAttr.setXYZ(i * 2, startRadius * sinT * cosP, startRadius * cosT, startRadius * sinT * sinP);
                 // 終点
@@ -574,6 +602,18 @@ export class Scene16 extends SceneBase {
             const colorAttr = t.mesh.geometry.attributes.color;
             if (!posAttr || !colorAttr) return;
 
+            // 【触手の集合・拡散ロジック】周期的に一箇所に集まったり広がったりする
+            // 生える場所（phi, theta）を時間経過でオフセットさせて、特定の方向に寄せる
+            const gatheringCycle = Math.sin(this.time * 0.1) * 0.5 + 0.5; // 0.0(通常) 〜 1.0(集合)
+            
+            // 集合地点（ターゲット方向）をゆっくり回転させる
+            const targetPhi = this.time * 0.2;
+            const targetTheta = Math.PI * 0.5 + Math.sin(this.time * 0.15) * 0.5;
+            
+            // 元の角度とターゲット角度を補間
+            const currentPhi = t.phi * (1.0 - gatheringCycle * 0.8) + targetPhi * (gatheringCycle * 0.8);
+            const currentTheta = t.theta * (1.0 - gatheringCycle * 0.8) + targetTheta * (gatheringCycle * 0.8);
+
             // 触手ごとの個別のバイアス（動きには残すが、色には使わない）
             const tentacleNoise = Math.sin(this.time * 0.2 + i * 0.5) * 0.5 + 0.5; 
             const individualSpeed = speed * (0.5 + tentacleNoise * 1.5);
@@ -581,14 +621,26 @@ export class Scene16 extends SceneBase {
 
             const angleOffsetPhi = Math.sin(this.time * moveSpeed + i) * 0.1;
             const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.8 + i * 1.5) * 0.1;
-            t.mesh.rotation.set(angleOffsetTheta, angleOffsetPhi, 0);
+            
+            // 集合ロジックを反映した回転
+            t.mesh.rotation.set(currentTheta + angleOffsetTheta - t.theta, currentPhi + angleOffsetPhi - t.phi, 0);
             
             const focusVec = new THREE.Vector3();
             if (focusWeight > 0) { 
                 focusVec.copy(this.focusTarget).sub(this.tentacleGroup.position).applyQuaternion(this.tentacleGroup.quaternion.clone().invert()).normalize(); 
             }
             
-            const lengthNoise = (Math.sin(this.time * 0.3 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75;
+            // 触手ごとの長さの揺らぎを計算（ノイズで偏りを持たせる）
+            // 空間的な偏りを出すために、触手の生えている方向（phi, theta）をベースにノイズを計算
+            const lengthScale = 0.5;
+            const lengthNoiseBase = (
+                Math.sin(t.phi * 2.0 + this.time * 0.15) * 
+                Math.cos(t.theta * 2.0 - this.time * 0.1)
+            );
+            // 【修正】最短を 0.1倍（ほぼ消える）、最長を 1.5倍にして、伸縮の幅を極端にする
+            const dynamicLength = 0.1 + (lengthNoiseBase * 0.5 + 0.5) * 1.4;
+            
+            const lengthNoise = ((Math.sin(this.time * 0.3 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75) * dynamicLength;
 
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; 
@@ -629,9 +681,10 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
-                // 触手の色計算：全体ヒートマップ
-                // 全触手で共通の u（根元からの距離）を使い、個別のランダム要素を排除
-                const color = getGlobalHeatColor(skinColor, this.time, u, i);
+                // 触手の色計算：多段階標高ヒートマップ
+                // 触手の各頂点の空間座標（vPos）を使って標高色を計算
+                const vPos = new THREE.Vector3(offsetX, offsetY, offsetZ);
+                const color = getElevationHeatColor(vPos, skinColor, this.time);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;

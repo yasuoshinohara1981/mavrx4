@@ -520,9 +520,8 @@ export class Scene16 extends SceneBase {
             const colorAttr = t.mesh.geometry.attributes.color;
             if (!posAttr || !colorAttr) return;
 
-            // 触手ごとの個別のバイアス（ノイズ）
-            // これにより、一本一本が独立して動いたり動かなかったりする
-            const tentacleNoise = Math.sin(this.time * 0.2 + i * 0.5) * 0.5 + 0.5; // 0.0 - 1.0
+            // 触手ごとの個別のバイアス（動きには残すが、色には使わない）
+            const tentacleNoise = Math.sin(this.time * 0.2 + i * 0.5) * 0.5 + 0.5; 
             const individualSpeed = speed * (0.5 + tentacleNoise * 1.5);
             const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.1 + i * 0.8) * 0.7);
 
@@ -580,11 +579,12 @@ export class Scene16 extends SceneBase {
                 const intensity = Math.pow(u, 1.1);
                 
                 // 触手のヒートマップ計算
+                // 【修正】ヒートマップは「力（動き）」に応じて。バイアスを掛けずに全体でトーンを統一。
                 const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (individualAmp * 1.5);
-                const motionIntensity = Math.min(1.0, motionVal * 3.0); 
+                const motionIntensity = Math.min(1.0, motionVal * 2.0); // 感度を少し調整
                 
-                // 色の周期も全触手で同期しつつ、位置によるズレを持たせる
-                let heatFactor = (globalHeatCycle + u * 0.3) % 1.0;
+                // 色の周期は globalHeatCycle で全触手一致させる（触手ごとのズレをなくす）
+                let heatFactor = (globalHeatCycle + u * 0.2) % 1.0; 
                 
                 const cyberHeatColor = new THREE.Color();
                 if (heatFactor < 0.1) {
@@ -612,10 +612,24 @@ export class Scene16 extends SceneBase {
                 if (u < 0.35) {
                     color.copy(rootColor);
                 } else {
+                    // 動き（motionIntensity）が弱いときは、ベースの色（rootColor）に沈ませる
+                    // これにより「力に応じて」ヒートマップが出るようになる
                     const finalCyberColor = cyberHeatColor.clone().lerp(rootColor, 1.0 - motionIntensity);
                     const blendT = (u - 0.35) / 0.65; 
                     color.copy(rootColor).lerp(finalCyberColor, blendT);
                 }
+                
+                for (let rIdx = 0; rIdx <= 12; rIdx++) {
+                    const idx = s * 13 + rIdx;
+                    if (idx < posAttr.count) {
+                        const bx = t.basePositions[idx * 3 + 0]; const by = t.basePositions[idx * 3 + 1]; const bz = t.basePositions[idx * 3 + 2];
+                        posAttr.setXYZ(idx, (bx + offsetX * intensity) * lengthNoise, (by + offsetY * intensity) * lengthNoise, (bz + offsetZ * intensity) * lengthNoise);
+                        colorAttr.setXYZ(idx, color.r, color.g, color.b);
+                    }
+                }
+            }
+            posAttr.needsUpdate = true; colorAttr.needsUpdate = true; t.mesh.geometry.computeVertexNormals();
+        });
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;

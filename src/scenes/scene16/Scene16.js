@@ -307,10 +307,10 @@ export class Scene16 extends SceneBase {
                 this.focusTarget.copy(this.camera.position).add(new THREE.Vector3((Math.random()-0.5)*1500, (Math.random()-0.5)*800, (Math.random()-0.5)*1500));
             }
             switch(this.creatureState) {
-                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.4, waveFreq: 1.2, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.1, distortionSpeed: 0.2, distortionAmp: 0.2 }; break;
-                case this.STATE_WILD: this.targetAnimParams = { speed: 1.2, waveFreq: 3.0, waveAmp: 100.0, focusWeight: 0.0, moveSpeed: 0.3, distortionSpeed: 0.5, distortionAmp: 0.4 }; break;
-                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.2, waveFreq: 0.8, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.05, distortionSpeed: 0.1, distortionAmp: 0.15 }; break;
-                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.1, waveFreq: 0.5, waveAmp: 5.0, focusWeight: 0.0, moveSpeed: 0.02, distortionSpeed: 0.05, distortionAmp: 0.1 }; break;
+                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.2, waveFreq: 1.2, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.05, distortionSpeed: 0.1, distortionAmp: 0.2 }; break;
+                case this.STATE_WILD: this.targetAnimParams = { speed: 0.5, waveFreq: 2.0, waveAmp: 80.0, focusWeight: 0.0, moveSpeed: 0.15, distortionSpeed: 0.25, distortionAmp: 0.4 }; break;
+                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.15, waveFreq: 0.8, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.03, distortionSpeed: 0.08, distortionAmp: 0.15 }; break;
+                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.05, waveFreq: 0.5, waveAmp: 5.0, focusWeight: 0.0, moveSpeed: 0.01, distortionSpeed: 0.03, distortionAmp: 0.1 }; break;
             }
         }
         const lerpFactor = deltaTime * 1.5;

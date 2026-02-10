@@ -630,18 +630,6 @@ export class Scene16 extends SceneBase {
             }
             posAttr.needsUpdate = true; colorAttr.needsUpdate = true; t.mesh.geometry.computeVertexNormals();
         });
-                
-                for (let rIdx = 0; rIdx <= 12; rIdx++) {
-                    const idx = s * 13 + rIdx;
-                    if (idx < posAttr.count) {
-                        const bx = t.basePositions[idx * 3 + 0]; const by = t.basePositions[idx * 3 + 1]; const bz = t.basePositions[idx * 3 + 2];
-                        posAttr.setXYZ(idx, (bx + offsetX * intensity) * lengthNoise, (by + offsetY * intensity) * lengthNoise, (bz + offsetZ * intensity) * lengthNoise);
-                        colorAttr.setXYZ(idx, color.r, color.g, color.b);
-                    }
-                }
-            }
-            posAttr.needsUpdate = true; colorAttr.needsUpdate = true; t.mesh.geometry.computeVertexNormals();
-        });
         
         if (this.useDOF && this.bokehPass) {
             this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);

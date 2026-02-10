@@ -60,6 +60,10 @@ export class Scene16 extends SceneBase {
             1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false
         };
 
+        // 産毛（Hair）の設定
+        this.hairCount = 5000;
+        this.hairSystem = null;
+
         this.setScreenshotText(this.title);
     }
 
@@ -97,8 +101,56 @@ export class Scene16 extends SceneBase {
         this.setupLights();
         this.createStudioBox();
         this.createTentacles();
+        this.createHair();
         this.initPostProcessing();
         this.initialized = true;
+    }
+
+    createHair() {
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(this.hairCount * 3);
+        const colors = new Float32Array(this.hairCount * 3);
+        const sizes = new Float32Array(this.hairCount);
+        
+        // 初期位置をコアの表面にランダム配置
+        for (let i = 0; i < this.hairCount; i++) {
+            const phi = Math.random() * Math.PI * 2;
+            const theta = Math.random() * Math.PI;
+            const radius = 450;
+            
+            positions[i * 3] = radius * Math.sin(theta) * Math.cos(phi);
+            positions[i * 3 + 1] = radius * Math.cos(theta);
+            positions[i * 3 + 2] = radius * Math.sin(theta) * Math.sin(phi);
+            
+            sizes[i] = 2.0 + Math.random() * 5.0;
+        }
+        
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        
+        const material = new THREE.PointsMaterial({
+            size: 2,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            sizeAttenuation: true
+        });
+        
+        this.hairSystem = new THREE.Points(geometry, material);
+        this.tentacleGroup.add(this.hairSystem);
+        
+        // 頂点ごとの phi, theta を保存しておく
+        this.hairData = [];
+        for (let i = 0; i < this.hairCount; i++) {
+            const x = positions[i * 3];
+            const y = positions[i * 3 + 1];
+            const z = positions[i * 3 + 2];
+            const phi = Math.atan2(z, x);
+            const theta = Math.acos(y / 450);
+            this.hairData.push({ phi, theta });
+        }
     }
 
     setupLights() {
@@ -328,25 +380,25 @@ export class Scene16 extends SceneBase {
         // 時間とともに「漆黒 → 紺 → 青 → 水色 → 緑 → 黄緑 → 紫 → 漆黒」と変化
         const baseCycle = (this.time * 0.15) % 1.0; // 少しゆっくりに
         const skinColor = new THREE.Color();
-        if (baseCycle < 0.15) {
+        if (baseCycle < 0.1) {
             skinColor.setRGB(0, 0, 0); // 【漆黒】深海の闇に完全に溶け込む
-        } else if (baseCycle < 0.3) {
-            const t = (baseCycle - 0.15) * 6.6;
+        } else if (baseCycle < 0.25) {
+            const t = (baseCycle - 0.1) * 6.6;
             skinColor.setRGB(0, 0, t * 0.5); // 漆黒〜紺
-        } else if (baseCycle < 0.45) {
-            const t = (baseCycle - 0.3) * 6.6;
+        } else if (baseCycle < 0.4) {
+            const t = (baseCycle - 0.25) * 6.6;
             skinColor.setRGB(0, t * 0.5, 0.5 + t * 0.5); // 紺〜青〜水色
-        } else if (baseCycle < 0.6) {
-            const t = (baseCycle - 0.45) * 6.6;
+        } else if (baseCycle < 0.55) {
+            const t = (baseCycle - 0.4) * 6.6;
             skinColor.setRGB(0, 1.0, 1.0 - t); // 水色〜緑
-        } else if (baseCycle < 0.75) {
-            const t = (baseCycle - 0.6) * 6.6;
+        } else if (baseCycle < 0.7) {
+            const t = (baseCycle - 0.55) * 6.6;
             skinColor.setRGB(t * 0.5, 1.0, 0); // 緑〜黄緑
-        } else if (baseCycle < 0.9) {
-            const t = (baseCycle - 0.75) * 6.6;
+        } else if (baseCycle < 0.85) {
+            const t = (baseCycle - 0.7) * 6.6;
             skinColor.setRGB(0.5 + t * 0.5, 0, 1.0 - t * 0.5); // 黄緑〜紫
         } else {
-            const t = (baseCycle - 0.9) * 10.0;
+            const t = (baseCycle - 0.85) * 6.6;
             skinColor.setRGB(1.0 - t, 0, 1.0 - t); // 紫〜漆黒
         }
 
@@ -398,6 +450,63 @@ export class Scene16 extends SceneBase {
                 coreColorAttr.setXYZ(i, finalColor.r, finalColor.g, finalColor.b);
             }
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
+        }
+
+        // 産毛の更新
+        if (this.hairSystem) {
+            const hairPosAttr = this.hairSystem.geometry.attributes.position;
+            const hairColorAttr = this.hairSystem.geometry.attributes.color;
+            const { distortionSpeed, distortionAmp } = this.currentAnimParams;
+            const baseRadius = 450;
+
+            for (let i = 0; i < this.hairCount; i++) {
+                const data = this.hairData[i];
+                const rx = baseRadius * Math.sin(data.theta) * Math.cos(data.phi);
+                const ry = baseRadius * Math.cos(data.theta);
+                const rz = baseRadius * Math.sin(data.theta) * Math.sin(data.phi);
+
+                // コアと同じノイズロジックで表面の変位を計算
+                const lowFreqNoise = (
+                    Math.sin(rx * 0.003 + this.time * distortionSpeed * 0.5) * 
+                    Math.cos(ry * 0.003 + this.time * distortionSpeed * 0.6) * 
+                    Math.sin(rz * 0.003 + this.time * distortionSpeed * 0.4)
+                );
+                const midFreqNoise = (
+                    Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
+                    Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
+                    Math.sin(rz * 0.01 + this.time * distortionSpeed * 1.1)
+                ) * 0.3;
+                const noiseVal = lowFreqNoise + midFreqNoise;
+                
+                // 表面から少し浮かせる（産毛感）
+                const hairLength = 10 + Math.sin(this.time * 2.0 + i) * 5;
+                const displacement = 1.0 + noiseVal * distortionAmp;
+                const finalRadius = baseRadius * displacement + hairLength;
+
+                hairPosAttr.setXYZ(
+                    i,
+                    finalRadius * Math.sin(data.theta) * Math.cos(data.phi),
+                    finalRadius * Math.cos(data.theta),
+                    finalRadius * Math.sin(data.theta) * Math.sin(data.phi)
+                );
+
+                // 色もコアの表面色と同期
+                const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
+                const hairHeatColor = new THREE.Color();
+                if (localHeat < 0.33) {
+                    hairHeatColor.setRGB(0, 0, localHeat * 1.5);
+                } else if (localHeat < 0.66) {
+                    const t = (localHeat - 0.33) * 3.0;
+                    hairHeatColor.setRGB(0, t * 0.8, 0.5 + t * 0.5);
+                } else {
+                    const t = (localHeat - 0.66) * 3.0;
+                    hairHeatColor.setRGB(t, 0.8 + t * 0.2, 1.0);
+                }
+                const finalHairColor = skinColor.clone().lerp(hairHeatColor, localHeat);
+                hairColorAttr.setXYZ(i, finalHairColor.r, finalHairColor.g, finalHairColor.b);
+            }
+            hairPosAttr.needsUpdate = true;
+            hairColorAttr.needsUpdate = true;
         }
         
         this.tentacles.forEach((t, i) => {
@@ -464,14 +573,16 @@ export class Scene16 extends SceneBase {
                 // 触手のヒートマップ計算（全触手で同期した極彩色）
                 const motionVal = (Math.abs(offsetX) + Math.abs(offsetY) + Math.abs(offsetZ)) / (waveAmp * 1.5);
                 
-                // 【同期の鍵】個別の motionVal ではなく、グローバルな globalHeatCycle をベースにする
-                // u (位置) によるグラデーションは残しつつ、色の周期を全触手で一致させる
-                let heatFactor = (globalHeatCycle + u * 0.5 + motionVal * 0.2) % 1.0;
+                // 【動きに応じた感度】動きが激しいほどヒートマップが強く出るようにする
+                const motionIntensity = Math.min(1.0, motionVal * 3.0); 
+                
+                // 【同期の鍵】色の周期は globalHeatCycle で全触手一致させる
+                let heatFactor = (globalHeatCycle + u * 0.3) % 1.0;
                 
                 const cyberHeatColor = new THREE.Color();
-                // さらに多色な極彩色（赤抜きレインボー ＋ 黒）
+                // 極彩色ヒートマップ（赤抜きレインボー ＋ 黒）
                 if (heatFactor < 0.1) {
-                    cyberHeatColor.setRGB(0, 0, 0); // 【追加】漆黒
+                    cyberHeatColor.setRGB(0, 0, 0); // 漆黒
                 } else if (heatFactor < 0.25) {
                     const tVal = (heatFactor - 0.1) * 6.6;
                     cyberHeatColor.setRGB(0, 0, 0.2 + tVal * 0.8); // 黒〜青
@@ -493,11 +604,15 @@ export class Scene16 extends SceneBase {
                 }
                 
                 // 【解決策】根元付近（u < 0.35）はコアの「その地点の色」を完全維持！
+                // さらに、動き（motionIntensity）がない場合は先端もコアの色（単色）に近付くようにする
                 if (u < 0.35) {
                     color.copy(rootColor);
                 } else {
+                    // 動きが激しいほど、かつ先端に近いほど、ヒートマップの極彩色が強く出る
+                    // 動きがない（motionIntensityが小さい）時は、cyberHeatColor 自体も rootColor に近付けることで「単色化」を強調
+                    const finalCyberColor = cyberHeatColor.clone().lerp(rootColor, 1.0 - motionIntensity);
                     const blendT = (u - 0.35) / 0.65; 
-                    color.copy(rootColor).lerp(cyberHeatColor, blendT);
+                    color.copy(rootColor).lerp(finalCyberColor, blendT);
                 }
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {

@@ -134,9 +134,9 @@ export class StudioBox {
         ctx.fillRect(0, 0, size, size);
 
         // 2. タイルの本体を描画（目地を残して全面に出す）
-        const divisions = 100;
+        const divisions = 50; // 100 -> 50 に減らしてタイルを大きくする
         const step = size / divisions;
-        const gutter = 1; // 目地の幅（ピクセル）をさらに細く（2 -> 1）
+        const gutter = 1; // 目地の幅（ピクセル）
         
         ctx.fillStyle = '#d0d0d0'; // タイル表面の色
         
@@ -156,17 +156,17 @@ export class StudioBox {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             const labelMax = 256;
-            const divisions = 100;
-            const step = size / divisions;
+            const centerIdx = divisions / 2;
             
             ctx.font = '500 8px "Inter", "Roboto", sans-serif';
 
-            // 目地の数（100）に合わせてループを回す
-            // 4目盛りごとに十字とラベルを表示（100 / 4 = 25箇所）
-            for (let i = 0; i <= divisions; i += 4) {
+            // 目地の数に合わせてループを回す
+            // 2目盛りごとに十字とラベルを表示（50 / 2 = 25箇所）
+            // これで空間的な間隔（400ユニットごと）を維持する
+            for (let i = 0; i <= divisions; i += 2) {
                 const tx = i * step;
-                const tyCenter = 50 * step; // 中心（0座標）
-                const labelVal = Math.abs((i - 50) * (labelMax / 50));
+                const tyCenter = centerIdx * step; // 中心（0座標）
+                const labelVal = Math.abs((i - centerIdx) * (labelMax / centerIdx));
 
                 // 赤い十字
                 ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
@@ -187,9 +187,9 @@ export class StudioBox {
 
                 // Z軸上のラベルと十字
                 const tz = i * step;
-                const txCenter = 50 * step;
+                const txCenter = centerIdx * step;
                 
-                if (i !== 50) { // 中心（0,0）は既に描画済みなのでスキップ
+                if (i !== centerIdx) { // 中心（0,0）は既に描画済みなのでスキップ
                     ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
                     ctx.beginPath();
                     ctx.moveTo(txCenter - cs, tz); ctx.lineTo(txCenter + cs, tz);

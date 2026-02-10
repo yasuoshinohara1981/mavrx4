@@ -189,7 +189,7 @@ export class Scene16 extends SceneBase {
 
         this.time = Math.random() * 100;
 
-        const coreGeo = new THREE.IcosahedronGeometry(baseRadius, 6);
+        const coreGeo = new THREE.IcosahedronGeometry(baseRadius, 12); // 分割数を 6 -> 12 に倍増
         coreGeo.userData.initialPositions = coreGeo.attributes.position.array.slice();
         
         // 頂点カラー属性を初期化
@@ -437,7 +437,7 @@ export class Scene16 extends SceneBase {
         
         // 【コアの基準サイズ変動】周期的に巨大化したり縮小したりする
         const coreBaseScaleLFO = this.speedLFO.getValue(); // 既存のLFOを流用して周期を揺らす
-        const coreBaseScale = 1.0 + Math.sin(this.time * 0.2 + coreBaseScaleLFO) * 0.4; // 0.6倍〜1.4倍
+        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + coreBaseScaleLFO) * 0.4; // 0.2 -> 0.05
         
         const scale = coreBaseScale + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
@@ -464,16 +464,14 @@ export class Scene16 extends SceneBase {
         const totalForce = 1.0 + track6Force * 2.0; // トラック6で動きを増幅
 
         // 【標高ベースのヒートマップロジック】地球儀のようにノイズの高さで多段階に色を変える
-        const getElevationHeatColor = (vPos, baseColor, time) => {
+        const getElevationHeatColor = (vPos, baseColor, time, isTip = false) => {
             // 3次元ノイズで「標高（Elevation）」を計算
-            // 【修正】ノイズスケールを緩めて、大きな色の塊（偏り）を作る
-            const noiseScale = 0.003; // 0.012 -> 0.003 (緩やかに)
+            const noiseScale = 0.003; 
             const elevation1 = (
                 Math.sin(vPos.x * noiseScale + time * 0.25) * 
                 Math.cos(vPos.y * noiseScale + time * 0.35) * 
                 Math.sin(vPos.z * noiseScale + time * 0.2)
             );
-            // サブノイズもスケールを落として、全体的にゆったりした偏りにする
             const elevation2 = (
                 Math.sin(vPos.x * noiseScale * 1.5 - time * 0.4) * 
                 Math.cos(vPos.y * noiseScale * 1.5 + time * 0.5)
@@ -482,33 +480,34 @@ export class Scene16 extends SceneBase {
                 Math.sin(vPos.z * noiseScale * 2.0 + time * 0.8)
             ) * 0.2;
 
-            const totalElevation = (elevation1 + elevation2 + elevation3) * 0.5 + 0.5; // 0.0〜1.0 に正規化
+            const totalElevation = (elevation1 + elevation2 + elevation3) * 0.5 + 0.5; 
             
-            // 標高を多段階（ヒートマップ）にする
-            // 【維持】段階の細かさ（64段階）はそのままにして、密度を保つ
             const steps = 64.0;
             const steppedElevation = Math.floor(totalElevation * steps) / steps;
             
-            // 【色味自体のダイナミック変化】
             const colorShiftSpeed = 0.2; 
             const baseHueOffset = (this.time * colorShiftSpeed) % 1.0;
             
-            // 標高に応じた色相の変化（青〜紫の範囲に限定）
-            // Hue を 0.5（水色・青）〜 0.9（紫・マゼンタ手前）の範囲に絞る
-            // 赤系（0.0〜0.1）と緑系（0.2〜0.4）を完全に避ける
+            // 標高に応じた色相の変化
             let hue = 0.5 + ((baseHueOffset + steppedElevation * 0.4) % 1.0) * 0.4;
             
+            // 【触手の先端カラー】先端（isTip=true）の場合は、色相をさらに反転・シフトさせる
+            if (isTip) {
+                hue = (hue + 0.5) % 1.0; // 補色に近い色へシフト
+                // 先端も赤・緑系を避ける
+                if (hue < 0.25) hue += 0.3;
+                if (hue > 0.25 && hue < 0.45) hue += 0.2;
+            }
+            
             const targetColor = new THREE.Color();
-            // 段階ごとの明暗パターンも維持
             const lightnessPattern = Math.sin(steppedElevation * Math.PI * 8.0) * 0.15 + 0.4;
-            const saturation = 0.6 + steppedElevation * 0.4; 
+            // 先端はより鮮やかに
+            const saturation = isTip ? 1.0 : (0.6 + steppedElevation * 0.4); 
             targetColor.setHSL(hue, saturation, lightnessPattern);
             
-            // ベースカラー（白〜グレー）と多段階標高色をブレンド
             const blendFactor = 0.15 + steppedElevation * 0.8;
             const finalColor = baseColor.clone().lerp(targetColor, blendFactor);
 
-            // 発光防止クランプ
             finalColor.r = Math.min(0.95, finalColor.r);
             finalColor.g = Math.min(0.95, finalColor.g);
             finalColor.b = Math.min(0.95, finalColor.b);
@@ -607,20 +606,20 @@ export class Scene16 extends SceneBase {
             const gatheringCycle = Math.sin(this.time * 0.1) * 0.5 + 0.5; // 0.0(通常) 〜 1.0(集合)
             
             // 集合地点（ターゲット方向）をゆっくり回転させる
-            const targetPhi = this.time * 0.2;
-            const targetTheta = Math.PI * 0.5 + Math.sin(this.time * 0.15) * 0.5;
+            const targetPhi = this.time * 0.05; // 0.2 -> 0.05
+            const targetTheta = Math.PI * 0.5 + Math.sin(this.time * 0.04) * 0.5; // 0.15 -> 0.04
             
             // 元の角度とターゲット角度を補間
             const currentPhi = t.phi * (1.0 - gatheringCycle * 0.8) + targetPhi * (gatheringCycle * 0.8);
             const currentTheta = t.theta * (1.0 - gatheringCycle * 0.8) + targetTheta * (gatheringCycle * 0.8);
 
             // 触手ごとの個別のバイアス（動きには残すが、色には使わない）
-            const tentacleNoise = Math.sin(this.time * 0.2 + i * 0.5) * 0.5 + 0.5; 
+            const tentacleNoise = Math.sin(this.time * 0.05 + i * 0.5) * 0.5 + 0.5; // 0.2 -> 0.05
             const individualSpeed = speed * (0.5 + tentacleNoise * 1.5);
-            const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.1 + i * 0.8) * 0.7);
+            const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.03 + i * 0.8) * 0.7); // 0.1 -> 0.03
 
-            const angleOffsetPhi = Math.sin(this.time * moveSpeed + i) * 0.1;
-            const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.8 + i * 1.5) * 0.1;
+            const angleOffsetPhi = Math.sin(this.time * moveSpeed * 0.5 + i) * 0.1; // moveSpeed * 0.5
+            const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.4 + i * 1.5) * 0.1; // moveSpeed * 0.4
             
             // 集合ロジックを反映した回転
             t.mesh.rotation.set(currentTheta + angleOffsetTheta - t.theta, currentPhi + angleOffsetPhi - t.phi, 0);
@@ -634,13 +633,13 @@ export class Scene16 extends SceneBase {
             // 空間的な偏りを出すために、触手の生えている方向（phi, theta）をベースにノイズを計算
             const lengthScale = 0.5;
             const lengthNoiseBase = (
-                Math.sin(t.phi * 2.0 + this.time * 0.15) * 
-                Math.cos(t.theta * 2.0 - this.time * 0.1)
+                Math.sin(t.phi * 2.0 + this.time * 0.05) * // 0.15 -> 0.05
+                Math.cos(t.theta * 2.0 - this.time * 0.03) // 0.1 -> 0.03
             );
             // 【修正】最短を 0.1倍（ほぼ消える）、最長を 1.5倍にして、伸縮の幅を極端にする
             const dynamicLength = 0.1 + (lengthNoiseBase * 0.5 + 0.5) * 1.4;
             
-            const lengthNoise = ((Math.sin(this.time * 0.3 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75) * dynamicLength;
+            const lengthNoise = ((Math.sin(this.time * 0.1 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75) * dynamicLength; // 0.3 -> 0.1
 
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; 
@@ -684,7 +683,9 @@ export class Scene16 extends SceneBase {
                 // 触手の色計算：多段階標高ヒートマップ
                 // 触手の各頂点の空間座標（vPos）を使って標高色を計算
                 const vPos = new THREE.Vector3(offsetX, offsetY, offsetZ);
-                const color = getElevationHeatColor(vPos, skinColor, this.time);
+                // u（先端への距離）を使って、先端ほど「別の色」になるようにフラグを渡す
+                const isTipArea = u > 0.7; // 先端30%を別色エリアとする
+                const color = getElevationHeatColor(vPos, skinColor, this.time, isTipArea);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;

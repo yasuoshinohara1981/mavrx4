@@ -130,10 +130,10 @@ export class Scene16 extends SceneBase {
         geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
         
         const material = new THREE.PointsMaterial({
-            size: 2,
+            size: 10, // 2 -> 10 に大幅アップ！
             vertexColors: true,
             transparent: true,
-            opacity: 0.8,
+            opacity: 1.0, // 0.8 -> 1.0
             blending: THREE.AdditiveBlending,
             sizeAttenuation: true
         });
@@ -479,7 +479,7 @@ export class Scene16 extends SceneBase {
                 const noiseVal = lowFreqNoise + midFreqNoise;
                 
                 // 表面から少し浮かせる（産毛感）
-                const hairLength = 10 + Math.sin(this.time * 2.0 + i) * 5;
+                const hairLength = 30 + Math.sin(this.time * 5.0 + i) * 15; // 10+5 -> 30+15 に長く！
                 const displacement = 1.0 + noiseVal * distortionAmp;
                 const finalRadius = baseRadius * displacement + hairLength;
 

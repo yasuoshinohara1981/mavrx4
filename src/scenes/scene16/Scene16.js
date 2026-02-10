@@ -325,23 +325,29 @@ export class Scene16 extends SceneBase {
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
         
         // 【赤系禁止】ベースカラーを極彩色（カメレオン）化！
-        // 時間とともに「青 → 水色 → 緑 → 黄緑 → 紫 → 紺」と変化
-        const baseCycle = (this.time * 0.2) % 1.0;
+        // 時間とともに「漆黒 → 紺 → 青 → 水色 → 緑 → 黄緑 → 紫 → 漆黒」と変化
+        const baseCycle = (this.time * 0.15) % 1.0; // 少しゆっくりに
         const skinColor = new THREE.Color();
-        if (baseCycle < 0.2) {
-            skinColor.setRGB(0, 0, 0.5 + baseCycle * 2.5); // 紺〜青
-        } else if (baseCycle < 0.4) {
-            const t = (baseCycle - 0.2) * 5.0;
-            skinColor.setRGB(0, t, 1.0); // 青〜水色
+        if (baseCycle < 0.15) {
+            skinColor.setRGB(0, 0, 0); // 【漆黒】深海の闇に完全に溶け込む
+        } else if (baseCycle < 0.3) {
+            const t = (baseCycle - 0.15) * 6.6;
+            skinColor.setRGB(0, 0, t * 0.5); // 漆黒〜紺
+        } else if (baseCycle < 0.45) {
+            const t = (baseCycle - 0.3) * 6.6;
+            skinColor.setRGB(0, t * 0.5, 0.5 + t * 0.5); // 紺〜青〜水色
         } else if (baseCycle < 0.6) {
-            const t = (baseCycle - 0.4) * 5.0;
+            const t = (baseCycle - 0.45) * 6.6;
             skinColor.setRGB(0, 1.0, 1.0 - t); // 水色〜緑
-        } else if (baseCycle < 0.8) {
-            const t = (baseCycle - 0.6) * 5.0;
+        } else if (baseCycle < 0.75) {
+            const t = (baseCycle - 0.6) * 6.6;
             skinColor.setRGB(t * 0.5, 1.0, 0); // 緑〜黄緑
-        } else {
-            const t = (baseCycle - 0.8) * 5.0;
+        } else if (baseCycle < 0.9) {
+            const t = (baseCycle - 0.75) * 6.6;
             skinColor.setRGB(0.5 + t * 0.5, 0, 1.0 - t * 0.5); // 黄緑〜紫
+        } else {
+            const t = (baseCycle - 0.9) * 10.0;
+            skinColor.setRGB(1.0 - t, 0, 1.0 - t); // 紫〜漆黒
         }
 
         // 全触手で同期したヒートマップ用のグローバルな「熱量」
@@ -375,14 +381,17 @@ export class Scene16 extends SceneBase {
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
-                // コアのヒートマップ（ベース色からの変化）
+                // コアのヒートマップ（赤禁止：漆黒〜青〜水色〜白）
                 const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
                 const coreHeatColor = new THREE.Color();
-                if (localHeat < 0.5) {
-                    coreHeatColor.setRGB(localHeat, 1.0 - localHeat, 1.0); // ベース色を活かしつつ青白く
+                if (localHeat < 0.33) {
+                    coreHeatColor.setRGB(0, 0, localHeat * 1.5); // 漆黒〜深い青
+                } else if (localHeat < 0.66) {
+                    const t = (localHeat - 0.33) * 3.0;
+                    coreHeatColor.setRGB(0, t * 0.8, 0.5 + t * 0.5); // 青〜水色
                 } else {
-                    const t = (localHeat - 0.5) * 2.0;
-                    coreHeatColor.setRGB(1.0, 1.0, 1.0); // 激しい部分は白
+                    const t = (localHeat - 0.66) * 3.0;
+                    coreHeatColor.setRGB(t, 0.8 + t * 0.2, 1.0); // 水色〜白
                 }
                 
                 const finalColor = skinColor.clone().lerp(coreHeatColor, localHeat);

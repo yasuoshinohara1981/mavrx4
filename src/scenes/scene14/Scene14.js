@@ -265,28 +265,28 @@ export class Scene14 extends SceneBase {
 
                 if (noiseVal < 0.55) {
                     // 1. グレー・ブルー（多め）- 55%
-                    // 紫味を消すためにRとGを近づけ、Bを少しだけ強くする
-                    const base = 0.3 + Math.random() * 0.1;
+                    // 全体的に明るく調整
+                    const base = 0.5 + Math.random() * 0.2; // 0.3 -> 0.5
                     colors[j * 3 + 0] = base;       // R
-                    colors[j * 3 + 1] = base + 0.05; // G (Rより少し高くして緑寄りに振ることで紫を回避)
-                    colors[j * 3 + 2] = base + 0.15; // B (青みを強調)
+                    colors[j * 3 + 1] = base + 0.05; // G 
+                    colors[j * 3 + 2] = base + 0.15; // B 
                 } else if (noiseVal < 0.80) {
                     // 2. 黒ずんだ金属（たまに）- 25%
-                    const v = 0.05 + Math.random() * 0.1;
+                    const v = 0.2 + Math.random() * 0.1; // 0.05 -> 0.2
                     colors[j * 3 + 0] = v; 
                     colors[j * 3 + 1] = v; 
                     colors[j * 3 + 2] = v; 
                 } else if (noiseVal < 0.95) {
                     // 3. 白っぽい金属（たまに）- 15%
-                    const v = 0.7 + Math.random() * 0.2;
+                    const v = 0.85 + Math.random() * 0.15; // 0.7 -> 0.85
                     colors[j * 3 + 0] = v; 
                     colors[j * 3 + 1] = v; 
                     colors[j * 3 + 2] = v; 
                 } else {
                     // 4. 錆びまくった茶色系（レア枠）- 5%
-                    colors[j * 3 + 0] = 0.5 + Math.random() * 0.2; // R強め
-                    colors[j * 3 + 1] = 0.2 + Math.random() * 0.1; // G弱め
-                    colors[j * 3 + 2] = 0.05 + Math.random() * 0.05; // Bほぼなし
+                    colors[j * 3 + 0] = 0.7 + Math.random() * 0.2; // 0.5 -> 0.7
+                    colors[j * 3 + 1] = 0.4 + Math.random() * 0.1; // 0.2 -> 0.4
+                    colors[j * 3 + 2] = 0.2 + Math.random() * 0.05; // 0.05 -> 0.2
                 }
             }
             mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);

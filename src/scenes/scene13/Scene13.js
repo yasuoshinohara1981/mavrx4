@@ -178,12 +178,7 @@ export class Scene13 extends SceneBase {
      * 撮影用スタジオ
      */
     createStudioBox() {
-        this.studio = new StudioBox(this.scene, {
-            size: 10000, // 2000 -> 10000 にバカデカく！
-            color: 0xffffff, // 白に戻す
-            roughness: 0.4,
-            metalness: 0.0
-        });
+        this.studio = new StudioBox(this.scene);
     }
 
     /**

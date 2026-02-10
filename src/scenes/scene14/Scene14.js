@@ -180,34 +180,6 @@ export class Scene14 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        // 環境マッピング（質感のために標準的なものに戻す）
-        const genEnvMap = () => {
-            const size = 512;
-            const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
-            const ctx = canvas.getContext('2d');
-            
-            const grad = ctx.createLinearGradient(0, 0, 0, size);
-            grad.addColorStop(0, '#ffffff'); 
-            grad.addColorStop(0.3, '#ffffff'); 
-            grad.addColorStop(0.7, '#111111'); 
-            grad.addColorStop(1, '#000000'); 
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, size, size);
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(size * 0.1, size * 0.1, size * 0.2, size * 0.6); 
-            ctx.fillRect(size * 0.6, size * 0.3, size * 0.3, size * 0.2);
-            
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.mapping = THREE.EquirectangularReflectionMapping;
-            return tex;
-        };
-
-        const envMap = genEnvMap();
-        this.scene.environment = envMap; 
-
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
@@ -235,14 +207,7 @@ export class Scene14 extends SceneBase {
      * 撮影用スタジオ
      */
     createStudioBox() {
-        this.studio = new StudioBox(this.scene, {
-            size: 10000,
-            color: 0xbbbbbb, // 0x888888 -> 0xbbbbbb 少し明るくしてグレーすぎ問題を解消！
-            roughness: 0.8,
-            metalness: 0.0,
-            useFloorTile: true, // タイル床を有効化
-            useLights: true    // デフォルトの蛍光灯（4隅）を有効化
-        });
+        this.studio = new StudioBox(this.scene);
     }
 
     /**

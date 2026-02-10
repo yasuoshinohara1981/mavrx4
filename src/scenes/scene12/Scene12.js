@@ -154,15 +154,15 @@ export class Scene12 extends SceneBase {
      * ライトの設定
      */
     setupLights() {
-        // 全体を明るく（強度を0.4から0.8にアップ）
+        // 全体を明るく（強度を0.8に設定）
         const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 0.8);
         this.scene.add(hemiLight);
 
-        // 環境光も少し底上げ（0.1から0.3にアップ）
+        // 環境光も底上げ
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        // メインの平行光源（シャドウ用：強度を1.2から1.5にアップ）
+        // メインの平行光源（シャドウ用：強度を1.5にアップ）
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
         directionalLight.position.set(1000, 1500, 1000);
         directionalLight.castShadow = true;
@@ -176,10 +176,10 @@ export class Scene12 extends SceneBase {
         directionalLight.shadow.mapSize.height = 2048;
         this.scene.add(directionalLight);
 
-        // 「光の漏れ」を演出するための中心光源（シャドウあり）
-        const pointLight = new THREE.PointLight(0xffffff, 2.5, 2500); // 強度を2.0から2.5にアップ
-        pointLight.position.set(0, 200, 0); // Sphereの密集地帯の中に配置
-        pointLight.castShadow = true; // これが「漏れる光」を作る
+        // 中心光源（強烈な白）
+        const pointLight = new THREE.PointLight(0xffffff, 2.5, 2500); 
+        pointLight.position.set(0, 200, 0); 
+        pointLight.castShadow = true; 
         pointLight.shadow.mapSize.width = 1024;
         pointLight.shadow.mapSize.height = 1024;
         pointLight.shadow.camera.near = 10;
@@ -192,12 +192,7 @@ export class Scene12 extends SceneBase {
      * 撮影用スタジオ
      */
     createStudioBox() {
-        this.studio = new StudioBox(this.scene, {
-            size: 10000, // 2000 -> 10000 にバカデカく！
-            color: 0xffffff,
-            roughness: 0.4,
-            metalness: 0.0
-        });
+        this.studio = new StudioBox(this.scene);
     }
 
     /**

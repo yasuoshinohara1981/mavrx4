@@ -6,13 +6,13 @@ import * as THREE from 'three';
 export class StudioBox {
     constructor(scene, options = {}) {
         this.scene = scene;
-        this.size = options.size || 2000;
+        this.size = options.size || 10000; // 2000 -> 10000
         this.color = options.color || 0xffffff;
-        this.roughness = options.roughness !== undefined ? options.roughness : 0.4;
+        this.roughness = options.roughness !== undefined ? options.roughness : 0.8; // 0.4 -> 0.8
         this.metalness = options.metalness !== undefined ? options.metalness : 0.0;
-        this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 0.5; // バンプの強さを追加
-        this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true; // デフォルトでタイル床を有効化
-        this.useLights = options.useLights !== undefined ? options.useLights : true; // デフォルトで蛍光灯を有効化
+        this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 5.0; // 0.5 -> 5.0
+        this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true;
+        this.useLights = options.useLights !== undefined ? options.useLights : true;
         
         this.studioBox = null;
         this.studioFloor = null;
@@ -35,10 +35,10 @@ export class StudioBox {
             color: this.color,
             map: this.textures.map,
             bumpMap: this.textures.bumpMap,
-            bumpScale: this.bumpScale * 2.0, // 壁の目地を強調
+            bumpScale: 1.0, // 壁も凹凸を抑えて細い線を活かす
             side: THREE.BackSide,
-            roughness: this.roughness * 0.5, // 壁も少し反射させる
-            metalness: this.metalness + 0.1  // わずかに金属感
+            roughness: this.roughness * 0.5, 
+            metalness: this.metalness + 0.1  
         });
 
         const ceilingMat = new THREE.MeshStandardMaterial({
@@ -72,9 +72,9 @@ export class StudioBox {
             color: this.color,
             map: this.floorTextures.map,
             bumpMap: this.floorTextures.bumpMap,
-            bumpScale: this.bumpScale * 3.0, // 床はさらに強調
-            roughness: this.roughness * 0.3, // 床はツヤツヤにする
-            metalness: this.metalness + 0.2  // 反射を強める
+            bumpScale: 1.0, // 3.0 -> 1.0 凹凸を抑えて線を細く見せる
+            roughness: this.roughness * 0.3, 
+            metalness: this.metalness + 0.2  
         });
         this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
         this.studioFloor.rotation.x = -Math.PI / 2;
@@ -93,8 +93,8 @@ export class StudioBox {
      */
     createFluorescentLights() {
         const lightHeight = this.size; 
-        const lightRadius = 20; 
-        const cornerDist = (this.size / 2) - 100; 
+        const lightRadius = 10; // 20 -> 10
+        const cornerDist = (this.size / 2) - 50; // 100 -> 50
         
         const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
         const material = new THREE.MeshStandardMaterial({ 
@@ -130,26 +130,27 @@ export class StudioBox {
         const ctx = canvas.getContext('2d');
         
         // 1. ベースカラー（目地の色）
-        ctx.fillStyle = '#b0b0b0';
+        ctx.fillStyle = '#c8c8c8'; // #b0b0b0 -> #c8c8c8 (明るくして目立たなくする)
         ctx.fillRect(0, 0, size, size);
 
-        // 2. タイルの本体を描画（目地を残して全面に出す）
-        const divisions = 50; // 100 -> 50 に減らしてタイルを大きくする
+        // 2. タイルの本体を描画
+        const divisions = 50; 
         const step = size / divisions;
-        const gutter = 1; // 目地の幅（ピクセル）
         
-        ctx.fillStyle = '#d0d0d0'; // タイル表面の色
-        
-        for (let i = 0; i < divisions; i++) {
-            for (let j = 0; j < divisions; j++) {
-                ctx.fillRect(
-                    i * step + gutter, 
-                    j * step + gutter, 
-                    step - gutter * 2, 
-                    step - gutter * 2
-                );
-            }
+        ctx.fillStyle = '#d0d0d0'; 
+        ctx.fillRect(0, 0, size, size);
+
+        // 目地の線を細く描画
+        ctx.strokeStyle = '#808080'; // #c0c0c0 -> #808080 (もう少し黒く)
+        ctx.lineWidth = 0.5; 
+        ctx.beginPath();
+        for (let i = 0; i <= divisions; i++) {
+            ctx.moveTo(i * step, 0);
+            ctx.lineTo(i * step, size);
+            ctx.moveTo(0, i * step);
+            ctx.lineTo(size, i * step);
         }
+        ctx.stroke();
 
         // 3. 赤い十字と目盛りテキスト（床のみ）
         if (!isWall) {
@@ -158,7 +159,7 @@ export class StudioBox {
             const labelMax = 256;
             const centerIdx = divisions / 2;
             
-            ctx.font = '500 8px "Inter", "Roboto", sans-serif';
+            ctx.font = '500 8px "Inter", "Roboto", sans-serif'; // bold 12px -> 500 8px
 
             // 目地の数に合わせてループを回す
             // 2目盛りごとに十字とラベルを表示（50 / 2 = 25箇所）
@@ -169,9 +170,9 @@ export class StudioBox {
                 const labelVal = Math.abs((i - centerIdx) * (labelMax / centerIdx));
 
                 // 赤い十字
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
-                ctx.lineWidth = 0.5;
-                const cs = 3;
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'; // 0.6 -> 0.9
+                ctx.lineWidth = 1.0; // 0.5 -> 1.0
+                const cs = 5; // 3 -> 5
                 
                 // X軸上の十字
                 ctx.beginPath();
@@ -182,22 +183,22 @@ export class StudioBox {
                 ctx.stroke();
 
                 // X軸上のテキスト
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-                ctx.fillText(Math.round(labelVal), tx, tyCenter + 10);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; // 0.7 -> 0.3 (薄く)
+                ctx.fillText(Math.round(labelVal), tx, tyCenter + 12); // +15 -> +12 (少し近づける)
 
                 // Z軸上のラベルと十字
                 const tz = i * step;
                 const txCenter = centerIdx * step;
                 
                 if (i !== centerIdx) { // 中心（0,0）は既に描画済みなのでスキップ
-                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)';
+                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'; // 0.6 -> 0.9
                     ctx.beginPath();
                     ctx.moveTo(txCenter - cs, tz); ctx.lineTo(txCenter + cs, tz);
                     ctx.stroke();
                     ctx.beginPath();
                     ctx.moveTo(txCenter, tz - cs); ctx.lineTo(txCenter, tz + cs);
                     ctx.stroke();
-                    ctx.fillText(Math.round(labelVal), txCenter + 12, tz);
+                    ctx.fillText(Math.round(labelVal), txCenter + 12, tz); // +15 -> +12
                 }
             }
         }
@@ -212,21 +213,21 @@ export class StudioBox {
         bCanvas.height = size;
         const bCtx = bCanvas.getContext('2d');
         
-        // 目地を深く（黒）、タイルを高く（白）
-        bCtx.fillStyle = '#404040'; // 目地の高さ
+        // タイル表面を高く（白）
+        bCtx.fillStyle = '#ffffff'; 
         bCtx.fillRect(0, 0, size, size);
 
-        bCtx.fillStyle = '#ffffff'; // タイル表面の高さ
-        for (let i = 0; i < divisions; i++) {
-            for (let j = 0; j < divisions; j++) {
-                bCtx.fillRect(
-                    i * step + gutter, 
-                    j * step + gutter, 
-                    step - gutter * 2, 
-                    step - gutter * 2
-                );
-            }
+        // 目地を細い線で描画（黒/グレーで低くする）
+        bCtx.strokeStyle = '#404040'; 
+        bCtx.lineWidth = 0.5; 
+        bCtx.beginPath();
+        for (let i = 0; i <= divisions; i++) {
+            bCtx.moveTo(i * step, 0);
+            bCtx.lineTo(i * step, size);
+            bCtx.moveTo(0, i * step);
+            bCtx.lineTo(size, i * step);
         }
+        bCtx.stroke();
 
         const bumpMap = new THREE.CanvasTexture(bCanvas);
         bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;

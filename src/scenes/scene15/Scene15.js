@@ -154,27 +154,6 @@ export class Scene15 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        const genEnvMap = () => {
-            const size = 512;
-            const canvas = document.createElement('canvas');
-            canvas.width = size; canvas.height = size;
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createLinearGradient(0, 0, 0, size);
-            grad.addColorStop(0, '#ffffff'); 
-            grad.addColorStop(0.5, '#888888'); 
-            grad.addColorStop(1, '#444444'); 
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, size, size);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(size * 0.1, size * 0.1, size * 0.2, size * 0.6); 
-            ctx.fillRect(size * 0.6, size * 0.3, size * 0.3, size * 0.2);
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.mapping = THREE.EquirectangularReflectionMapping;
-            return tex;
-        };
-        const envMap = genEnvMap();
-        this.scene.environment = envMap; 
-
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
@@ -199,14 +178,7 @@ export class Scene15 extends SceneBase {
     }
 
     createStudioBox() {
-        this.studio = new StudioBox(this.scene, {
-            size: 10000,
-            color: 0xbbbbbb, // 色は元に戻す
-            roughness: 0.8,
-            metalness: 0.0,
-            bumpScale: 5.0, // 凹凸感は維持（シミや割れの凹凸を出すため）
-            useFloorTile: true // タイル床を有効化
-        });
+        this.studio = new StudioBox(this.scene);
     }
 
     createDeformableMesh() {

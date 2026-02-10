@@ -108,47 +108,26 @@ export class Scene16 extends SceneBase {
 
     createHair() {
         const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(this.hairCount * 3);
-        const colors = new Float32Array(this.hairCount * 3);
-        const sizes = new Float32Array(this.hairCount);
-        
-        // 初期位置をコアの表面にランダム配置
-        for (let i = 0; i < this.hairCount; i++) {
-            const phi = Math.random() * Math.PI * 2;
-            const theta = Math.random() * Math.PI;
-            const radius = 450;
-            
-            positions[i * 3] = radius * Math.sin(theta) * Math.cos(phi);
-            positions[i * 3 + 1] = radius * Math.cos(theta);
-            positions[i * 3 + 2] = radius * Math.sin(theta) * Math.sin(phi);
-            
-            sizes[i] = 2.0 + Math.random() * 5.0;
-        }
+        // LineSegments 用に、1つの毛に対して2つの頂点（開始点と終点）が必要
+        const positions = new Float32Array(this.hairCount * 2 * 3);
         
         geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
         
-        const material = new THREE.PointsMaterial({
-            size: 10, // 2 -> 10 に大幅アップ！
-            vertexColors: true,
+        const material = new THREE.LineBasicMaterial({
+            color: 0x000000, // 短い【黒い線】
             transparent: true,
-            opacity: 1.0, // 0.8 -> 1.0
-            blending: THREE.AdditiveBlending,
-            sizeAttenuation: true
+            opacity: 0.6,
+            linewidth: 1
         });
         
-        this.hairSystem = new THREE.Points(geometry, material);
+        this.hairSystem = new THREE.LineSegments(geometry, material);
         this.tentacleGroup.add(this.hairSystem);
         
         // 頂点ごとの phi, theta を保存しておく
         this.hairData = [];
         for (let i = 0; i < this.hairCount; i++) {
-            const x = positions[i * 3];
-            const y = positions[i * 3 + 1];
-            const z = positions[i * 3 + 2];
-            const phi = Math.atan2(z, x);
-            const theta = Math.acos(y / 450);
+            const phi = Math.random() * Math.PI * 2;
+            const theta = Math.random() * Math.PI;
             this.hairData.push({ phi, theta });
         }
     }
@@ -359,10 +338,10 @@ export class Scene16 extends SceneBase {
                 this.focusTarget.copy(this.camera.position).add(new THREE.Vector3((Math.random()-0.5)*1500, (Math.random()-0.5)*800, (Math.random()-0.5)*1500));
             }
             switch(this.creatureState) {
-                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.2, waveFreq: 1.2, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.05, distortionSpeed: 0.1, distortionAmp: 0.2 }; break;
-                case this.STATE_WILD: this.targetAnimParams = { speed: 0.5, waveFreq: 2.0, waveAmp: 80.0, focusWeight: 0.0, moveSpeed: 0.15, distortionSpeed: 0.25, distortionAmp: 0.4 }; break;
-                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.15, waveFreq: 0.8, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.03, distortionSpeed: 0.08, distortionAmp: 0.15 }; break;
-                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.05, waveFreq: 0.5, waveAmp: 5.0, focusWeight: 0.0, moveSpeed: 0.01, distortionSpeed: 0.03, distortionAmp: 0.1 }; break;
+                case this.STATE_IDLE: this.targetAnimParams = { speed: 0.05, waveFreq: 1.2, waveAmp: 40.0, focusWeight: 0.0, moveSpeed: 0.02, distortionSpeed: 0.03, distortionAmp: 0.2 }; break;
+                case this.STATE_WILD: this.targetAnimParams = { speed: 0.15, waveFreq: 2.0, waveAmp: 60.0, focusWeight: 0.0, moveSpeed: 0.05, distortionSpeed: 0.08, distortionAmp: 0.4 }; break;
+                case this.STATE_FOCUS: this.targetAnimParams = { speed: 0.04, waveFreq: 0.8, waveAmp: 20.0, focusWeight: 0.6, moveSpeed: 0.01, distortionSpeed: 0.02, distortionAmp: 0.15 }; break;
+                case this.STATE_STASIS: this.targetAnimParams = { speed: 0.01, waveFreq: 0.5, waveAmp: 5.0, focusWeight: 0.0, moveSpeed: 0.005, distortionSpeed: 0.01, distortionAmp: 0.1 }; break;
             }
         }
         const lerpFactor = deltaTime * 1.5;
@@ -452,10 +431,9 @@ export class Scene16 extends SceneBase {
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
         }
 
-        // 産毛の更新
+        // 産毛（短い黒い線）の更新
         if (this.hairSystem) {
             const hairPosAttr = this.hairSystem.geometry.attributes.position;
-            const hairColorAttr = this.hairSystem.geometry.attributes.color;
             const { distortionSpeed, distortionAmp } = this.currentAnimParams;
             const baseRadius = 450;
 
@@ -478,35 +456,25 @@ export class Scene16 extends SceneBase {
                 ) * 0.3;
                 const noiseVal = lowFreqNoise + midFreqNoise;
                 
-                // 表面から少し浮かせる（産毛感）
-                const hairLength = 30 + Math.sin(this.time * 5.0 + i) * 15; // 10+5 -> 30+15 に長く！
+                // 表面の位置（開始点）
                 const displacement = 1.0 + noiseVal * distortionAmp;
-                const finalRadius = baseRadius * displacement + hairLength;
+                const startRadius = baseRadius * displacement;
+                
+                // 毛の長さと方向（終点）
+                const hairLength = 15 + Math.sin(this.time * 2.0 + i) * 5;
+                const endRadius = startRadius + hairLength;
 
-                hairPosAttr.setXYZ(
-                    i,
-                    finalRadius * Math.sin(data.theta) * Math.cos(data.phi),
-                    finalRadius * Math.cos(data.theta),
-                    finalRadius * Math.sin(data.theta) * Math.sin(data.phi)
-                );
+                const sinT = Math.sin(data.theta);
+                const cosT = Math.cos(data.theta);
+                const sinP = Math.sin(data.phi);
+                const cosP = Math.cos(data.phi);
 
-                // 色もコアの表面色と同期
-                const localHeat = Math.min(1.0, Math.abs(noiseVal) * 2.5);
-                const hairHeatColor = new THREE.Color();
-                if (localHeat < 0.33) {
-                    hairHeatColor.setRGB(0, 0, localHeat * 1.5);
-                } else if (localHeat < 0.66) {
-                    const t = (localHeat - 0.33) * 3.0;
-                    hairHeatColor.setRGB(0, t * 0.8, 0.5 + t * 0.5);
-                } else {
-                    const t = (localHeat - 0.66) * 3.0;
-                    hairHeatColor.setRGB(t, 0.8 + t * 0.2, 1.0);
-                }
-                const finalHairColor = skinColor.clone().lerp(hairHeatColor, localHeat);
-                hairColorAttr.setXYZ(i, finalHairColor.r, finalHairColor.g, finalHairColor.b);
+                // 開始点
+                hairPosAttr.setXYZ(i * 2, startRadius * sinT * cosP, startRadius * cosT, startRadius * sinT * sinP);
+                // 終点
+                hairPosAttr.setXYZ(i * 2 + 1, endRadius * sinT * cosP, endRadius * cosT, endRadius * sinT * sinP);
             }
             hairPosAttr.needsUpdate = true;
-            hairColorAttr.needsUpdate = true;
         }
         
         this.tentacles.forEach((t, i) => {

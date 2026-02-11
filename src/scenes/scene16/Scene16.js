@@ -24,7 +24,7 @@ export class Scene16 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // 触手（Tentacles）の設定
-        this.tentacleCount = 200; // 220 -> 200 に削減
+        this.tentacleCount = 175; 
         this.tentacles = [];
         this.tentacleGroup = new THREE.Group();
         this.coreMesh = null; // 真ん中の球体
@@ -53,10 +53,9 @@ export class Scene16 extends SceneBase {
         this.targetAnimParams = { ...this.currentAnimParams };
 
         // 究極のランダムさのための RandomLFO 群
-        // (minRate, maxRate, minValue, maxValue)
-        this.speedLFO = new RandomLFO(0.01, 0.05, 0.01, 0.12); // スピード上限を半分に（0.25 -> 0.12）
+        this.speedLFO = new RandomLFO(0.01, 0.05, 0.01, 0.08); // スピード上限を抑制
         this.ampLFO = new RandomLFO(0.005, 0.02, 10.0, 80.0);   // 動きの大きさ
-        this.distortionSpeedLFO = new RandomLFO(0.01, 0.04, 0.01, 0.1); // コアの歪み速さ
+        this.distortionSpeedLFO = new RandomLFO(0.01, 0.04, 0.01, 0.06); // コアの歪み速さ
         this.distortionAmpLFO = new RandomLFO(0.005, 0.03, 0.1, 0.5);   // コアの歪み強さ
         this.colorCycleLFO = new RandomLFO(0.002, 0.01, 0.0, 1.0);      // 色の移り変わり
 
@@ -76,9 +75,9 @@ export class Scene16 extends SceneBase {
 
         // クリーチャー自体の物理状態を管理するパーティクル
         this.creatureParticle = new Scene16Particle(0, 400, 0);
-        this.creatureParticle.maxSpeed = 12.0; // カメラパーティクル(8.0)に近い設定
-        this.creatureParticle.maxForce = 3.0;  // カメラパーティクル(2.0)に近い設定
-        this.creatureParticle.friction = 0.01; // 少し摩擦を持たせて安定させる
+        this.creatureParticle.maxSpeed = 8.0; // 12.0 * 2/3
+        this.creatureParticle.maxForce = 2.0; // 3.0 * 2/3
+        this.creatureParticle.friction = 0.01; 
 
         // トラックごとの値を保持するオブジェクト
         this.trackValues = {
@@ -86,6 +85,17 @@ export class Scene16 extends SceneBase {
             6: 0,
             7: 0
         };
+
+        // レーザースキャン用の配列
+        this.scans = [];
+
+        // 最適化用のテンポラリオブジェクト
+        this.tempColor = new THREE.Color();
+        this.tempTargetColor = new THREE.Color();
+        this.tempVPos = new THREE.Vector3();
+        this.tempV = new THREE.Vector3();
+        this.tempNormal = new THREE.Vector3(); // カメラ反発用
+        this.scanColor = new THREE.Color(); // スキャン発光用
 
         this.setScreenshotText(this.title);
     }
@@ -97,19 +107,19 @@ export class Scene16 extends SceneBase {
         const args = message.args || [];
         const velocity = args[1] || 0;
         const value = velocity / 127.0; // 0.0 〜 1.0 に正規化
+        const durationMs = args[2] || 500; // デュレーション（ミリ秒）
 
         if (trackNumber === 5) {
             this.trackValues[5] = value;
-            // トラック5でランダムな力を加えて移動させる
-            // 【修正】力が弱すぎた可能性があるため、少し強める（8.0 -> 50.0）
-            if (value > 0) {
-                const forceMag = value * 50.0; 
-                const force = new THREE.Vector3(
-                    (Math.random() - 0.5) * forceMag,
-                    (Math.random() - 0.5) * forceMag,
-                    (Math.random() - 0.5) * forceMag
-                );
-                this.creatureParticle.addForce(force);
+            if (velocity > 0) {
+                // Scene03を参考にスキャンを追加
+                const speed = 1.0 / (Math.max(100, durationMs) / 1000.0) * 0.5;
+                this.scans.push({
+                    progress: -0.2, // コアの内側からスタート
+                    speed: speed,
+                    intensity: value,
+                    hue: (this.trackValues[7] + Math.random() * 0.1) % 1.0 
+                });
             }
         } else if (trackNumber === 6) {
             this.trackValues[6] = value;
@@ -227,11 +237,11 @@ export class Scene16 extends SceneBase {
         const textures = this.generateFleshTextures();
         this.scene.add(this.tentacleGroup);
         const tentacleCount = this.tentacleCount; 
-        const baseRadius = 450; // コアをさらに巨大化（300 -> 450）
+        const baseRadius = 450; 
 
         this.time = Math.random() * 100;
 
-        const coreGeo = new THREE.IcosahedronGeometry(baseRadius, 12); // 分割数を 6 -> 12 に倍増
+        const coreGeo = new THREE.IcosahedronGeometry(baseRadius, 12); 
         coreGeo.userData.initialPositions = coreGeo.attributes.position.array.slice();
         
         // 頂点カラー属性を初期化
@@ -617,10 +627,10 @@ export class Scene16 extends SceneBase {
 
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
         
-        const totalForce = 1.0 + track6Force * 3.0; // 動きの振れ幅も増幅
+        const totalForce = 1.0 + track6Force * 2.0; // 加速をマイルドに（3.0 -> 2.0）
 
         // 【標高ベースのヒートマップロジック】地球儀のようにノイズの高さで多段階に色を変える
-        const getElevationHeatColor = (vPos, baseColor, time, region = 0) => {
+        const getElevationHeatColor = (vPos, baseColor, time, region = 0, u = 0) => {
             // 3次元ノイズで「標高（Elevation）」を計算
             const noiseScale = 0.003; 
             const elevation1 = (
@@ -661,7 +671,7 @@ export class Scene16 extends SceneBase {
                 hue = 0.5; // 青に強制
             }
             
-            const targetColor = new THREE.Color();
+            const targetColor = this.tempTargetColor;
             
             // 【白と黒の導入】
             // steppedElevation や region に応じて、彩度を落として白や黒を混ぜる
@@ -682,11 +692,28 @@ export class Scene16 extends SceneBase {
             // 【トラック7連動】ブレンド率を track7Color に連動させる
             // 信号が 0 の時はヒートマップが消えて baseColor（白）だけになる
             const blendFactor = (0.15 + steppedElevation * 0.8) * track7Color;
-            const finalColor = baseColor.clone().lerp(targetColor, blendFactor);
+            const finalColor = this.tempColor.copy(baseColor).lerp(targetColor, blendFactor);
 
-            finalColor.r = Math.min(0.95, finalColor.r);
-            finalColor.g = Math.min(0.95, finalColor.g);
-            finalColor.b = Math.min(0.95, finalColor.b);
+            // レーザースキャン発光（Scene03を参考に実装）
+            this.scans.forEach(scan => {
+                const dist = Math.abs(u - scan.progress);
+                const width = 0.05;
+                if (dist < width) {
+                    const glow = (1.0 - dist / width) * scan.intensity;
+                    const scanCol = this.scanColor.setHSL(scan.hue, 0.8, 0.6);
+                    // 標高に合わせて少し明滅させる
+                    const noiseGlow = glow * (0.5 + steppedElevation * 0.5);
+                    finalColor.lerp(scanCol, noiseGlow);
+                    // 加算合成的な発光感を出すために少しRGBを底上げ
+                    finalColor.r += noiseGlow * 0.5;
+                    finalColor.g += noiseGlow * 0.5;
+                    finalColor.b += noiseGlow * 0.5;
+                }
+            });
+
+            finalColor.r = Math.min(1.2, finalColor.r);
+            finalColor.g = Math.min(1.2, finalColor.g);
+            finalColor.b = Math.min(1.2, finalColor.b);
             
             return finalColor;
         };
@@ -696,35 +723,22 @@ export class Scene16 extends SceneBase {
             const corePosAttr = this.coreMesh.geometry.attributes.position;
             const coreColorAttr = this.coreMesh.geometry.attributes.color;
             const initialPos = this.coreMesh.geometry.userData.initialPositions;
-            const v = new THREE.Vector3();
-            const { distortionSpeed, distortionAmp } = this.currentAnimParams; // パラメータを確実に取得
+            const v = this.tempVPos;
+            const { distortionSpeed, distortionAmp } = this.currentAnimParams; 
             
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
-                // 歪みノイズ（毛の更新ロジックと完全に一致させる）
-                // 頂点の初期位置（スケーリング前）を基準にノイズを計算
-                const rx = v.x;
-                const ry = v.y;
-                const rz = v.z;
-
-                const lowFreqNoise = (
-                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * 
-                    Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * 
-                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2) // zの代わりにxを使用
-                );
-                const midFreqNoise = (
-                    Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
-                    Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
-                    Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1) // zの代わりにxを使用
-                ) * 0.3;
+                const rx = v.x; const ry = v.y; const rz = v.z;
+                const lowFreqNoise = (Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2));
+                const midFreqNoise = (Math.sin(rx * 0.01 + this.time * distortionSpeed) + Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1)) * 0.3;
                 const noiseVal = lowFreqNoise + midFreqNoise;
                 
                 v.multiplyScalar(1.0 + noiseVal * distortionAmp); 
                 corePosAttr.setXYZ(i, v.x, v.y, v.z);
 
                 // 多段階標高ヒートマップ（コア）
-                const finalColor = getElevationHeatColor(v, skinColor, this.time);
+                const finalColor = getElevationHeatColor(v, skinColor, this.time, 0, 0);
                 coreColorAttr.setXYZ(i, finalColor.r, finalColor.g, finalColor.b);
             }
             
@@ -739,45 +753,31 @@ export class Scene16 extends SceneBase {
 
             for (let i = 0; i < this.hairCount; i++) {
                 const data = this.hairData[i];
-                // 初期位置を計算
-                const sinT = Math.sin(data.theta);
-                const cosT = Math.cos(data.theta);
-                const sinP = Math.sin(data.phi);
-                const cosP = Math.cos(data.phi);
-                
-                const rx = baseRadius * sinT * cosP;
-                const ry = baseRadius * cosT;
-                const rz = baseRadius * sinT * sinP;
+                const sinT = Math.sin(data.theta); const cosT = Math.cos(data.theta);
+                const sinP = Math.sin(data.phi); const cosP = Math.cos(data.phi);
+                const rx = baseRadius * sinT * cosP; const ry = baseRadius * cosT; const rz = baseRadius * sinT * sinP;
 
-                // コアと同じノイズロジックで表面の変位を計算
-                // zの代わりにxを使用（コアの計算式と合わせる）
-                const lowFreqNoise = (
-                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * 
-                    Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * 
-                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2)
-                );
-                const midFreqNoise = (
-                    Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
-                    Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
-                    Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1)
-                ) * 0.3;
+                const lowFreqNoise = (Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2));
+                const midFreqNoise = (Math.sin(rx * 0.01 + this.time * distortionSpeed) + Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1)) * 0.3;
                 const noiseVal = lowFreqNoise + midFreqNoise;
                 
-                // 表面の位置（開始点）
                 const displacement = 1.0 + noiseVal * distortionAmp;
                 const startRadius = baseRadius * displacement;
-                
-                // 毛の長さと方向（終点）
                 const hairLength = 15 + Math.sin(this.time * 2.0 + i) * 5;
                 const endRadius = startRadius + hairLength;
 
-                // 開始点
                 hairPosAttr.setXYZ(i * 2, startRadius * sinT * cosP, startRadius * cosT, startRadius * sinT * sinP);
-                // 終点
                 hairPosAttr.setXYZ(i * 2 + 1, endRadius * sinT * cosP, endRadius * cosT, endRadius * sinT * sinP);
             }
             hairPosAttr.needsUpdate = true;
         }
+
+        // レーザースキャンの進行度を更新
+        this.scans.forEach(scan => {
+            scan.progress += deltaTime * scan.speed;
+        });
+        // 画面外に出たスキャンを削除
+        this.scans = this.scans.filter(scan => scan.progress <= 1.2);
         
         this.tentacles.forEach((t, i) => {
             const posAttr = t.mesh.geometry.attributes.position;
@@ -917,7 +917,7 @@ export class Scene16 extends SceneBase {
                 if (u > 0.85) colorRegion = 2; // 先端15%
                 else if (u > 0.6) colorRegion = 1; // その下の25%
                 
-                const color = getElevationHeatColor(vPos, skinColor, this.time, colorRegion);
+                const color = getElevationHeatColor(vPos, skinColor, this.time, colorRegion, u);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;

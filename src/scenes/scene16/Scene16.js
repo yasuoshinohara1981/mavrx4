@@ -53,7 +53,7 @@ export class Scene16 extends SceneBase {
 
         // 究極のランダムさのための RandomLFO 群
         // (minRate, maxRate, minValue, maxValue)
-        this.speedLFO = new RandomLFO(0.02, 0.1, 0.02, 0.25); // 動きの速さ（全体的に底上げ）
+        this.speedLFO = new RandomLFO(0.01, 0.05, 0.01, 0.12); // スピード上限を半分に（0.25 -> 0.12）
         this.ampLFO = new RandomLFO(0.005, 0.02, 10.0, 80.0);   // 動きの大きさ
         this.distortionSpeedLFO = new RandomLFO(0.01, 0.04, 0.01, 0.1); // コアの歪み速さ
         this.distortionAmpLFO = new RandomLFO(0.005, 0.03, 0.1, 0.5);   // コアの歪み強さ
@@ -425,19 +425,19 @@ export class Scene16 extends SceneBase {
             
             switch(this.creatureState) {
                 case this.STATE_IDLE: 
-                    this.stateMultipliers.targetSpeed = 1.0; // 0.7 -> 1.0
+                    this.stateMultipliers.targetSpeed = 0.5; // 1.0 -> 0.5
                     this.stateMultipliers.targetAmp = 0.8;
                     break;
                 case this.STATE_WILD: 
-                    this.stateMultipliers.targetSpeed = 2.5; // 1.5 -> 2.5
+                    this.stateMultipliers.targetSpeed = 1.2; // 2.5 -> 1.2
                     this.stateMultipliers.targetAmp = 1.5;
                     break;
                 case this.STATE_FOCUS: 
-                    this.stateMultipliers.targetSpeed = 0.8; // 0.5 -> 0.8
+                    this.stateMultipliers.targetSpeed = 0.4; // 0.8 -> 0.4
                     this.stateMultipliers.targetAmp = 0.6;
                     break;
                 case this.STATE_STASIS: 
-                    this.stateMultipliers.targetSpeed = 0.4; // 0.2 -> 0.4
+                    this.stateMultipliers.targetSpeed = 0.2; // 0.4 -> 0.2
                     this.stateMultipliers.targetAmp = 0.3;
                     break;
             }
@@ -731,23 +731,29 @@ export class Scene16 extends SceneBase {
                 const propagation = u * 4.0; 
                 const currentAmp = individualAmp * totalForce;
 
-                // 1. 基本のしなり（低周波で根本から大きく動く）
-                const bendFreq = 0.5;
-                let offsetX = Math.sin(time * bendFreq + u * 2.0 + i) * currentAmp * u * 1.5;
-                let offsetY = Math.cos(time * bendFreq * 0.8 + u * 2.0 + i * 1.5) * currentAmp * u * 1.5;
-                let offsetZ = Math.sin(time * bendFreq * 1.2 + u * 2.0 + i * 0.5) * currentAmp * u * 1.5;
+                // 1. 基本のしなり（根本から大きく、かつ複雑にうねる）
+                // 複数の周波数を合成して「ムチ」のような不規則なしなりを作る
+                const bendFreq = 0.3 * totalForce;
+                const wave1 = Math.sin(time * bendFreq + u * 1.5 + i);
+                const wave2 = Math.sin(time * bendFreq * 2.1 + u * 3.0 + i * 0.5) * 0.5;
+                const wave3 = Math.sin(time * bendFreq * 4.5 + u * 6.0 + i * 1.2) * 0.2;
+                
+                let offsetX = (wave1 + wave2 + wave3) * currentAmp * u * 2.0;
+                let offsetY = (Math.cos(time * bendFreq * 0.8 + u * 1.8 + i * 1.5) + wave2) * currentAmp * u * 2.0;
+                let offsetZ = (Math.sin(time * bendFreq * 1.2 + u * 2.2 + i * 0.5) + wave3) * currentAmp * u * 2.0;
 
-                // 2. 内巻き・外巻き（螺旋運動）
-                const coilEffect = coilWeight * (isRebel ? 0.3 : 1.0);
-                const coilRadius = u * 200.0 * coilEffect;
-                const coilAngle = time * 3.0 * t.coilDirection + u * 10.0;
+                // 2. 内巻き・外巻き（螺旋運動をよりダイナミックに）
+                // トラック6の力で巻き込みを強くする
+                const coilEffect = (coilWeight + track6Force * 0.5) * (isRebel ? 0.3 : 1.0);
+                const coilRadius = u * 300.0 * coilEffect;
+                const coilAngle = time * 2.0 * t.coilDirection + u * 15.0;
                 offsetX += Math.cos(coilAngle) * coilRadius;
                 offsetY += Math.sin(coilAngle) * coilRadius;
 
-                // 3. 絡みつき（共通のノイズフィールドへ引き寄せ）
-                const entwineEffect = entwineWeight * (isRebel ? 0.1 : 1.0);
-                const noiseFieldX = Math.sin(this.time * 0.2 + u * 3.0) * 300.0;
-                const noiseFieldY = Math.cos(this.time * 0.2 + u * 3.0) * 300.0;
+                // 3. 絡みつき（共通のノイズフィールドをより有機的に）
+                const entwineEffect = (entwineWeight + track6Force * 0.3) * (isRebel ? 0.1 : 1.0);
+                const noiseFieldX = Math.sin(this.time * 0.15 + u * 4.0 + Math.sin(this.time * 0.1)) * 400.0;
+                const noiseFieldY = Math.cos(this.time * 0.15 + u * 4.0 + Math.cos(this.time * 0.1)) * 400.0;
                 offsetX = offsetX * (1.0 - entwineEffect) + noiseFieldX * entwineEffect * u;
                 offsetY = offsetY * (1.0 - entwineEffect) + noiseFieldY * entwineEffect * u;
 

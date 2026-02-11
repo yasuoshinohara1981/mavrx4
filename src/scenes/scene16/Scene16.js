@@ -23,7 +23,7 @@ export class Scene16 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // 触手（Tentacles）の設定
-        this.tentacleCount = 220; 
+        this.tentacleCount = 200; // 220 -> 200 に削減
         this.tentacles = [];
         this.tentacleGroup = new THREE.Group();
         this.coreMesh = null; // 真ん中の球体
@@ -53,7 +53,7 @@ export class Scene16 extends SceneBase {
 
         // 究極のランダムさのための RandomLFO 群
         // (minRate, maxRate, minValue, maxValue)
-        this.speedLFO = new RandomLFO(0.01, 0.05, 0.02, 0.15); // 動きの速さ
+        this.speedLFO = new RandomLFO(0.02, 0.1, 0.02, 0.25); // 動きの速さ（全体的に底上げ）
         this.ampLFO = new RandomLFO(0.005, 0.02, 10.0, 80.0);   // 動きの大きさ
         this.distortionSpeedLFO = new RandomLFO(0.01, 0.04, 0.01, 0.1); // コアの歪み速さ
         this.distortionAmpLFO = new RandomLFO(0.005, 0.03, 0.1, 0.5);   // コアの歪み強さ
@@ -207,8 +207,8 @@ export class Scene16 extends SceneBase {
             map: textures.map, 
             bumpMap: textures.bumpMap,
             bumpScale: 15.0, 
-            metalness: 0.1, 
-            roughness: 0.4, 
+            metalness: 0.2, // 0.1 -> 0.2 少し金属感を出す
+            roughness: 0.3, // 0.4 -> 0.3 粗さを下げてツヤを出す
             vertexColors: true,
             emissive: 0x000000,
             transparent: false
@@ -231,6 +231,10 @@ export class Scene16 extends SceneBase {
 
             const baseThickness = 8 + Math.pow(Math.random(), 2.0) * 50;
             const r = baseRadius + 400;
+
+            // 個性（群れを外れる確率など）を保存
+            const rebellionFactor = Math.random() > 0.8 ? 1.0 : 0.0; // 20%の確率で反抗的
+            const coilDirection = Math.random() > 0.5 ? 1.0 : -1.0; // 内巻きか外巻きか
 
             points.push(new THREE.Vector3(0,0,0));
             const midDist = baseRadius + 200;
@@ -275,7 +279,7 @@ export class Scene16 extends SceneBase {
             const basePositions = geometry.attributes.position.array.slice();
             const mesh = this.createTentacleMesh(geometry, textures);
             this.tentacleGroup.add(mesh);
-            this.tentacles.push({ mesh, curve, basePositions, phi, theta, baseRadius, baseThickness });
+            this.tentacles.push({ mesh, curve, basePositions, phi, theta, baseRadius, baseThickness, rebellionFactor, coilDirection });
         }
         this.tentacleGroup.position.set(0, 400, 0);
         this.setParticleCount(this.tentacles.length);
@@ -284,7 +288,10 @@ export class Scene16 extends SceneBase {
     createTentacleMesh(geometry, textures) {
         const material = new THREE.MeshStandardMaterial({
             color: 0xffffff, map: textures.map, bumpMap: textures.bumpMap,
-            bumpScale: 30.0, metalness: 0.1, roughness: 0.4, vertexColors: true,
+            bumpScale: 30.0, 
+            metalness: 0.2, // 0.1 -> 0.2
+            roughness: 0.3, // 0.4 -> 0.3
+            vertexColors: true,
             emissive: 0x000000, transparent: false
         });
         const mesh = new THREE.Mesh(geometry, material);
@@ -397,47 +404,69 @@ export class Scene16 extends SceneBase {
         this.distortionAmpLFO.update(deltaTime);
         this.colorCycleLFO.update(deltaTime);
 
-        // LFOから動的にパラメータを取得（ステートマシンによる急激な変化を抑制しつつ、常に揺らす）
-        this.targetAnimParams.speed = this.speedLFO.getValue();
-        this.targetAnimParams.waveAmp = this.ampLFO.getValue();
-        this.targetAnimParams.distortionSpeed = this.distortionSpeedLFO.getValue();
-        this.targetAnimParams.distortionAmp = this.distortionAmpLFO.getValue();
+        // LFOから動的にパラメータを取得（ベースの揺らぎ）
+        const baseSpeed = this.speedLFO.getValue();
+        const baseAmp = this.ampLFO.getValue();
+        const baseDistortionSpeed = this.distortionSpeedLFO.getValue();
+        const baseDistortionAmp = this.distortionAmpLFO.getValue();
 
         if (this.stateTimer >= this.stateDuration) {
             this.stateTimer = 0;
             this.creatureState = Math.floor(Math.random() * 4);
-            this.stateDuration = 10.0 + Math.random() * 15.0; // 周期をさらに長く
+            this.stateDuration = 10.0 + Math.random() * 15.0; 
             if (this.creatureState === this.STATE_FOCUS) {
                 this.focusTarget.copy(this.camera.position).add(new THREE.Vector3((Math.random()-0.5)*1500, (Math.random()-0.5)*800, (Math.random()-0.5)*1500));
             }
-            // ステートはあくまで「味付け」として残し、LFOの範囲を微調整する
+            
+            // ステートに応じて「ターゲット倍率」を設定（直接LFOをいじらない）
+            if (!this.stateMultipliers) {
+                this.stateMultipliers = { speed: 1.0, amp: 1.0 };
+            }
+            
             switch(this.creatureState) {
                 case this.STATE_IDLE: 
-                    this.speedLFO.setValueRange(0.04, 0.1);
-                    this.ampLFO.setValueRange(20.0, 50.0);
+                    this.stateMultipliers.targetSpeed = 1.0; // 0.7 -> 1.0
+                    this.stateMultipliers.targetAmp = 0.8;
                     break;
                 case this.STATE_WILD: 
-                    this.speedLFO.setValueRange(0.1, 0.2);
-                    this.ampLFO.setValueRange(60.0, 100.0);
+                    this.stateMultipliers.targetSpeed = 2.5; // 1.5 -> 2.5
+                    this.stateMultipliers.targetAmp = 1.5;
                     break;
                 case this.STATE_FOCUS: 
-                    this.speedLFO.setValueRange(0.02, 0.08);
-                    this.ampLFO.setValueRange(10.0, 30.0);
+                    this.stateMultipliers.targetSpeed = 0.8; // 0.5 -> 0.8
+                    this.stateMultipliers.targetAmp = 0.6;
                     break;
                 case this.STATE_STASIS: 
-                    this.speedLFO.setValueRange(0.01, 0.04);
-                    this.ampLFO.setValueRange(5.0, 15.0);
+                    this.stateMultipliers.targetSpeed = 0.4; // 0.2 -> 0.4
+                    this.stateMultipliers.targetAmp = 0.3;
                     break;
             }
         }
-        const lerpFactor = deltaTime * 0.5; // 遷移をさらにゆっくりに
+
+        // 倍率を滑らかに補間
+        if (!this.stateMultipliers) {
+            this.stateMultipliers = { speed: 1.0, amp: 1.0, targetSpeed: 1.0, targetAmp: 1.0 };
+        }
+        const multiplierLerp = deltaTime * 0.3; // 非常にゆっくり変化
+        this.stateMultipliers.speed += (this.stateMultipliers.targetSpeed - this.stateMultipliers.speed) * multiplierLerp;
+        this.stateMultipliers.amp += (this.stateMultipliers.targetAmp - this.stateMultipliers.amp) * multiplierLerp;
+
+        // LFOの値にステート倍率を掛けて最終的なターゲット値を決定
+        this.targetAnimParams.speed = baseSpeed * this.stateMultipliers.speed;
+        this.targetAnimParams.waveAmp = baseAmp * this.stateMultipliers.amp;
+        this.targetAnimParams.distortionSpeed = baseDistortionSpeed;
+        this.targetAnimParams.distortionAmp = baseDistortionAmp;
+
+        const lerpFactor = deltaTime * 0.5; 
         for (let key in this.currentAnimParams) { this.currentAnimParams[key] += (this.targetAnimParams[key] - this.currentAnimParams[key]) * lerpFactor; }
         
-        const heartbeat = Math.pow(Math.sin(this.time * 1.0), 8.0); // 心拍もゆっくりに
+        const heartbeat = Math.pow(Math.sin(this.time * 1.0), 8.0); 
         
         // 【コアの基準サイズ変動】周期的に巨大化したり縮小したりする
-        const coreBaseScaleLFO = this.speedLFO.getValue(); // 既存のLFOを流用して周期を揺らす
-        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + coreBaseScaleLFO) * 0.4; // 0.2 -> 0.05
+        // speedLFOを直接使わず、平滑化した値を使う
+        if (this.smoothSizeLFO === undefined) this.smoothSizeLFO = baseSpeed;
+        this.smoothSizeLFO += (baseSpeed - this.smoothSizeLFO) * deltaTime * 0.5;
+        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + this.smoothSizeLFO) * 0.4; 
         
         const scale = coreBaseScale + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
@@ -445,6 +474,19 @@ export class Scene16 extends SceneBase {
         const rotationSpeed = this.creatureState === this.STATE_FOCUS ? 0.02 : 0.08;
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
         this.tentacleGroup.rotation.x += deltaTime * (rotationSpeed * 0.3);
+
+        // 動きのバリエーションを制御するフェーズ
+        const behaviorTime = this.time * 0.15;
+        const pointingWeight = Math.max(0, Math.sin(this.time * 0.1) * 2.0 - 1.0); // 時々一点を指す
+        const coilWeight = Math.max(0, Math.cos(this.time * 0.08) * 2.0 - 1.0); // 時々巻く
+        const entwineWeight = Math.max(0, Math.sin(this.time * 0.05) * 1.5 - 0.5); // 絡みつき
+        
+        // 共通のターゲットポイント（一点を指し示す用）
+        const commonTarget = new THREE.Vector3(
+            Math.sin(this.time * 0.3) * 1000,
+            Math.cos(this.time * 0.2) * 800,
+            Math.sin(this.time * 0.4) * 1000
+        );
         
         // 【ベースカラーの刷新】白と濃いグレーをランダムに行ったり来たり
         const baseCycle = this.colorCycleLFO.getValue(); 
@@ -461,10 +503,15 @@ export class Scene16 extends SceneBase {
         const track6Force = (this.sharedResourceManager && typeof this.sharedResourceManager.getTrackLevel === 'function') 
             ? this.sharedResourceManager.getTrackLevel(6) 
             : 0;
-        const totalForce = 1.0 + track6Force * 2.0; // トラック6で動きを増幅
+        const totalForce = 1.0 + track6Force * 3.0; // トラック6で動きを大幅に増幅
+
+        // トラック7のMIDI信号（色）を取得
+        const track7Color = (this.sharedResourceManager && typeof this.sharedResourceManager.getTrackLevel === 'function') 
+            ? this.sharedResourceManager.getTrackLevel(7) 
+            : 0;
 
         // 【標高ベースのヒートマップロジック】地球儀のようにノイズの高さで多段階に色を変える
-        const getElevationHeatColor = (vPos, baseColor, time, isTip = false) => {
+        const getElevationHeatColor = (vPos, baseColor, time, region = 0) => {
             // 3次元ノイズで「標高（Elevation）」を計算
             const noiseScale = 0.003; 
             const elevation1 = (
@@ -486,24 +533,42 @@ export class Scene16 extends SceneBase {
             const steppedElevation = Math.floor(totalElevation * steps) / steps;
             
             const colorShiftSpeed = 0.2; 
-            const baseHueOffset = (this.time * colorShiftSpeed) % 1.0;
+            // トラック7の信号で色相のオフセットを変化させる
+            const baseHueOffset = (this.time * colorShiftSpeed + track7Color * 2.0) % 1.0;
             
-            // 標高に応じた色相の変化
-            let hue = 0.5 + ((baseHueOffset + steppedElevation * 0.4) % 1.0) * 0.4;
+            // 【色相の刷新】赤・ピンク・紫を完全に排除
+            // Hue を 0.4（緑）〜 0.7（青・水色）の範囲に限定
+            let hue = 0.4 + ((baseHueOffset + steppedElevation * 0.2) % 1.0) * 0.3;
             
-            // 【触手の先端カラー】先端（isTip=true）の場合は、色相をさらに反転・シフトさせる
-            if (isTip) {
-                hue = (hue + 0.5) % 1.0; // 補色に近い色へシフト
-                // 先端も赤・緑系を避ける
-                if (hue < 0.25) hue += 0.3;
-                if (hue > 0.25 && hue < 0.45) hue += 0.2;
+            // 【触手の多段カラー】
+            if (region === 2) { // 先端（Tip）
+                hue = (hue + 0.15) % 1.0; 
+            } else if (region === 1) { // 先端の少し下（Sub-tip）
+                hue = (hue + 0.07) % 1.0;
+            }
+            
+            // 再度ガード（赤〜紫の範囲 0.75 〜 1.0, 0.0 〜 0.1 を避ける）
+            if (hue > 0.75 || hue < 0.1) {
+                hue = 0.5; // 青に強制
             }
             
             const targetColor = new THREE.Color();
-            const lightnessPattern = Math.sin(steppedElevation * Math.PI * 8.0) * 0.15 + 0.4;
-            // 先端はより鮮やかに
-            const saturation = isTip ? 1.0 : (0.6 + steppedElevation * 0.4); 
-            targetColor.setHSL(hue, saturation, lightnessPattern);
+            
+            // 【白と黒の導入】
+            // steppedElevation や region に応じて、彩度を落として白や黒を混ぜる
+            let saturation = region > 0 ? 0.8 : (0.4 + steppedElevation * 0.4);
+            let lightness = Math.sin(steppedElevation * Math.PI * 8.0) * 0.2 + 0.4;
+
+            // 標高が極端に高い場所は「白」、低い場所は「黒」に近づける
+            if (steppedElevation > 0.9) {
+                lightness = 0.9; // 白
+                saturation = 0.1;
+            } else if (steppedElevation < 0.1) {
+                lightness = 0.1; // 黒
+                saturation = 0.1;
+            }
+
+            targetColor.setHSL(hue, saturation, lightness);
             
             const blendFactor = 0.15 + steppedElevation * 0.8;
             const finalColor = baseColor.clone().lerp(targetColor, blendFactor);
@@ -521,20 +586,26 @@ export class Scene16 extends SceneBase {
             const coreColorAttr = this.coreMesh.geometry.attributes.color;
             const initialPos = this.coreMesh.geometry.userData.initialPositions;
             const v = new THREE.Vector3();
+            const { distortionSpeed, distortionAmp } = this.currentAnimParams; // パラメータを確実に取得
             
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
                 // 歪みノイズ（毛の更新ロジックと完全に一致させる）
+                // 頂点の初期位置（スケーリング前）を基準にノイズを計算
+                const rx = v.x;
+                const ry = v.y;
+                const rz = v.z;
+
                 const lowFreqNoise = (
-                    Math.sin(v.x * 0.002 + this.time * distortionSpeed * 0.3) * 
-                    Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4) * 
-                    Math.sin(v.z * 0.002 + this.time * distortionSpeed * 0.2)
+                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * 
+                    Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * 
+                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2) // zの代わりにxを使用
                 );
                 const midFreqNoise = (
-                    Math.sin(v.x * 0.01 + this.time * distortionSpeed) + 
-                    Math.cos(v.y * 0.01 + this.time * distortionSpeed * 0.8) + 
-                    Math.sin(v.z * 0.01 + this.time * distortionSpeed * 1.1)
+                    Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
+                    Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
+                    Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1) // zの代わりにxを使用
                 ) * 0.3;
                 const noiseVal = lowFreqNoise + midFreqNoise;
                 
@@ -568,15 +639,16 @@ export class Scene16 extends SceneBase {
                 const rz = baseRadius * sinT * sinP;
 
                 // コアと同じノイズロジックで表面の変位を計算
+                // zの代わりにxを使用（コアの計算式と合わせる）
                 const lowFreqNoise = (
                     Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * 
                     Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * 
-                    Math.sin(rz * 0.002 + this.time * distortionSpeed * 0.2)
+                    Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2)
                 );
                 const midFreqNoise = (
                     Math.sin(rx * 0.01 + this.time * distortionSpeed) + 
                     Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + 
-                    Math.sin(rz * 0.01 + this.time * distortionSpeed * 1.1)
+                    Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1)
                 ) * 0.3;
                 const noiseVal = lowFreqNoise + midFreqNoise;
                 
@@ -601,31 +673,29 @@ export class Scene16 extends SceneBase {
             const colorAttr = t.mesh.geometry.attributes.color;
             if (!posAttr || !colorAttr) return;
 
-            // 【触手の配置・集合ロジックの刷新】
-            // 1. ノイズによる集合・拡散
-            // gatheringCycle を使ってノイズのスケール（広がり）を変化させる
-            const gatheringCycle = Math.sin(this.time * 0.1) * 0.5 + 0.5; // 0.0(拡散) 〜 1.0(集合)
-            
-            // ノイズのシード値を時間で動かして、生える場所自体をヌメヌメ移動させる
-            const noiseTime = this.time * 0.05;
-            const noiseScale = 1.0 + (1.0 - gatheringCycle) * 2.0; // 集合時はスケールを小さくして一箇所に固める
-            
-            // 元々の生える場所（phi, theta）にノイズによるオフセットを加える
-            // これにより、一箇所に集まったり、元の場所に戻ったりを繰り返す
-            const currentPhi = t.phi * noiseScale + Math.sin(noiseTime + i * 0.1) * 0.2;
-            const currentTheta = t.theta * noiseScale + Math.cos(noiseTime + i * 0.1) * 0.2;
+            // 群れを外れる個体かどうか
+            const isRebel = t.rebellionFactor > 0.5;
 
-            // 触手ごとの個別のバイアス（動きには残すが、色には使わない）
-            const tentacleNoise = Math.sin(this.time * 0.05 + i * 0.5) * 0.5 + 0.5; 
-            const individualSpeed = speed * (0.5 + tentacleNoise * 1.5);
+            // 【触手の配置・集合ロジックの刷新】
+            const gatheringCycle = Math.sin(this.time * 0.1) * 0.5 + 0.5; 
+            const noiseTime = this.time * 0.05;
+            const noiseScale = 1.0 + (1.0 - gatheringCycle) * 2.0; 
+            
+            let currentPhi = t.phi * noiseScale + Math.sin(noiseTime + i * 0.1) * 0.2;
+            let currentTheta = t.theta * noiseScale + Math.cos(noiseTime + i * 0.1) * 0.2;
+
+            // 反抗的な個体は集合に従わない
+            if (isRebel) {
+                currentPhi = t.phi + Math.sin(this.time * 0.2 + i) * 0.5;
+                currentTheta = t.theta + Math.cos(this.time * 0.2 + i) * 0.5;
+            }
+
+            const individualSpeed = speed * (0.5 + Math.sin(this.time * 0.05 + i * 0.5) * 1.5);
             const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.03 + i * 0.8) * 0.7);
 
-            // 2. 回転の修正
-            // 全体で同じ方向への回転を廃止し、触手ごとにバラバラな回転にする
             const individualRotationX = Math.sin(this.time * 0.1 + i) * 0.1;
             const individualRotationY = Math.cos(this.time * 0.15 + i * 1.5) * 0.1;
             
-            // 集合ロジックと個別回転を反映
             t.mesh.rotation.set(currentTheta + individualRotationX - t.theta, currentPhi + individualRotationY - t.phi, 0);
             
             const focusVec = new THREE.Vector3();
@@ -638,25 +708,20 @@ export class Scene16 extends SceneBase {
             const lengthNoiseBase = Math.sin(t.phi * 1.5 + this.time * 0.03);
             
             // 【滑らかさの向上】LFOの値を直接使わず、lerpで平滑化して急変を抑える
-            const targetMaxLFO = this.speedLFO.getValue(); 
+            const targetMaxLFO = baseSpeed; 
             if (this.smoothMaxLFO === undefined) this.smoothMaxLFO = targetMaxLFO;
-            this.smoothMaxLFO += (targetMaxLFO - this.smoothMaxLFO) * 0.05; // じわっと追従
+            this.smoothMaxLFO += (targetMaxLFO - this.smoothMaxLFO) * deltaTime * 0.5; 
             
-            const currentMaxScale = 0.8 + this.smoothMaxLFO * 4.0;
+            // 【初期値の徹底固定】ベースを 0.1 にし、最大長を LFO で揺らす
+            const currentMaxScale = 0.5 + this.smoothMaxLFO * 6.0; 
             
-            // dynamicLength = 固定初期値(0.1) + (0.0 〜 1.0 のノイズ * 変動する最大幅)
-            const rawNoise = lengthNoiseBase * 0.5 + 0.5;
+            const rawNoise = lengthNoiseBase * 0.5 + 0.5; // 0.0 〜 1.0
             // 5次式の Smoothstep (Smootherstep) で極限まで滑らかに
             const smoothNoise = rawNoise * rawNoise * rawNoise * (rawNoise * (rawNoise * 6 - 15) + 10);
             const dynamicLength = 0.1 + smoothNoise * currentMaxScale;
 
             // メッシュのスケールは確実に 1.0 に固定
             t.mesh.scale.set(1.0, 1.0, 1.0);
-
-            // 【デバッグ】数値をコンソールに出し続ける
-            if (i === 0 && Math.floor(this.time * 60) % 60 === 0) {
-                console.log("DEBUG - dynamicLength:", dynamicLength.toFixed(3), "currentMaxScale:", currentMaxScale.toFixed(3));
-            }
 
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; 
@@ -666,21 +731,34 @@ export class Scene16 extends SceneBase {
                 const propagation = u * 4.0; 
                 const currentAmp = individualAmp * totalForce;
 
-                let offsetX = (
-                    Math.sin(time - propagation + wavePhase) * 1.2 + 
-                    Math.sin(time * 2.5 - propagation * 1.5 + wavePhase * 2.0)
-                ) * currentAmp * u;
-                
-                let offsetY = (
-                    Math.cos(time * 0.8 - propagation * 1.2 + wavePhase + i) * 1.2 + 
-                    Math.cos(time * 3.2 - propagation * 2.0 + wavePhase * 2.5)
-                ) * currentAmp * u;
-                
-                let offsetZ = (
-                    Math.sin(time * 1.1 - propagation * 0.8 + wavePhase + i * 1.5) * 1.2 + 
-                    Math.sin(time * 2.8 - propagation * 1.8 + wavePhase * 3.0)
-                ) * currentAmp * u;
-                
+                // 1. 基本のしなり（低周波で根本から大きく動く）
+                const bendFreq = 0.5;
+                let offsetX = Math.sin(time * bendFreq + u * 2.0 + i) * currentAmp * u * 1.5;
+                let offsetY = Math.cos(time * bendFreq * 0.8 + u * 2.0 + i * 1.5) * currentAmp * u * 1.5;
+                let offsetZ = Math.sin(time * bendFreq * 1.2 + u * 2.0 + i * 0.5) * currentAmp * u * 1.5;
+
+                // 2. 内巻き・外巻き（螺旋運動）
+                const coilEffect = coilWeight * (isRebel ? 0.3 : 1.0);
+                const coilRadius = u * 200.0 * coilEffect;
+                const coilAngle = time * 3.0 * t.coilDirection + u * 10.0;
+                offsetX += Math.cos(coilAngle) * coilRadius;
+                offsetY += Math.sin(coilAngle) * coilRadius;
+
+                // 3. 絡みつき（共通のノイズフィールドへ引き寄せ）
+                const entwineEffect = entwineWeight * (isRebel ? 0.1 : 1.0);
+                const noiseFieldX = Math.sin(this.time * 0.2 + u * 3.0) * 300.0;
+                const noiseFieldY = Math.cos(this.time * 0.2 + u * 3.0) * 300.0;
+                offsetX = offsetX * (1.0 - entwineEffect) + noiseFieldX * entwineEffect * u;
+                offsetY = offsetY * (1.0 - entwineEffect) + noiseFieldY * entwineEffect * u;
+
+                // 4. 一点を指し示す（共通ターゲットへの指向性）
+                const pointEffect = pointingWeight * (isRebel ? 0.2 : 1.0);
+                const targetDir = commonTarget.clone().normalize();
+                offsetX = offsetX * (1.0 - pointEffect) + targetDir.x * u * 800.0 * pointEffect;
+                offsetY = offsetY * (1.0 - pointEffect) + targetDir.y * u * 800.0 * pointEffect;
+                offsetZ = offsetZ * (1.0 - pointEffect) + targetDir.z * u * 800.0 * pointEffect;
+
+                // 先端の巻き（既存の味付け）
                 const curlIntensity = Math.pow(u, 2.5) * 150.0 * totalForce; 
                 const curlAngle = time * 2.0 + u * 10.0;
                 offsetX += Math.sin(curlAngle) * curlIntensity;
@@ -694,18 +772,21 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
+                // 触手の色計算：多段階標高ヒートマップ
+                // 触手の各頂点の空間座標（vPos）を使って標高色を計算
                 const vPos = new THREE.Vector3(offsetX, offsetY, offsetZ);
-                const isTipArea = u > 0.7; 
-                const color = getElevationHeatColor(vPos, skinColor, this.time, isTipArea);
+                // u（先端への距離）を使って、先端ほど「別の色」になるようにリージョンを分ける
+                let colorRegion = 0; // 根本〜中間
+                if (u > 0.85) colorRegion = 2; // 先端15%
+                else if (u > 0.6) colorRegion = 1; // その下の25%
+                
+                const color = getElevationHeatColor(vPos, skinColor, this.time, colorRegion);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;
                     if (idx < posAttr.count) {
                         const bx = t.basePositions[idx * 3 + 0]; const by = t.basePositions[idx * 3 + 1]; const bz = t.basePositions[idx * 3 + 2];
-                        
-                        // 【調査】根本からの距離ベクトルを計算して、そこに dynamicLength を掛ける
-                        // TubeGeometry の頂点 bx, by, bz は中心からの相対座標なので、
-                        // これを dynamicLength でスケーリングすれば短くなるはず
+                        // 頂点座標全体に dynamicLength を掛けて、根本から伸縮させる
                         posAttr.setXYZ(idx, 
                             (bx + offsetX * intensity) * dynamicLength, 
                             (by + offsetY * intensity) * dynamicLength, 
@@ -736,7 +817,7 @@ export class Scene16 extends SceneBase {
         this.tentacles.forEach(t => { if (t.mesh.geometry) t.mesh.geometry.dispose(); if (t.mesh.material) t.mesh.material.dispose(); });
         this.tentacles = []; this.scene.remove(this.tentacleGroup);
         if (this.bokehPass) { if (this.composer) { const idx = this.composer.passes.indexOf(this.bokehPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bokehPass.enabled = false; }
-        if (this.bloomPass) { if (this.composer) { const idx = this.composer.passes.indexOf(this.bloomPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bloomPass.enabled = false; }
+        if (this.bloomPass) { if (this.composer) { const idx = this.bloomPass && this.composer.passes.indexOf(this.bloomPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bloomPass.enabled = false; }
         super.dispose();
     }
 }

@@ -606,6 +606,34 @@ export class Scene16 extends SceneBase {
         const entwineWeight = Math.max(0, Math.sin(this.time * 0.05) * 1.5 - 0.5); // 絡みつき
         const upwardWeight = Math.max(0, Math.cos(this.time * 0.06) * 2.0 - 1.0); // 【追加】時々真上を向く
         
+        // 【時間的変化：成長シーケンス】
+        // phase 0-6 で成長、phase 7-12 で縮小消滅
+        // actualTick を使ってフェーズ内を滑らかに補間
+        // 1ループ 96小節 = 1920 ticks * 96 = 184320 ticks
+        // 12フェーズあるとすると 1フェーズ = 184320 / 12 = 15360 ticks
+        const ticksPerPhase = 15360; 
+        
+        // OSCが来ていない場合（0の場合）は、自前の time を使ってシミュレーションする
+        let smoothPhase;
+        if (this.actualTick === 0 && this.phase === 0) {
+            // デバッグ用：OSCがない時は20秒で1周するシミュレーション
+            smoothPhase = (this.time % 20.0) / 20.0 * 12.0;
+        } else {
+            smoothPhase = this.phase + (this.actualTick % ticksPerPhase) / ticksPerPhase;
+        }
+        
+        let globalGrowthProgress = 0;
+        if (smoothPhase <= 6) {
+            // phase 0-6: 0.0 -> 1.0
+            globalGrowthProgress = Math.min(1.0, smoothPhase / 6.0);
+        } else {
+            // phase 7-12: 1.0 -> 0.0
+            globalGrowthProgress = Math.max(0, 1.0 - (smoothPhase - 6) / 6.0);
+        }
+
+        // 触手1本あたりの成長幅（重なりを持たせて滑らかにする）
+        const growthOverlap = 10.0; // 10本分くらいの余裕を持ってニョキニョキさせる
+        
         // 共通のターゲットポイント（一点を指し示す用）
         const commonTarget = new THREE.Vector3(
             Math.sin(this.time * 0.3) * 1000,
@@ -655,20 +683,24 @@ export class Scene16 extends SceneBase {
             // トラック7の信号で色相のオフセットを変化させる
             const baseHueOffset = (this.time * colorShiftSpeed + track7Color * 2.0) % 1.0;
             
-            // 【色相の刷新】赤・ピンク・紫を完全に排除
-            // Hue を 0.4（緑）〜 0.7（青・水色）の範囲に限定
-            let hue = 0.4 + ((baseHueOffset + steppedElevation * 0.2) % 1.0) * 0.3;
-            
-            // 【触手の多段カラー】
-            if (region === 2) { // 先端（Tip）
-                hue = (hue + 0.15) % 1.0; 
-            } else if (region === 1) { // 先端の少し下（Sub-tip）
-                hue = (hue + 0.07) % 1.0;
-            }
-            
-            // 再度ガード（赤〜紫の範囲 0.75 〜 1.0, 0.0 〜 0.1 を避ける）
-            if (hue > 0.75 || hue < 0.1) {
-                hue = 0.5; // 青に強制
+            // 【色相の刷新】緑系を完全に排除し、青・紫系にトーンを寄せる
+            // ただし、先端（region === 2）は暖色系（赤・オレンジ）を許可する
+            let hue;
+            if (region > 1.5) { // 先端（Tip）
+                // 暖色系：0.9（赤紫）〜 1.1（オレンジ）の範囲で変化
+                hue = (0.9 + baseHueOffset * 0.2) % 1.0;
+            } else {
+                // 寒色系：0.55（青）〜 0.85（紫）の範囲
+                hue = 0.55 + ((baseHueOffset + steppedElevation * 0.2) % 1.0) * 0.3;
+                
+                if (region > 0.5) { // 先端の少し下（Sub-tip）
+                    hue = (hue + 0.05) % 1.0;
+                }
+                
+                // 胴体部分のガード（緑〜黄色の範囲 0.15 〜 0.55 を避ける）
+                if (hue > 0.15 && hue < 0.55) {
+                    hue = 0.65; // 綺麗な青に強制
+                }
             }
             
             const targetColor = this.tempTargetColor;
@@ -694,26 +726,38 @@ export class Scene16 extends SceneBase {
             const blendFactor = (0.15 + steppedElevation * 0.8) * track7Color;
             const finalColor = this.tempColor.copy(baseColor).lerp(targetColor, blendFactor);
 
-            // レーザースキャン発光（Scene03を参考に実装）
+            // レーザースキャン発光（蛍光灯のような強い発光感を演出）
             this.scans.forEach(scan => {
                 const dist = Math.abs(u - scan.progress);
-                const width = 0.05;
+                const width = 0.06; // 少し幅を広げて存在感を出す
                 if (dist < width) {
-                    const glow = (1.0 - dist / width) * scan.intensity;
-                    const scanCol = this.scanColor.setHSL(scan.hue, 0.8, 0.6);
+                    const glow = Math.pow(1.0 - dist / width, 2.0) * scan.intensity;
+                    const scanCol = this.scanColor.setHSL(scan.hue, 0.9, 0.7);
+                    
                     // 標高に合わせて少し明滅させる
-                    const noiseGlow = glow * (0.5 + steppedElevation * 0.5);
-                    finalColor.lerp(scanCol, noiseGlow);
-                    // 加算合成的な発光感を出すために少しRGBを底上げ
-                    finalColor.r += noiseGlow * 0.5;
-                    finalColor.g += noiseGlow * 0.5;
-                    finalColor.b += noiseGlow * 0.5;
+                    const noiseGlow = glow * (0.6 + steppedElevation * 0.4);
+                    
+                    // 蛍光灯のような「芯」の白さを出すために、中心部は白く飛ばす
+                    // 【修正】白くなりすぎないように、芯の強さを少し抑える (3.0 -> 1.5)
+                    const coreGlow = Math.pow(Math.max(0, 1.0 - dist / (width * 0.3)), 3.0) * scan.intensity;
+                    
+                    // 体色とのブレンドを強める
+                    finalColor.lerp(scanCol, noiseGlow * 1.5);
+                    
+                    // 加算合成的な強い発光（1.0を超えるHDR値）を加えてブルームを誘発させる
+                    // 【修正】白飛びを抑えるために、色成分（scanCol）をベースに発光させる
+                    const emissiveBoost = noiseGlow * 1.2;
+                    finalColor.r += scanCol.r * emissiveBoost + coreGlow * 1.0;
+                    finalColor.g += scanCol.g * emissiveBoost + coreGlow * 1.0;
+                    finalColor.b += scanCol.b * emissiveBoost + coreGlow * 1.0;
                 }
             });
 
-            finalColor.r = Math.min(1.2, finalColor.r);
-            finalColor.g = Math.min(1.2, finalColor.g);
-            finalColor.b = Math.min(1.2, finalColor.b);
+            // スキャン以外の部分はクランプするが、スキャン部分は1.0を超えて光らせる
+            // ただし極端な白飛びを防ぐために上限は少し高めの 3.0 に設定
+            finalColor.r = Math.min(3.0, finalColor.r);
+            finalColor.g = Math.min(3.0, finalColor.g);
+            finalColor.b = Math.min(3.0, finalColor.b);
             
             return finalColor;
         };
@@ -829,10 +873,25 @@ export class Scene16 extends SceneBase {
             const rawNoise = lengthNoiseBase * 0.5 + 0.5; // 0.0 〜 1.0
             // 5次式の Smoothstep (Smootherstep) で極限まで滑らかに
             const smoothNoise = rawNoise * rawNoise * rawNoise * (rawNoise * (rawNoise * 6 - 15) + 10);
-            const dynamicLength = 0.1 + smoothNoise * currentMaxScale;
+            const dynamicLengthBase = 0.1 + smoothNoise * currentMaxScale;
+
+            // 【時間的変化：個別の成長（1本ずつ、かつシームレスに）】
+            // growthOverlap本分くらいの重なりを持たせて、1本が伸び切る前に次が伸び始めるようにする
+            const totalSteps = this.tentacleCount + growthOverlap;
+            const currentStep = globalGrowthProgress * totalSteps;
+            const individualGrowth = Math.max(0, Math.min(1.0, (currentStep - i) / growthOverlap));
+            
+            const dynamicLength = dynamicLengthBase * individualGrowth;
 
             // メッシュのスケールは確実に 1.0 に固定
             t.mesh.scale.set(1.0, 1.0, 1.0);
+            
+            // 成長していない触手は非表示にして計算をスキップ
+            if (individualGrowth <= 0.001) {
+                t.mesh.visible = false;
+                return;
+            }
+            t.mesh.visible = true;
 
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; 

@@ -525,7 +525,7 @@ export class Scene16 extends SceneBase {
             for (let i = 0; i < corePosAttr.count; i++) {
                 v.set(initialPos[i * 3], initialPos[i * 3 + 1], initialPos[i * 3 + 2]);
                 
-                // 歪みノイズ
+                // 歪みノイズ（毛の更新ロジックと完全に一致させる）
                 const lowFreqNoise = (
                     Math.sin(v.x * 0.002 + this.time * distortionSpeed * 0.3) * 
                     Math.cos(v.y * 0.002 + this.time * distortionSpeed * 0.4) * 
@@ -601,72 +601,86 @@ export class Scene16 extends SceneBase {
             const colorAttr = t.mesh.geometry.attributes.color;
             if (!posAttr || !colorAttr) return;
 
-            // 【触手の集合・拡散ロジック】周期的に一箇所に集まったり広がったりする
-            // 生える場所（phi, theta）を時間経過でオフセットさせて、特定の方向に寄せる
-            const gatheringCycle = Math.sin(this.time * 0.1) * 0.5 + 0.5; // 0.0(通常) 〜 1.0(集合)
+            // 【触手の配置・集合ロジックの刷新】
+            // 1. ノイズによる集合・拡散
+            // gatheringCycle を使ってノイズのスケール（広がり）を変化させる
+            const gatheringCycle = Math.sin(this.time * 0.1) * 0.5 + 0.5; // 0.0(拡散) 〜 1.0(集合)
             
-            // 集合地点（ターゲット方向）をゆっくり回転させる
-            const targetPhi = this.time * 0.05; // 0.2 -> 0.05
-            const targetTheta = Math.PI * 0.5 + Math.sin(this.time * 0.04) * 0.5; // 0.15 -> 0.04
+            // ノイズのシード値を時間で動かして、生える場所自体をヌメヌメ移動させる
+            const noiseTime = this.time * 0.05;
+            const noiseScale = 1.0 + (1.0 - gatheringCycle) * 2.0; // 集合時はスケールを小さくして一箇所に固める
             
-            // 元の角度とターゲット角度を補間
-            const currentPhi = t.phi * (1.0 - gatheringCycle * 0.8) + targetPhi * (gatheringCycle * 0.8);
-            const currentTheta = t.theta * (1.0 - gatheringCycle * 0.8) + targetTheta * (gatheringCycle * 0.8);
+            // 元々の生える場所（phi, theta）にノイズによるオフセットを加える
+            // これにより、一箇所に集まったり、元の場所に戻ったりを繰り返す
+            const currentPhi = t.phi * noiseScale + Math.sin(noiseTime + i * 0.1) * 0.2;
+            const currentTheta = t.theta * noiseScale + Math.cos(noiseTime + i * 0.1) * 0.2;
 
             // 触手ごとの個別のバイアス（動きには残すが、色には使わない）
-            const tentacleNoise = Math.sin(this.time * 0.05 + i * 0.5) * 0.5 + 0.5; // 0.2 -> 0.05
+            const tentacleNoise = Math.sin(this.time * 0.05 + i * 0.5) * 0.5 + 0.5; 
             const individualSpeed = speed * (0.5 + tentacleNoise * 1.5);
-            const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.03 + i * 0.8) * 0.7); // 0.1 -> 0.03
+            const individualAmp = waveAmp * (0.3 + Math.cos(this.time * 0.03 + i * 0.8) * 0.7);
 
-            const angleOffsetPhi = Math.sin(this.time * moveSpeed * 0.5 + i) * 0.1; // moveSpeed * 0.5
-            const angleOffsetTheta = Math.cos(this.time * moveSpeed * 0.4 + i * 1.5) * 0.1; // moveSpeed * 0.4
+            // 2. 回転の修正
+            // 全体で同じ方向への回転を廃止し、触手ごとにバラバラな回転にする
+            const individualRotationX = Math.sin(this.time * 0.1 + i) * 0.1;
+            const individualRotationY = Math.cos(this.time * 0.15 + i * 1.5) * 0.1;
             
-            // 集合ロジックを反映した回転
-            t.mesh.rotation.set(currentTheta + angleOffsetTheta - t.theta, currentPhi + angleOffsetPhi - t.phi, 0);
+            // 集合ロジックと個別回転を反映
+            t.mesh.rotation.set(currentTheta + individualRotationX - t.theta, currentPhi + individualRotationY - t.phi, 0);
             
             const focusVec = new THREE.Vector3();
             if (focusWeight > 0) { 
                 focusVec.copy(this.focusTarget).sub(this.tentacleGroup.position).applyQuaternion(this.tentacleGroup.quaternion.clone().invert()).normalize(); 
             }
             
-            // 触手ごとの長さの揺らぎを計算（ノイズで偏りを持たせる）
-            // 空間的な偏りを出すために、触手の生えている方向（phi, theta）をベースにノイズを計算
-            const lengthScale = 0.5;
-            const lengthNoiseBase = (
-                Math.sin(t.phi * 2.0 + this.time * 0.05) * // 0.15 -> 0.05
-                Math.cos(t.theta * 2.0 - this.time * 0.03) // 0.1 -> 0.03
-            );
-            // 【修正】最短を 0.1倍（ほぼ消える）、最長を 1.5倍にして、伸縮の幅を極端にする
-            const dynamicLength = 0.1 + (lengthNoiseBase * 0.5 + 0.5) * 1.4;
+            // 1. ノイズによる長さ計算（さらにスローダウンして滑らかに）
+            // サイン波の合成をシンプルにして、カクつきの原因となる急激な変化を排除
+            const lengthNoiseBase = Math.sin(t.phi * 1.5 + this.time * 0.03);
             
-            const lengthNoise = ((Math.sin(this.time * 0.1 + i * 1.2) * 0.5 + 0.5) * 0.5 + 0.75) * dynamicLength; // 0.3 -> 0.1
+            // 【滑らかさの向上】LFOの値を直接使わず、lerpで平滑化して急変を抑える
+            const targetMaxLFO = this.speedLFO.getValue(); 
+            if (this.smoothMaxLFO === undefined) this.smoothMaxLFO = targetMaxLFO;
+            this.smoothMaxLFO += (targetMaxLFO - this.smoothMaxLFO) * 0.05; // じわっと追従
+            
+            const currentMaxScale = 0.8 + this.smoothMaxLFO * 4.0;
+            
+            // dynamicLength = 固定初期値(0.1) + (0.0 〜 1.0 のノイズ * 変動する最大幅)
+            const rawNoise = lengthNoiseBase * 0.5 + 0.5;
+            // 5次式の Smoothstep (Smootherstep) で極限まで滑らかに
+            const smoothNoise = rawNoise * rawNoise * rawNoise * (rawNoise * (rawNoise * 6 - 15) + 10);
+            const dynamicLength = 0.1 + smoothNoise * currentMaxScale;
+
+            // メッシュのスケールは確実に 1.0 に固定
+            t.mesh.scale.set(1.0, 1.0, 1.0);
+
+            // 【デバッグ】数値をコンソールに出し続ける
+            if (i === 0 && Math.floor(this.time * 60) % 60 === 0) {
+                console.log("DEBUG - dynamicLength:", dynamicLength.toFixed(3), "currentMaxScale:", currentMaxScale.toFixed(3));
+            }
 
             for (let s = 0; s <= 64; s++) {
                 const u = s / 64; 
                 const time = this.time * individualSpeed * totalForce; 
                 
-                // 【重要】根元から先端へ伝わるウェーブ
                 const wavePhase = u * waveFreq + i * 2.0;
                 const propagation = u * 4.0; 
-                
                 const currentAmp = individualAmp * totalForce;
 
                 let offsetX = (
                     Math.sin(time - propagation + wavePhase) * 1.2 + 
-                    Math.sin(time * 2.5 - propagation * 1.5 + wavePhase * 2.0) * 0.8
+                    Math.sin(time * 2.5 - propagation * 1.5 + wavePhase * 2.0)
                 ) * currentAmp * u;
                 
                 let offsetY = (
                     Math.cos(time * 0.8 - propagation * 1.2 + wavePhase + i) * 1.2 + 
-                    Math.cos(time * 3.2 - propagation * 2.0 + wavePhase * 2.5) * 0.7
+                    Math.cos(time * 3.2 - propagation * 2.0 + wavePhase * 2.5)
                 ) * currentAmp * u;
                 
                 let offsetZ = (
                     Math.sin(time * 1.1 - propagation * 0.8 + wavePhase + i * 1.5) * 1.2 + 
-                    Math.sin(time * 2.8 - propagation * 1.8 + wavePhase * 3.0) * 0.8
+                    Math.sin(time * 2.8 - propagation * 1.8 + wavePhase * 3.0)
                 ) * currentAmp * u;
                 
-                // 【先端の巻き強化】
                 const curlIntensity = Math.pow(u, 2.5) * 150.0 * totalForce; 
                 const curlAngle = time * 2.0 + u * 10.0;
                 offsetX += Math.sin(curlAngle) * curlIntensity;
@@ -680,18 +694,23 @@ export class Scene16 extends SceneBase {
                 }
                 const intensity = Math.pow(u, 1.1);
                 
-                // 触手の色計算：多段階標高ヒートマップ
-                // 触手の各頂点の空間座標（vPos）を使って標高色を計算
                 const vPos = new THREE.Vector3(offsetX, offsetY, offsetZ);
-                // u（先端への距離）を使って、先端ほど「別の色」になるようにフラグを渡す
-                const isTipArea = u > 0.7; // 先端30%を別色エリアとする
+                const isTipArea = u > 0.7; 
                 const color = getElevationHeatColor(vPos, skinColor, this.time, isTipArea);
                 
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;
                     if (idx < posAttr.count) {
                         const bx = t.basePositions[idx * 3 + 0]; const by = t.basePositions[idx * 3 + 1]; const bz = t.basePositions[idx * 3 + 2];
-                        posAttr.setXYZ(idx, (bx + offsetX * intensity) * lengthNoise, (by + offsetY * intensity) * lengthNoise, (bz + offsetZ * intensity) * lengthNoise);
+                        
+                        // 【調査】根本からの距離ベクトルを計算して、そこに dynamicLength を掛ける
+                        // TubeGeometry の頂点 bx, by, bz は中心からの相対座標なので、
+                        // これを dynamicLength でスケーリングすれば短くなるはず
+                        posAttr.setXYZ(idx, 
+                            (bx + offsetX * intensity) * dynamicLength, 
+                            (by + offsetY * intensity) * dynamicLength, 
+                            (bz + offsetZ * intensity) * dynamicLength
+                        );
                         colorAttr.setXYZ(idx, color.r, color.g, color.b);
                     }
                 }

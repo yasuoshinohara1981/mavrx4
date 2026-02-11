@@ -10,6 +10,7 @@ import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
 import { RandomLFO } from '../../lib/RandomLFO.js';
+import { Scene16Particle } from './Scene16Particle.js';
 
 export class Scene16 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -73,7 +74,48 @@ export class Scene16 extends SceneBase {
         this.hairCount = 5000;
         this.hairSystem = null;
 
+        // クリーチャー自体の物理状態を管理するパーティクル
+        this.creatureParticle = new Scene16Particle(0, 400, 0);
+        this.creatureParticle.maxSpeed = 12.0; // カメラパーティクル(8.0)に近い設定
+        this.creatureParticle.maxForce = 3.0;  // カメラパーティクル(2.0)に近い設定
+        this.creatureParticle.friction = 0.01; // 少し摩擦を持たせて安定させる
+
+        // トラックごとの値を保持するオブジェクト
+        this.trackValues = {
+            5: 0,
+            6: 0,
+            7: 0
+        };
+
         this.setScreenshotText(this.title);
+    }
+
+    /**
+     * トラック番号ごとのOSCメッセージ処理
+     */
+    handleTrackNumber(trackNumber, message) {
+        const args = message.args || [];
+        const velocity = args[1] || 0;
+        const value = velocity / 127.0; // 0.0 〜 1.0 に正規化
+
+        if (trackNumber === 5) {
+            this.trackValues[5] = value;
+            // トラック5でランダムな力を加えて移動させる
+            // 【修正】力が弱すぎた可能性があるため、少し強める（8.0 -> 50.0）
+            if (value > 0) {
+                const forceMag = value * 50.0; 
+                const force = new THREE.Vector3(
+                    (Math.random() - 0.5) * forceMag,
+                    (Math.random() - 0.5) * forceMag,
+                    (Math.random() - 0.5) * forceMag
+                );
+                this.creatureParticle.addForce(force);
+            }
+        } else if (trackNumber === 6) {
+            this.trackValues[6] = value;
+        } else if (trackNumber === 7) {
+            this.trackValues[7] = value;
+        }
     }
 
     /**
@@ -392,6 +434,22 @@ export class Scene16 extends SceneBase {
         this.composer.addPass(this.bokehPass);
     }
 
+    /**
+     * カメラの位置を更新（クリーチャーを追従）
+     */
+    updateCamera() {
+        if (this.cameraParticles[this.currentCameraIndex] && this.creatureParticle) {
+            const cameraPos = this.cameraParticles[this.currentCameraIndex].getPosition();
+            this.camera.position.copy(cameraPos);
+            
+            // 注視点をクリーチャーの現在位置に設定
+            this.camera.lookAt(this.creatureParticle.position.x, this.creatureParticle.position.y, this.creatureParticle.position.z);
+            
+            // matrixWorldNeedsUpdateをfalseにして不要な再計算を回避
+            this.camera.matrixWorldNeedsUpdate = false;
+        }
+    }
+
     onUpdate(deltaTime) {
         if (!this.initialized) return;
         this.time += deltaTime;
@@ -433,7 +491,7 @@ export class Scene16 extends SceneBase {
                     this.stateMultipliers.targetAmp = 1.5;
                     break;
                 case this.STATE_FOCUS: 
-                    this.stateMultipliers.targetSpeed = 0.4; // 0.8 -> 0.4
+                    this.stateMultipliers.targetSpeed = 0.8; // 0.5 -> 0.8
                     this.stateMultipliers.targetAmp = 0.6;
                     break;
                 case this.STATE_STASIS: 
@@ -450,6 +508,31 @@ export class Scene16 extends SceneBase {
         const multiplierLerp = deltaTime * 0.3; // 非常にゆっくり変化
         this.stateMultipliers.speed += (this.stateMultipliers.targetSpeed - this.stateMultipliers.speed) * multiplierLerp;
         this.stateMultipliers.amp += (this.stateMultipliers.targetAmp - this.stateMultipliers.amp) * multiplierLerp;
+
+        // トラック6のMIDI信号（力）を取得
+        const targetTrack6Force = (this.trackEffects[6]) ? (this.trackValues[6] || 0) : 0;
+        if (this.smoothTrack6Force === undefined) this.smoothTrack6Force = 0;
+        // 動きの変化も少し滑らかにする（deltaTimeを使用）
+        this.smoothTrack6Force += (targetTrack6Force - this.smoothTrack6Force) * deltaTime * 2.0;
+        const track6Force = this.smoothTrack6Force;
+        
+        // トラック7のMIDI信号（色）を取得
+        const targetTrack7Color = (this.trackEffects[7]) ? (this.trackValues[7] || 0) : 0;
+        if (this.smoothTrack7Color === undefined) this.smoothTrack7Color = 0;
+        // 【ゆっくり戻るロジック】オフにした時（targetが0）はさらに極限までゆっくり（0.3）、オンの時は少し早め（3.0）に反応
+        const colorLerpSpeed = targetTrack7Color > 0 ? 3.0 : 0.3;
+        this.smoothTrack7Color += (targetTrack7Color - this.smoothTrack7Color) * deltaTime * colorLerpSpeed;
+        const track7Color = this.smoothTrack7Color;
+
+        // 全トラックのレベル状態を調査（デバッグ用）
+        if (Math.floor(this.time * 60) % 60 === 0) {
+            console.log(`DEBUG - Track 5: ${(this.trackValues[5] || 0).toFixed(2)} | Track 6: ${track6Force.toFixed(2)} | Track 7: ${track7Color.toFixed(2)}`);
+        }
+        
+        // トラック6で「時間の進み方」自体を加速させる
+        // 加速をマイルドに調整（4.0 -> 1.5）
+        const timeAcceleration = 1.0 + track6Force * 1.5;
+        this.time += deltaTime * (timeAcceleration - 1.0); 
 
         // LFOの値にステート倍率を掛けて最終的なターゲット値を決定
         this.targetAnimParams.speed = baseSpeed * this.stateMultipliers.speed;
@@ -470,6 +553,37 @@ export class Scene16 extends SceneBase {
         
         const scale = coreBaseScale + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
+
+        // クリーチャーの物理更新
+        this.creatureParticle.update(deltaTime);
+        
+        // 中心（0, 400, 0）から離れすぎないように緩やかな復元力を加える
+        // カメラパーティクルの制限に近い挙動にする
+        const homePos = new THREE.Vector3(0, 400, 0);
+        const distToHome = this.creatureParticle.position.distanceTo(homePos);
+        const maxRadius = 1500.0; // 移動可能範囲
+        
+        if (distToHome > maxRadius) {
+            // 範囲外に出そうになったら中心へ引き戻す力を加える
+            const pullStrength = (distToHome - maxRadius) * 0.1;
+            const steer = homePos.clone().sub(this.creatureParticle.position).normalize().multiplyScalar(pullStrength);
+            this.creatureParticle.addForce(steer);
+        }
+        
+        // 速度が小さすぎる場合は常に弱い力を加えて動き続けるように（カメラパーティクル踏襲）
+        if (this.creatureParticle.velocity.length() < 0.5) {
+            const gentleForce = new THREE.Vector3(
+                (Math.random() - 0.5) * 2,
+                (Math.random() - 0.5) * 2,
+                (Math.random() - 0.5) * 2
+            ).normalize().multiplyScalar(0.2);
+            this.creatureParticle.addForce(gentleForce);
+        }
+
+        this.tentacleGroup.position.set(this.creatureParticle.position.x, this.creatureParticle.position.y, this.creatureParticle.position.z);
+
+        // 移動ベクトル（速度）を取得して、触手の反作用（しなり）に利用
+        const velocity = this.creatureParticle.velocity.clone();
         
         const rotationSpeed = this.creatureState === this.STATE_FOCUS ? 0.02 : 0.08;
         this.tentacleGroup.rotation.y += deltaTime * rotationSpeed;
@@ -480,6 +594,7 @@ export class Scene16 extends SceneBase {
         const pointingWeight = Math.max(0, Math.sin(this.time * 0.1) * 2.0 - 1.0); // 時々一点を指す
         const coilWeight = Math.max(0, Math.cos(this.time * 0.08) * 2.0 - 1.0); // 時々巻く
         const entwineWeight = Math.max(0, Math.sin(this.time * 0.05) * 1.5 - 0.5); // 絡みつき
+        const upwardWeight = Math.max(0, Math.cos(this.time * 0.06) * 2.0 - 1.0); // 【追加】時々真上を向く
         
         // 共通のターゲットポイント（一点を指し示す用）
         const commonTarget = new THREE.Vector3(
@@ -493,22 +608,16 @@ export class Scene16 extends SceneBase {
         const skinColor = new THREE.Color();
         
         // baseCycle (0.0〜1.0) を使って、白(0.9)と濃いグレー(0.2)の間を補完
-        // LFOが揺れているので、周期的に色が入れ替わる
         const grayVal = 0.2 + (baseCycle * 0.7); 
-        skinColor.setRGB(grayVal, grayVal, grayVal);
+        const targetSkinColor = new THREE.Color(grayVal, grayVal, grayVal);
+        
+        // トラック7の強度（track7Color）に応じて、白から本来の色へヌメッと遷移
+        // エフェクトオフ、または信号ゼロの時は真っ白になる
+        skinColor.setRGB(1, 1, 1).lerp(targetSkinColor, track7Color);
 
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
         
-        // トラック6のMIDI信号（力）を取得
-        const track6Force = (this.sharedResourceManager && typeof this.sharedResourceManager.getTrackLevel === 'function') 
-            ? this.sharedResourceManager.getTrackLevel(6) 
-            : 0;
-        const totalForce = 1.0 + track6Force * 3.0; // トラック6で動きを大幅に増幅
-
-        // トラック7のMIDI信号（色）を取得
-        const track7Color = (this.sharedResourceManager && typeof this.sharedResourceManager.getTrackLevel === 'function') 
-            ? this.sharedResourceManager.getTrackLevel(7) 
-            : 0;
+        const totalForce = 1.0 + track6Force * 3.0; // 動きの振れ幅も増幅
 
         // 【標高ベースのヒートマップロジック】地球儀のようにノイズの高さで多段階に色を変える
         const getElevationHeatColor = (vPos, baseColor, time, region = 0) => {
@@ -570,7 +679,9 @@ export class Scene16 extends SceneBase {
 
             targetColor.setHSL(hue, saturation, lightness);
             
-            const blendFactor = 0.15 + steppedElevation * 0.8;
+            // 【トラック7連動】ブレンド率を track7Color に連動させる
+            // 信号が 0 の時はヒートマップが消えて baseColor（白）だけになる
+            const blendFactor = (0.15 + steppedElevation * 0.8) * track7Color;
             const finalColor = baseColor.clone().lerp(targetColor, blendFactor);
 
             finalColor.r = Math.min(0.95, finalColor.r);
@@ -763,6 +874,26 @@ export class Scene16 extends SceneBase {
                 offsetX = offsetX * (1.0 - pointEffect) + targetDir.x * u * 800.0 * pointEffect;
                 offsetY = offsetY * (1.0 - pointEffect) + targetDir.y * u * 800.0 * pointEffect;
                 offsetZ = offsetZ * (1.0 - pointEffect) + targetDir.z * u * 800.0 * pointEffect;
+
+                // 5. 全触手がねじれながら真上を向く
+                const upwardEffect = upwardWeight * (isRebel ? 0.3 : 1.0);
+                const twistAngle = time * 4.0 + u * 20.0;
+                const twistRadius = u * 100.0 * upwardEffect;
+                offsetX = offsetX * (1.0 - upwardEffect) + Math.sin(twistAngle) * twistRadius;
+                offsetY = offsetY * (1.0 - upwardEffect) + (u * 1200.0) * upwardEffect; // 真上（Y軸正方向）
+                offsetZ = offsetZ * (1.0 - upwardEffect) + Math.cos(twistAngle) * twistRadius;
+
+                // 6. 移動ベクトルとは逆方向へのしなり（生物学的整合性）
+                // 30%の確率で「従わない」触手を作る
+                const followMovement = t.rebellionFactor < 0.7;
+                if (followMovement) {
+                    // 速度ベクトルの逆方向にオフセットを加える
+                    // u（先端への距離）が大きいほど強くしなる
+                    const dragStrength = u * 0.8; 
+                    offsetX -= velocity.x * dragStrength;
+                    offsetY -= velocity.y * dragStrength;
+                    offsetZ -= velocity.z * dragStrength;
+                }
 
                 // 先端の巻き（既存の味付け）
                 const curlIntensity = Math.pow(u, 2.5) * 150.0 * totalForce; 

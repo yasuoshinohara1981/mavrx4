@@ -488,14 +488,16 @@ export class Scene16 extends SceneBase {
             Math.sin(this.time * 0.4) * 1000
         );
         
-        // 【ベースカラーの刷新】白と濃いグレーをランダムに行ったり来たり
+        // 【ベースカラーの刷新】明るく健康的な肌色（ピンク〜ベージュ）
         const baseCycle = this.colorCycleLFO.getValue(); 
         const skinColor = new THREE.Color();
         
-        // baseCycle (0.0〜1.0) を使って、白(0.9)と濃いグレー(0.2)の間を補完
-        // LFOが揺れているので、周期的に色が入れ替わる
-        const grayVal = 0.2 + (baseCycle * 0.7); 
-        skinColor.setRGB(grayVal, grayVal, grayVal);
+        // baseCycle (0.0〜1.0) を使って、血色の良い明るい肌色を作る
+        // Hue 0.01(赤ピンク) 〜 0.08(健康的なベージュ) の範囲に厳選（0.1超え＝緑化を徹底ガード）
+        const baseHue = (0.01 + baseCycle * 0.07) % 1.0;
+        const baseSaturation = 0.5 + baseCycle * 0.2; 
+        const baseLightness = 0.7 + baseCycle * 0.15; 
+        skinColor.setHSL(baseHue, baseSaturation, baseLightness);
 
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
         
@@ -536,43 +538,33 @@ export class Scene16 extends SceneBase {
             // トラック7の信号で色相のオフセットを変化させる
             const baseHueOffset = (this.time * colorShiftSpeed + track7Color * 2.0) % 1.0;
             
-            // 【色相の刷新】赤・ピンク・紫を完全に排除
-            // Hue を 0.4（緑）〜 0.7（青・水色）の範囲に限定
-            let hue = 0.4 + ((baseHueOffset + steppedElevation * 0.2) % 1.0) * 0.3;
+            // 【色相の刷新】鮮やかなピンク〜ベージュ肌
+            // Hue 0.0(赤) 〜 0.09(オレンジ・ベージュ) の範囲に固定。0.1以上（黄色〜緑）を避ける。
+            let hue = (0.0 + (baseHueOffset * 0.03) + (steppedElevation * 0.06)) % 1.0;
             
             // 【触手の多段カラー】
-            if (region === 2) { // 先端（Tip）
-                hue = (hue + 0.15) % 1.0; 
-            } else if (region === 1) { // 先端の少し下（Sub-tip）
-                hue = (hue + 0.07) % 1.0;
+            if (region === 2) { // 先端（Tip）：血色の良い濃いピンク
+                hue = (hue + 0.98) % 1.0; 
+            } else if (region === 1) { // 先端の少し下（Sub-tip）：柔らかなピンクベージュ
+                hue = (hue + 0.02) % 1.0;
             }
             
-            // 再度ガード（赤〜紫の範囲 0.75 〜 1.0, 0.0 〜 0.1 を避ける）
-            if (hue > 0.75 || hue < 0.1) {
-                hue = 0.5; // 青に強制
-            }
+            // 最終ガード：Hue が 0.1（純粋な黄色）を超えないようにクランプ
+            if (hue > 0.1 && hue < 0.5) hue = 0.08; 
             
             const targetColor = new THREE.Color();
             
-            // 【白と黒の導入】
-            // steppedElevation や region に応じて、彩度を落として白や黒を混ぜる
-            let saturation = region > 0 ? 0.8 : (0.4 + steppedElevation * 0.4);
-            let lightness = Math.sin(steppedElevation * Math.PI * 8.0) * 0.2 + 0.4;
-
-            // 標高が極端に高い場所は「白」、低い場所は「黒」に近づける
-            if (steppedElevation > 0.9) {
-                lightness = 0.9; // 白
-                saturation = 0.1;
-            } else if (steppedElevation < 0.1) {
-                lightness = 0.1; // 黒
-                saturation = 0.1;
-            }
+            // 【肌の質感：彩度を保ちつつ明るく】
+            let saturation = 0.6 + (steppedElevation * 0.3);
+            let lightness = 0.55 + (steppedElevation * 0.3);
 
             targetColor.setHSL(hue, saturation, lightness);
             
-            const blendFactor = 0.15 + steppedElevation * 0.8;
+            // ヒートマップの色をより濃く出すためにブレンド率を調整
+            const blendFactor = 0.5 + steppedElevation * 0.4;
             const finalColor = baseColor.clone().lerp(targetColor, blendFactor);
 
+            // 発光防止クランプ
             finalColor.r = Math.min(0.95, finalColor.r);
             finalColor.g = Math.min(0.95, finalColor.g);
             finalColor.b = Math.min(0.95, finalColor.b);

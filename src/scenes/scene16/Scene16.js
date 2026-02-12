@@ -561,9 +561,9 @@ export class Scene16 extends SceneBase {
         // 【時間的変化：成長シーケンス】
         // phase 0-6 で成長、phase 7-12 で縮小消滅
         // actualTick を使ってフェーズ内を滑らかに補間
-        // 1ループ 96小節 = 1920 ticks * 96 = 184320 ticks
-        // 12フェーズあるとすると 1フェーズ = 184320 / 12 = 15360 ticks
-        const ticksPerPhase = 15360; 
+        // 1ループ 96小節 = 384 ticks * 96 = 36864 ticks
+        // 12フェーズあるとすると 1フェーズ = 36864 / 12 = 3072 ticks
+        const ticksPerPhase = 3072; 
         
         // OSCが来ていない場合（0の場合）は、自前の time を使ってシミュレーションする
         let smoothPhase;
@@ -571,20 +571,30 @@ export class Scene16 extends SceneBase {
             // デバッグ用：OSCがない時は20秒で1周するシミュレーション
             smoothPhase = (this.time % 20.0) / 20.0 * 12.0;
         } else {
+            // フェーズ内の進捗を正しく計算（1フェーズ = 3072 ticks）
+            // actualTick % 3072 / 3072 で 0.0〜1.0 の進捗を出す
             smoothPhase = this.phase + (this.actualTick % ticksPerPhase) / ticksPerPhase;
         }
         
         let globalGrowthProgress = 0;
         if (smoothPhase <= 6) {
-            // phase 0-6: 0.0 -> 1.0
+            // phase 0-6: 0.0 -> 1.0 (phase 6 の開始時点で 1.0 になるように)
             globalGrowthProgress = Math.min(1.0, smoothPhase / 6.0);
+        } else if (smoothPhase <= 8) {
+            // phase 6-8: 1.0 を維持
+            globalGrowthProgress = 1.0;
         } else {
-            // phase 7-12: 1.0 -> 0.0
-            globalGrowthProgress = Math.max(0, 1.0 - (smoothPhase - 6) / 6.0);
+            // phase 8-12: 1.0 -> 0.0
+            globalGrowthProgress = Math.max(0, 1.0 - (smoothPhase - 8) / 4.0);
         }
 
         // 触手1本あたりの成長幅（重なりを持たせて滑らかにする）
-        const growthOverlap = 10.0; // 10本分くらいの余裕を持ってニョキニョキさせる
+        // ガッツリ重なりを増やして、より群生感のある生え方にする
+        const growthOverlap = 40.0; 
+        
+        // 全体の進捗を触手本数にマッピング
+        const totalGrowthSteps = this.tentacleCount + growthOverlap;
+        const currentGrowthStep = globalGrowthProgress * totalGrowthSteps;
         
         // 共通のターゲットポイント（一点を指し示す用）
         const commonTarget = new THREE.Vector3(
@@ -801,10 +811,11 @@ export class Scene16 extends SceneBase {
             const dynamicLengthBase = 0.1 + smoothNoise * currentMaxScale;
 
             // 【時間的変化：個別の成長（1本ずつ、かつシームレスに）】
-            // growthOverlap本分くらいの重なりを持たせて、1本が伸び切る前に次が伸び始めるようにする
-            const totalSteps = this.tentacleCount + growthOverlap;
-            const currentStep = globalGrowthProgress * totalSteps;
-            const individualGrowth = Math.max(0, Math.min(1.0, (currentStep - i) / growthOverlap));
+            // 1. 線形な進捗を計算
+            let rawGrowth = Math.max(0, Math.min(1.0, (currentGrowthStep - i) / growthOverlap));
+            
+            // 2. Smoothstep で「スッ」とした動きを「ヌルッ」とした動きに変える
+            const individualGrowth = rawGrowth * rawGrowth * (3 - 2 * rawGrowth);
             
             const dynamicLength = dynamicLengthBase * individualGrowth;
 

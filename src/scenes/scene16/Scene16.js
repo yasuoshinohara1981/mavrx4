@@ -24,7 +24,7 @@ export class Scene16 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // 触手（Tentacles）の設定
-        this.tentacleCount = 150; 
+        this.tentacleCount = 175; 
         this.tentacles = [];
         this.tentacleGroup = new THREE.Group();
         this.coreMesh = null; // 真ん中の球体
@@ -130,8 +130,8 @@ export class Scene16 extends SceneBase {
     setupCameraParticleDistance(cameraParticle) {
         // 距離を離しつつ、StudioBox（size=10000, 半径5000）を突き抜けないように制限
         // z-fighting 防止のため、最大距離を 4850 程度に抑える
-        // コアが描画されないバグ対策のため、最小距離を調整 (1000 -> 500)
-        cameraParticle.minDistance = 500; 
+        // コアが描画されないバグ対策のため、最小距離を調整 (500 -> 750)
+        cameraParticle.minDistance = 750; 
         cameraParticle.maxDistance = 4850; 
         cameraParticle.maxDistanceReset = 4500;
         cameraParticle.minY = -200; 
@@ -273,14 +273,20 @@ export class Scene16 extends SceneBase {
             const rebellionFactor = Math.random() > 0.8 ? 1.0 : 0.0; // 20%の確率で反抗的
             const coilDirection = Math.random() > 0.5 ? 1.0 : -1.0; // 内巻きか外巻きか
 
-            // 1点目：中心(0,0,0)からスタート
-            points.push(new THREE.Vector3(0,0,0));
+            // 1点目：コアの表面（歪みを考慮して少し内側）からスタート
+            // 根本をコアの表面に固定するため、(0,0,0)ではなく表面の座標を計算
+            const startPoint = new THREE.Vector3(
+                baseRadius * 0.7 * Math.sin(theta) * Math.cos(phi),
+                baseRadius * 0.7 * Math.cos(theta),
+                baseRadius * 0.7 * Math.sin(theta) * Math.sin(phi)
+            );
+            points.push(startPoint);
 
             const midDist = baseRadius + 200;
             const midPoint = new THREE.Vector3(
-                midDist * Math.sin(theta + (Math.random()-0.5)*1.5) * Math.cos(phi + (Math.random()-0.5)*1.5),
-                midDist * Math.cos(theta + (Math.random()-0.5)*1.5),
-                midDist * Math.sin(theta + (Math.random()-0.5)*1.5) * Math.sin(phi + (Math.random()-0.5)*1.5)
+                midDist * Math.sin(theta + (Math.random()-0.5)*0.5) * Math.cos(phi + (Math.random()-0.5)*0.5),
+                midDist * Math.cos(theta + (Math.random()-0.5)*0.5),
+                midDist * Math.sin(theta + (Math.random()-0.5)*0.5) * Math.sin(phi + (Math.random()-0.5)*0.5)
             );
             points.push(midPoint);
             points.push(new THREE.Vector3(
@@ -307,7 +313,9 @@ export class Scene16 extends SceneBase {
             const vertex = new THREE.Vector3();
             for (let s = 0; s <= 64; s++) {
                 const t = s / 64;
-                const taperScale = Math.max(0.01, 1.0 - Math.pow(t, 1.5)); 
+                // テーパリングの計算を調整：根本（t=0）付近を太く維持し、先端に向けて細くする
+                // 根本から 20% くらいまでは太さをキープするように累乗を調整
+                const taperScale = Math.max(0.01, 1.0 - Math.pow(t, 2.5)); 
                 const pathPoint = curve.getPointAt(t);
                 for (let rIdx = 0; rIdx <= 12; rIdx++) {
                     const idx = s * 13 + rIdx;
@@ -556,9 +564,9 @@ export class Scene16 extends SceneBase {
                 // ニアクリップ（カメラの最短描画距離）による「中身透け」を防ぐため、
                 // 物理的な minDistance をさらに大きく取るやで。
                 // コア半径 450 * スケール に、ニアクリップ分の余裕をガッツリ乗せる。
-                // 1000だとまだ遠かったので、さらに半分の500に調整
+                // 500だとまだ近すぎたので、750に微調整
                 const currentCoreRadius = 450 * scale;
-                cp.minDistance = Math.min(currentCoreRadius + 500, 2500); 
+                cp.minDistance = Math.min(currentCoreRadius + 750, 2750); 
                 
                 // maxDistance は StudioBox を突き抜けない 4850 固定！
                 cp.maxDistance = 4850;
@@ -629,17 +637,16 @@ export class Scene16 extends SceneBase {
             Math.sin(this.time * 0.4) * 1000
         );
         
-        // 【ベースカラーの刷新】白と濃いグレーをランダムに行ったり来たり
-        const baseCycle = this.colorCycleLFO.getValue(); 
-        const skinColor = new THREE.Color();
+        // 【ベースカラーの刷新】常に白をベースにする
+        const skinColor = new THREE.Color(1, 1, 1);
         
-        // baseCycle (0.0〜1.0) を使って、白(0.9)と濃いグレー(0.2)の間を補完
+        // トラック7の強度（track7Color）に応じて、白からグレーへ遷移（オプションとして残す）
+        const baseCycle = this.colorCycleLFO.getValue(); 
         const grayVal = 0.2 + (baseCycle * 0.7); 
         const targetSkinColor = new THREE.Color(grayVal, grayVal, grayVal);
         
-        // トラック7の強度（track7Color）に応じて、白から本来の色へヌメッと遷移
-        // エフェクトオフ、または信号ゼロの時は真っ白になる
-        skinColor.setRGB(1, 1, 1).lerp(targetSkinColor, track7Color);
+        // デフォルトは真っ白、track7Colorが上がった時だけグレーが混ざるように
+        skinColor.lerp(targetSkinColor, track7Color * 0.5);
 
         const { speed, waveFreq, waveAmp, focusWeight, moveSpeed, distortionSpeed, distortionAmp } = this.currentAnimParams;
         

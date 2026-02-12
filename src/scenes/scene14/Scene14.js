@@ -18,6 +18,8 @@ export class Scene14 extends SceneBase {
         super(renderer, camera);
         this.title = 'Xenolite';  // 一旦タイトルはScene14にしておくで！
         this.initialized = false;
+        this.sceneNumber = 14;
+        this.kitNo = 13;
         
         // 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;

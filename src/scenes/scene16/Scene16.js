@@ -130,15 +130,31 @@ export class Scene16 extends SceneBase {
     setupCameraParticleDistance(cameraParticle) {
         // 距離を離しつつ、StudioBox（size=10000, 半径5000）を突き抜けないように制限
         // z-fighting 防止のため、最大距離を 4850 程度に抑える
-        cameraParticle.minDistance = 3500; 
+        // コアが描画されないバグ対策のため、最小距離を調整 (1000 -> 500)
+        cameraParticle.minDistance = 500; 
         cameraParticle.maxDistance = 4850; 
         cameraParticle.maxDistanceReset = 4500;
         cameraParticle.minY = -200; 
         cameraParticle.maxY = 4500; 
         
         // 即座に位置を更新
-        if (cameraParticle.initializePosition) {
-            cameraParticle.initializePosition();
+        cameraParticle.initializePosition();
+    }
+
+    /**
+     * カメラをランダムに切り替える（SceneBaseのオーバーライド）
+     */
+    switchCameraRandom() {
+        // 親クラスの処理を呼ぶ
+        super.switchCameraRandom();
+        
+        // 切り替わった瞬間に、新しいカメラの位置が近すぎないかチェックして強制的に離す
+        const cp = this.cameraParticles[this.currentCameraIndex];
+        if (cp) {
+            const dist = cp.position.length();
+            if (dist < cp.minDistance) {
+                cp.position.normalize().multiplyScalar(cp.minDistance + 500);
+            }
         }
     }
 
@@ -382,7 +398,15 @@ export class Scene16 extends SceneBase {
      */
     updateCamera() {
         if (this.cameraParticles[this.currentCameraIndex] && this.creatureParticle) {
-            const cameraPos = this.cameraParticles[this.currentCameraIndex].getPosition();
+            const cp = this.cameraParticles[this.currentCameraIndex];
+            const cameraPos = cp.getPosition();
+            
+            // --- 修正: 物理更新後にも距離制限を強制適用 ---
+            const dist = cameraPos.length();
+            if (dist < cp.minDistance) {
+                cameraPos.normalize().multiplyScalar(cp.minDistance);
+            }
+            
             this.camera.position.copy(cameraPos);
             
             // 注視点をクリーチャーの現在位置に設定
@@ -526,22 +550,24 @@ export class Scene16 extends SceneBase {
 
         this.tentacleGroup.position.set(this.creatureParticle.position.x, this.creatureParticle.position.y, this.creatureParticle.position.z);
 
-        // --- カメラの最短距離をコアの大きさに同期させる ---
-        if (this.cameraParticles && this.cameraParticles[this.currentCameraIndex]) {
-            const cp = this.cameraParticles[this.currentCameraIndex];
-            // ニアクリップ（カメラの最短描画距離）による「中身透け」を防ぐため、
-            // 物理的な minDistance をさらに大きく取るやで。
-            // コア半径 450 * スケール に、ニアクリップ分の余裕をガッツリ乗せる。
-            const currentCoreRadius = 450 * scale;
-            cp.minDistance = currentCoreRadius + 3500; // 余裕を3500に固定して加算
-            
-            // maxDistance も合わせて調整
-            cp.maxDistance = Math.max(cp.minDistance + 1000, 5500);
+        // --- 全てのカメラの距離制限をコアの大きさに同期させる ---
+        if (this.cameraParticles) {
+            this.cameraParticles.forEach(cp => {
+                // ニアクリップ（カメラの最短描画距離）による「中身透け」を防ぐため、
+                // 物理的な minDistance をさらに大きく取るやで。
+                // コア半径 450 * スケール に、ニアクリップ分の余裕をガッツリ乗せる。
+                // 1000だとまだ遠かったので、さらに半分の500に調整
+                const currentCoreRadius = 450 * scale;
+                cp.minDistance = Math.min(currentCoreRadius + 500, 2500); 
+                
+                // maxDistance は StudioBox を突き抜けない 4850 固定！
+                cp.maxDistance = 4850;
 
-            // カメラのターゲットをクリーチャーの中心に固定
-            if (cp.target) {
-                cp.target.copy(this.tentacleGroup.position);
-            }
+                // カメラのターゲットをクリーチャーの中心に固定
+                if (cp.target) {
+                    cp.target.copy(this.tentacleGroup.position);
+                }
+            });
         }
 
         // 移動ベクトル（速度）を取得して、触手の反作用（しなり）に利用

@@ -239,16 +239,6 @@ export class Scene16 extends SceneBase {
         this.coreMesh.receiveShadow = true;
         this.tentacleGroup.add(this.coreMesh);
 
-        // コアのワイヤーフレーム（頂点を結ぶ線）を追加
-        const wireframeGeo = new THREE.WireframeGeometry(coreGeo);
-        const wireframeMat = new THREE.LineBasicMaterial({
-            color: 0x000000,
-            transparent: true,
-            opacity: 0.3
-        });
-        this.coreWireframe = new THREE.LineSegments(wireframeGeo, wireframeMat);
-        this.tentacleGroup.add(this.coreWireframe);
-
         for (let i = 0; i < tentacleCount; i++) {
             const points = [];
             
@@ -502,8 +492,8 @@ export class Scene16 extends SceneBase {
         // speedLFOを直接使わず、平滑化した値を使う
         if (this.smoothSizeLFO === undefined) this.smoothSizeLFO = baseSpeed;
         this.smoothSizeLFO += (baseSpeed - this.smoothSizeLFO) * deltaTime * 0.5;
-        // 巨大化をさらに抑える（0.25 -> 0.1）
-        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + this.smoothSizeLFO) * 0.1; 
+        // 巨大化をさらに抑える（0.1 -> 0.05）
+        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + this.smoothSizeLFO) * 0.05; 
         
         const scale = coreBaseScale + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
@@ -749,13 +739,6 @@ export class Scene16 extends SceneBase {
             }
             
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
-            
-            // ワイヤーフレームの頂点位置も同期させる
-            if (this.coreWireframe) {
-                this.coreWireframe.geometry.attributes.position.copy(corePosAttr);
-                this.coreWireframe.geometry.attributes.position.needsUpdate = true;
-                this.coreWireframe.rotation.copy(this.coreMesh.rotation);
-            }
         }
 
         // レーザースキャンの進行度を更新

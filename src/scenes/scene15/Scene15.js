@@ -17,7 +17,7 @@ import { Scene15Particle } from './Scene15Particle.js';
 export class Scene15 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Xenomorph';
+        this.title = 'Xenoball';
         this.initialized = false;
         this.sceneNumber = 15;
         this.kitNo = 5;

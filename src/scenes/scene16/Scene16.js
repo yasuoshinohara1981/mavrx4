@@ -15,7 +15,7 @@ import { Scene16Particle } from './Scene16Particle.js';
 export class Scene16 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'TETSUO';
+        this.title = 'Xenomorph';
         this.initialized = false;
         this.sceneNumber = 16;
         this.kitNo = 16;
@@ -24,7 +24,7 @@ export class Scene16 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // 触手（Tentacles）の設定
-        this.tentacleCount = 175; 
+        this.tentacleCount = 150; 
         this.tentacles = [];
         this.tentacleGroup = new THREE.Group();
         this.coreMesh = null; // 真ん中の球体
@@ -68,10 +68,6 @@ export class Scene16 extends SceneBase {
         this.trackEffects = {
             1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false
         };
-
-        // 産毛（Hair）の設定
-        this.hairCount = 5000;
-        this.hairSystem = null;
 
         // クリーチャー自体の物理状態を管理するパーティクル
         this.creatureParticle = new Scene16Particle(0, 400, 0);
@@ -165,35 +161,12 @@ export class Scene16 extends SceneBase {
         this.setupLights();
         this.createStudioBox();
         this.createTentacles();
-        this.createHair();
         this.initPostProcessing();
         this.initialized = true;
     }
 
-    createHair() {
-        const geometry = new THREE.BufferGeometry();
-        // LineSegments 用に、1つの毛に対して2つの頂点（開始点と終点）が必要
-        const positions = new Float32Array(this.hairCount * 2 * 3);
-        
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        
-        const material = new THREE.LineBasicMaterial({
-            color: 0x000000, // 短い【黒い線】
-            transparent: true,
-            opacity: 0.6,
-            linewidth: 1
-        });
-        
-        this.hairSystem = new THREE.LineSegments(geometry, material);
-        this.tentacleGroup.add(this.hairSystem);
-        
-        // 頂点ごとの phi, theta を保存しておく
-        this.hairData = [];
-        for (let i = 0; i < this.hairCount; i++) {
-            const phi = Math.random() * Math.PI * 2;
-            const theta = Math.random() * Math.PI;
-            this.hairData.push({ phi, theta });
-        }
+    createStudioBox() {
+        this.studio = new StudioBox(this.scene);
     }
 
     setupLights() {
@@ -227,10 +200,6 @@ export class Scene16 extends SceneBase {
         pointLight.position.set(0, 1000, 0); 
         pointLight.castShadow = false; 
         this.scene.add(pointLight);
-    }
-
-    createStudioBox() {
-        this.studio = new StudioBox(this.scene);
     }
 
     createTentacles() {
@@ -270,6 +239,16 @@ export class Scene16 extends SceneBase {
         this.coreMesh.receiveShadow = true;
         this.tentacleGroup.add(this.coreMesh);
 
+        // コアのワイヤーフレーム（頂点を結ぶ線）を追加
+        const wireframeGeo = new THREE.WireframeGeometry(coreGeo);
+        const wireframeMat = new THREE.LineBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0.3
+        });
+        this.coreWireframe = new THREE.LineSegments(wireframeGeo, wireframeMat);
+        this.tentacleGroup.add(this.coreWireframe);
+
         for (let i = 0; i < tentacleCount; i++) {
             const points = [];
             
@@ -281,14 +260,16 @@ export class Scene16 extends SceneBase {
             const phi = clusterPhi + (Math.random() - 0.5) * 1.2;
             const theta = clusterTheta + (Math.random() - 0.5) * 1.2;
 
-            const baseThickness = 8 + Math.pow(Math.random(), 2.0) * 50;
+            const baseThickness = 12 + Math.pow(Math.random(), 2.0) * 60;
             const r = baseRadius + 400;
 
             // 個性（群れを外れる確率など）を保存
             const rebellionFactor = Math.random() > 0.8 ? 1.0 : 0.0; // 20%の確率で反抗的
             const coilDirection = Math.random() > 0.5 ? 1.0 : -1.0; // 内巻きか外巻きか
 
+            // 1点目：中心(0,0,0)からスタート
             points.push(new THREE.Vector3(0,0,0));
+
             const midDist = baseRadius + 200;
             const midPoint = new THREE.Vector3(
                 midDist * Math.sin(theta + (Math.random()-0.5)*1.5) * Math.cos(phi + (Math.random()-0.5)*1.5),
@@ -304,6 +285,9 @@ export class Scene16 extends SceneBase {
             
             const curve = new THREE.CatmullRomCurve3(points);
             const geometry = new THREE.TubeGeometry(curve, 64, baseThickness, 12, false);
+            
+            // ジオメトリのバウンディングスフィアを更新（カメラの衝突判定等に使われる可能性があるため）
+            geometry.computeBoundingSphere();
             
             const tentacleColors = new Float32Array(geometry.attributes.position.count * 3);
             for(let j=0; j<tentacleColors.length/3; j++){
@@ -361,52 +345,11 @@ export class Scene16 extends SceneBase {
         cCtx.fillStyle = '#f0f0f0'; 
         cCtx.fillRect(0, 0, size, size);
         
-        // 毛細血管の描画
-        const drawVessel = (x, y, angle, length, width, depth) => {
-            if (depth <= 0) return;
-            
-            cCtx.beginPath();
-            cCtx.moveTo(x, y);
-            
-            // 血管らしい「うねり」を加える
-            const nx = x + Math.cos(angle) * length;
-            const ny = y + Math.sin(angle) * length;
-            
-            // ベジェ曲線で滑らかに
-            const cp1x = x + Math.cos(angle + (Math.random() - 0.5)) * length * 0.5;
-            const cp1y = y + Math.sin(angle + (Math.random() - 0.5)) * length * 0.5;
-            
-            cCtx.quadraticCurveTo(cp1x, cp1y, nx, ny);
-            
-            cCtx.lineWidth = width;
-            cCtx.strokeStyle = `rgba(${150 + Math.random() * 50}, 0, ${20 + Math.random() * 30}, ${0.2 + (depth / 10) * 0.5})`;
-            cCtx.stroke();
-            
-            // 枝分かれ
-            if (Math.random() > 0.4) {
-                const newAngle = angle + (Math.random() - 0.5) * 1.5;
-                drawVessel(nx, ny, newAngle, length * 0.8, width * 0.7, depth - 1);
-            }
-            if (Math.random() > 0.6) {
-                const newAngle = angle - (Math.random() - 0.5) * 1.5;
-                drawVessel(nx, ny, newAngle, length * 0.7, width * 0.6, depth - 1);
-            }
-        };
-
-        for (let i = 0; i < 40; i++) {
-            drawVessel(Math.random() * size, Math.random() * size, Math.random() * Math.PI * 2, 30 + Math.random() * 40, 2.5, 8);
-        }
-
         const bumpCanvas = document.createElement('canvas');
         bumpCanvas.width = size; bumpCanvas.height = size;
         const bCtx = bumpCanvas.getContext('2d');
         bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 0, size, size);
         
-        // 血管部分をバンプマップにも反映させて浮き上がらせる
-        bCtx.globalAlpha = 0.3;
-        bCtx.drawImage(colorCanvas, 0, 0);
-        bCtx.globalAlpha = 1.0;
-
         for (let i = 0; i < 5000; i++) {
             const x = Math.random() * size; const y = Math.random() * size;
             const r = 0.5 + Math.random() * 1.0; const val = Math.random() * 40;
@@ -559,7 +502,8 @@ export class Scene16 extends SceneBase {
         // speedLFOを直接使わず、平滑化した値を使う
         if (this.smoothSizeLFO === undefined) this.smoothSizeLFO = baseSpeed;
         this.smoothSizeLFO += (baseSpeed - this.smoothSizeLFO) * deltaTime * 0.5;
-        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + this.smoothSizeLFO) * 0.4; 
+        // 巨大化をさらに抑える（0.25 -> 0.1）
+        const coreBaseScale = 1.0 + Math.sin(this.time * 0.05 + this.smoothSizeLFO) * 0.1; 
         
         const scale = coreBaseScale + heartbeat * 0.03;
         this.tentacleGroup.scale.set(scale, scale, scale);
@@ -591,6 +535,24 @@ export class Scene16 extends SceneBase {
         }
 
         this.tentacleGroup.position.set(this.creatureParticle.position.x, this.creatureParticle.position.y, this.creatureParticle.position.z);
+
+        // --- カメラの最短距離をコアの大きさに同期させる ---
+        if (this.cameraParticles && this.cameraParticles[this.currentCameraIndex]) {
+            const cp = this.cameraParticles[this.currentCameraIndex];
+            // ニアクリップ（カメラの最短描画距離）による「中身透け」を防ぐため、
+            // 物理的な minDistance をさらに大きく取るやで。
+            // コア半径 450 * スケール に、ニアクリップ分の余裕をガッツリ乗せる。
+            const currentCoreRadius = 450 * scale;
+            cp.minDistance = currentCoreRadius + 3500; // 余裕を3500に固定して加算
+            
+            // maxDistance も合わせて調整
+            cp.maxDistance = Math.max(cp.minDistance + 1000, 5500);
+
+            // カメラのターゲットをクリーチャーの中心に固定
+            if (cp.target) {
+                cp.target.copy(this.tentacleGroup.position);
+            }
+        }
 
         // 移動ベクトル（速度）を取得して、触手の反作用（しなり）に利用
         const velocity = this.creatureParticle.velocity.clone();
@@ -787,33 +749,13 @@ export class Scene16 extends SceneBase {
             }
             
             corePosAttr.needsUpdate = true; coreColorAttr.needsUpdate = true; this.coreMesh.geometry.computeVertexNormals();
-        }
-
-        // 産毛（短い黒い線）の更新
-        if (this.hairSystem) {
-            const hairPosAttr = this.hairSystem.geometry.attributes.position;
-            const { distortionSpeed, distortionAmp } = this.currentAnimParams;
-            const baseRadius = 450;
-
-            for (let i = 0; i < this.hairCount; i++) {
-                const data = this.hairData[i];
-                const sinT = Math.sin(data.theta); const cosT = Math.cos(data.theta);
-                const sinP = Math.sin(data.phi); const cosP = Math.cos(data.phi);
-                const rx = baseRadius * sinT * cosP; const ry = baseRadius * cosT; const rz = baseRadius * sinT * sinP;
-
-                const lowFreqNoise = (Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.3) * Math.cos(ry * 0.002 + this.time * distortionSpeed * 0.4) * Math.sin(rx * 0.002 + this.time * distortionSpeed * 0.2));
-                const midFreqNoise = (Math.sin(rx * 0.01 + this.time * distortionSpeed) + Math.cos(ry * 0.01 + this.time * distortionSpeed * 0.8) + Math.sin(rx * 0.01 + this.time * distortionSpeed * 1.1)) * 0.3;
-                const noiseVal = lowFreqNoise + midFreqNoise;
-                
-                const displacement = 1.0 + noiseVal * distortionAmp;
-                const startRadius = baseRadius * displacement;
-                const hairLength = 15 + Math.sin(this.time * 2.0 + i) * 5;
-                const endRadius = startRadius + hairLength;
-
-                hairPosAttr.setXYZ(i * 2, startRadius * sinT * cosP, startRadius * cosT, startRadius * sinT * sinP);
-                hairPosAttr.setXYZ(i * 2 + 1, endRadius * sinT * cosP, endRadius * cosT, endRadius * sinT * sinP);
+            
+            // ワイヤーフレームの頂点位置も同期させる
+            if (this.coreWireframe) {
+                this.coreWireframe.geometry.attributes.position.copy(corePosAttr);
+                this.coreWireframe.geometry.attributes.position.needsUpdate = true;
+                this.coreWireframe.rotation.copy(this.coreMesh.rotation);
             }
-            hairPosAttr.needsUpdate = true;
         }
 
         // レーザースキャンの進行度を更新

@@ -47,8 +47,8 @@ export class Scene17 extends SceneBase {
         };
 
         // 物理演算パラメータ
-        this.useGravity = true;
-        this.gravityForce = new THREE.Vector3(0, -30.0, 0);
+        this.useGravity = false; // true -> false 重力を切るで！
+        this.gravityForce = new THREE.Vector3(0, 0, 0); // 0, -30.0, 0 -> 0, 0, 0
         this.centeringForce = 0.0002; // 0.001 -> 0.0002 さらに弱めて自然な広がりを！
         
         // モード管理
@@ -194,7 +194,7 @@ export class Scene17 extends SceneBase {
             const z = r * Math.cos(phi);
 
             const sizeRand = Math.random();
-            let baseSize = sizeRand < 0.7 ? 15 + Math.random() * 15 : 30 + Math.random() * 40;
+            let baseSize = sizeRand < 0.7 ? 10 + Math.random() * 10 : 20 + Math.random() * 20; // 最大値を下げたで！
             
             const p = new Scene17Particle(x, y, z, baseSize * 0.5, new THREE.Vector3(baseSize, baseSize, baseSize), 0, i);
             this.particles.push(p);

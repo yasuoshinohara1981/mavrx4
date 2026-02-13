@@ -100,9 +100,8 @@ export class Scene17 extends SceneBase {
         this.renderer.toneMappingExposure = 1.3; // 1.0 -> 1.3 露出を上げて全体をパッと明るく！
 
         this.setupLights();
-        this.createStudioBox();
 
-        // 1. CubeCameraのセットアップ（高度とnearを再調整して巨大化を完全封印！）
+        // 1. CubeCameraのセットアップ（createStudioBoxで使うから先にやるで！）
         this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(512, { 
             generateMipmaps: true, 
             minFilter: THREE.LinearMipmapLinearFilter 
@@ -111,7 +110,18 @@ export class Scene17 extends SceneBase {
         this.cubeCamera.position.set(0, 500, 0); // 高さを500に戻す
         this.scene.add(this.cubeCamera);
 
-        // シーン全体の環境マップとして設定
+        // 2. 壁・床用の静的な環境マップ（スフィアなし）をセットアップ
+        this.staticCubeRenderTarget = new THREE.WebGLCubeRenderTarget(512, {
+            generateMipmaps: true,
+            minFilter: THREE.LinearMipmapLinearFilter
+        });
+        this.staticCubeCamera = new THREE.CubeCamera(10, 10000, this.staticCubeRenderTarget);
+        this.staticCubeCamera.position.set(0, 500, 0);
+        this.scene.add(this.staticCubeCamera);
+
+        this.createStudioBox();
+
+        // シーン全体の環境マップとして設定（デフォルトは動的マップ）
         this.scene.environment = this.cubeRenderTarget.texture;
 
         this.camera.position.set(0, 500, 2000);
@@ -161,9 +171,19 @@ export class Scene17 extends SceneBase {
             lightColor: 0xffffff,
             lightIntensity: 2.0 // 1.0 -> 2.0 天井ライトも倍増！
         });
-        // 床を強制的に両面描画にして、光を確実に受け止めるで！
+        
+        // 壁と床には「スフィアが映り込む環境マップ」を個別に設定する
+        // これにより、scene.environment（スフィア用）とは別のマップを持たせることができる
+        if (this.studio.studioBox && Array.isArray(this.studio.studioBox.material)) {
+            this.studio.studioBox.material.forEach(mat => {
+                mat.envMap = this.cubeRenderTarget.texture;
+                mat.envMapIntensity = 0.8; // 壁への映り込みは少し控えめに
+            });
+        }
         if (this.studio.studioFloor) {
             this.studio.studioFloor.material.side = THREE.DoubleSide;
+            this.studio.studioFloor.material.envMap = this.cubeRenderTarget.texture;
+            this.studio.studioFloor.material.envMapIntensity = 1.0;
         }
     }
 
@@ -173,7 +193,7 @@ export class Scene17 extends SceneBase {
             color: 0xffffff, // 0xcccccc -> 0xffffff ベースカラーを真っ白に！
             metalness: 0.9,  
             roughness: 0.05, 
-            envMap: this.cubeRenderTarget.texture,
+            envMap: this.staticCubeRenderTarget.texture, // スフィアには「背景のみ」のマップを適用！
             envMapIntensity: 1.2 // 1.0 -> 1.2 反射強度もさらにアップ！
         });
 
@@ -239,8 +259,24 @@ export class Scene17 extends SceneBase {
         // 物理演算
         this.updatePhysics(deltaTime);
 
-        // 相互反射のために環境マップを更新
+        // 1. スフィア用の環境マップ（背景のみ）を更新
+        if (this.staticCubeCamera) {
+            let mainMesh = null;
+            let wasVisible = true;
+            if (this.instancedMeshManagers.length > 0) {
+                mainMesh = this.instancedMeshManagers[0].getMainMesh();
+                if (mainMesh) {
+                    wasVisible = mainMesh.visible;
+                    mainMesh.visible = false; // スフィアを隠して背景だけ撮る！
+                }
+            }
+            this.staticCubeCamera.update(this.renderer, this.scene);
+            if (mainMesh) mainMesh.visible = wasVisible;
+        }
+
+        // 2. 壁・床用の環境マップ（スフィアあり）を更新
         if (this.cubeCamera) {
+            // ここではスフィアを表示したまま撮影するので、壁や床にスフィアが映り込む！
             this.cubeCamera.update(this.renderer, this.scene);
         }
 
@@ -434,6 +470,7 @@ export class Scene17 extends SceneBase {
         this.initialized = false;
         if (this.studio) this.studio.dispose();
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
+        if (this.staticCubeRenderTarget) this.staticCubeRenderTarget.dispose();
         this.instancedMeshManagers.forEach(m => m.dispose());
         super.dispose();
     }

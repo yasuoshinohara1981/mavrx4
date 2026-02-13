@@ -52,32 +52,31 @@ export class Scene17 extends SceneBase {
         this.centeringForce = 0.0002; // 0.001 -> 0.0002 さらに弱めて自然な広がりを！
         
         // モード管理
-        this.MODE_GRAVITY = 0;
-        this.MODE_GEOM_SPHERE = 1;
-        this.MODE_GEOM_CYLINDER_V = 2;
-        this.MODE_GEOM_WAVE_GRID = 3;
-        this.MODE_GEOM_SPIRAL = 4;
-        this.MODE_GEOM_TORUS = 5;
-        this.MODE_GEOM_PYRAMID = 6;
-        this.MODE_GEOM_RING_STACK = 7;
-        this.MODE_GEOM_DNA = 8;
-        this.MODE_GEOM_CUBE = 9;
-        this.MODE_GEOM_STAR = 10;
+        this.MODE_DEFAULT = 0;   // 浮遊・中心引力
+        this.MODE_GRAVITY = 1;   // 重力落下
+        this.MODE_SPIRAL  = 2;   // DNA二重螺旋
+        this.MODE_TORUS   = 3;   // 捻れトーラス
+        this.MODE_WALL    = 4;   // 垂直グリッド壁
+        this.MODE_WAVE    = 5;   // 巨大な波（サーフェス）
+        this.MODE_BLACK_HOLE = 6; // ブラックホール・ジェット
+        this.MODE_PILLARS = 7;   // 5本の垂直柱
+        this.MODE_CHAOS   = 8;   // 混沌・脈動
+        this.MODE_DEFORM  = 9;   // 変形モード（球体同相）
 
-        this.currentMode = this.MODE_GRAVITY;
+        this.currentMode = this.MODE_DEFAULT;
         this.modeTimer = 0;
-        this.modeInterval = 12.0; // 12秒ごとに切り替え
+        this.modeInterval = 10.0; // 10秒ごとに切り替え
         this.modeSequence = [
-            this.MODE_GRAVITY,
-            this.MODE_GEOM_SPHERE,
-            this.MODE_GEOM_WAVE_GRID,
-            this.MODE_GEOM_SPIRAL,
-            this.MODE_GEOM_CUBE,
-            this.MODE_GEOM_RING_STACK,
-            this.MODE_GEOM_DNA,
-            this.MODE_GEOM_PYRAMID,
-            this.MODE_GEOM_STAR,
-            this.MODE_GEOM_TORUS
+            this.MODE_DEFAULT,
+            this.MODE_SPIRAL,
+            this.MODE_WAVE,
+            this.MODE_TORUS,
+            this.MODE_WALL,
+            this.MODE_BLACK_HOLE,
+            this.MODE_PILLARS,
+            this.MODE_DEFORM,
+            this.MODE_CHAOS,
+            this.MODE_GRAVITY
         ];
         this.sequenceIndex = 0;
         this.geometricTargets = new Map();
@@ -254,6 +253,20 @@ export class Scene17 extends SceneBase {
             this.sequenceIndex = (this.sequenceIndex + 1) % this.modeSequence.length;
             this.currentMode = this.modeSequence[this.sequenceIndex];
             console.log(`Scene17 Mode Switched: ${this.currentMode}`);
+
+            // モード切り替え時の特殊処理
+            if (this.currentMode === this.MODE_SPIRAL) {
+                this.particles.forEach(p => {
+                    const r = Math.random() * this.spawnRadius;
+                    const theta = Math.random() * Math.PI * 2;
+                    p.position.set(
+                        Math.cos(theta) * r,
+                        p.spiralHeightFactor * 2000 - 500,
+                        Math.sin(theta) * r
+                    );
+                    p.velocity.set(0, 0, 0);
+                });
+            }
         }
 
         // 物理演算
@@ -301,145 +314,158 @@ export class Scene17 extends SceneBase {
     }
 
     updatePhysics(deltaTime) {
-        if (this.currentMode !== this.MODE_GRAVITY && !this.geometricTargets.has(this.currentMode)) {
-            this.generateGeometricTargets(this.currentMode);
-        }
-        const targets = this.geometricTargets.get(this.currentMode);
+        const tempVec = new THREE.Vector3();
+        const halfSize = 4950; // スタジオサイズ10000に合わせて拡張
 
-        this.particles.forEach((p, i) => {
+        this.particles.forEach((p, idx) => {
             p.force.set(0, 0, 0);
             
-            if (this.currentMode === this.MODE_GRAVITY) {
-                if (this.useGravity) p.addForce(this.gravityForce);
+            // モード別の力計算（Scene13を参考）
+            if (this.currentMode === this.MODE_SPIRAL) {
+                const side = (idx % 2 === 0) ? 1 : -1;
+                const rotationSpeed = 1.5;
+                const radius = 350 * p.radiusOffset * p.strayRadiusOffset; 
+                const angle = (this.time * rotationSpeed) + (p.position.y * 0.003) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.05);
+                const targetX = Math.cos(angle) * radius;
+                const targetZ = Math.sin(angle) * radius;
                 
-                // 【中心に寄せる力】
-                const centering = new THREE.Vector3(-p.position.x, 0, -p.position.z);
-                p.addForce(centering.multiplyScalar(this.centeringForce));
+                p.velocity.y *= 0.99; 
+                const spiralSpringK = 0.02 * p.strayFactor;
+                tempVec.set((targetX - p.position.x) * spiralSpringK, 0.1 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK);
+                p.addForce(tempVec);
 
-                // 【中心からの反発力】
-                // 反射カメラの真下付近に近づきすぎないようにガッツリ押し戻すで！
-                const distToCenter = p.position.length();
-                if (distToCenter < 1000) { // 500 -> 1000 範囲拡大
-                    const pushOut = p.position.clone().normalize().multiplyScalar((1000 - distToCenter) * 0.08);
-                    p.addForce(pushOut);
-                }
-            } else if (targets) {
-                const targetPos = targets[i % targets.length];
-                const springK = 0.15;
-                const force = new THREE.Vector3(
-                    (targetPos.x - p.position.x) * springK,
-                    (targetPos.y - p.position.y) * springK,
-                    (targetPos.z - p.position.z) * springK
-                );
-                p.addForce(force);
+            } else if (this.currentMode === this.MODE_TORUS) {
+                const mainRadius = 1200;
+                const tubeRadius = 60 * p.radiusOffset * p.strayRadiusOffset; 
+                const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
+                const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5) + p.phaseOffset;
+                const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
+                const ty = tubeRadius * Math.sin(phi) + 300;
+                const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
                 
-                // 浮遊感のための微細なうねり
-                p.addForce(new THREE.Vector3(
-                    Math.sin(this.time * 0.5 + i) * 2.0,
-                    Math.cos(this.time * 0.4 + i) * 2.0,
-                    Math.sin(this.time * 0.6 + i) * 2.0
-                ));
+                const torusSpringK = 0.01 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
+                p.addForce(tempVec);
+
+            } else if (this.currentMode === this.MODE_WALL) {
+                const cols = 50; 
+                const spacing = 100; 
+                const zOffset = p.isStray ? (p.targetOffset.z * 5.0) : (p.targetOffset.z * 0.2);
+                const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05; 
+                const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
+                const tz = 0 + zOffset;
+                
+                const wallSpringK = 0.01 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
+                p.addForce(tempVec);
+
+            } else if (this.currentMode === this.MODE_WAVE) {
+                const cols = Math.floor(Math.sqrt(this.sphereCount));
+                const spacing = 5000 / cols;
+                const yOffset = p.isStray ? (p.targetOffset.y * 2.0) : (p.targetOffset.y * 0.05);
+                const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
+                const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.05;
+                const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
+                
+                const waveSpringK = 0.01 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
+                p.addForce(tempVec);
+
+            } else if (this.currentMode === this.MODE_BLACK_HOLE) {
+                if (idx % 10 < 7) {
+                    const radius = (idx / this.sphereCount) * 1200 + 50 + p.targetOffset.x * 0.5;
+                    const angle = (idx * 0.05) + (this.time * 3.0) + p.phaseOffset * 0.1;
+                    const tx = Math.cos(angle) * radius;
+                    const tz = Math.sin(angle) * radius;
+                    const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
+                    
+                    const bhSpringK = 0.02 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
+                    p.addForce(tempVec);
+                } else {
+                    const side = (idx % 2 === 0) ? 1 : -1;
+                    const tx = (Math.random() - 0.5) * 40 + p.targetOffset.x * 0.1;
+                    const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
+                    const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
+                    
+                    const jetSpringK = 0.02 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
+                    p.addForce(tempVec);
+                }
+
+            } else if (this.currentMode === this.MODE_PILLARS) {
+                const pillarIdx = idx % 5;
+                const angle = (pillarIdx / 5) * Math.PI * 2;
+                const pillarRadius = 1500;
+                const px = Math.cos(angle) * pillarRadius;
+                const pz = Math.sin(angle) * pillarRadius;
+                const tx = px + (Math.sin(idx + this.time) * 100) + p.targetOffset.x * 0.5;
+                const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
+                const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
+                
+                const pillarSpringK = 0.01 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
+                p.addForce(tempVec);
+
+            } else if (this.currentMode === this.MODE_CHAOS) {
+                const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 0.5 * p.strayFactor;
+                tempVec.copy(p.position).normalize().multiplyScalar(force);
+                p.addForce(tempVec);
+
+            } else if (this.currentMode === this.MODE_DEFORM) {
+                const baseRadius = 600;
+                const noiseSpeed = 0.5;
+                const theta = (idx / this.sphereCount) * Math.PI * 2;
+                const phi = Math.acos(2 * (idx / this.sphereCount) - 1);
+                const nx = Math.cos(theta) * Math.sin(phi);
+                const ny = Math.sin(theta) * Math.sin(phi);
+                const nz = Math.cos(phi);
+                const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) * 
+                                 Math.cos(ny * 5.0 + this.time * noiseSpeed) * 
+                                 Math.sin(nz * 5.0 + this.time * noiseSpeed) * 100;
+                const r = (baseRadius + distortion) * p.radiusOffset;
+                const tx = nx * r;
+                const ty = ny * r + 300;
+                const tz = nz * r;
+                const springK = 0.01 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                p.addForce(tempVec);
+
+            } else if (this.currentMode === this.MODE_GRAVITY) {
+                p.addForce(new THREE.Vector3(0, -10.0, 0)); // 重力復活！
+                p.velocity.multiplyScalar(0.98);
+            } else {
+                // DEFAULT: 中心の引力
+                const tx = p.targetOffset.x;
+                const ty = p.targetOffset.y + 200;
+                const tz = p.targetOffset.z;
+                const defSpringK = 0.0005 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
+                p.addForce(tempVec);
             }
 
             p.update();
-            p.velocity.multiplyScalar(0.85);
+            p.velocity.multiplyScalar(0.95);
 
+            // 壁・床の衝突判定
+            if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.3; }
+            if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.3; }
+            if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.3; }
+            if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.3; }
+            
+            if (p.position.y > 4500) { 
+                if (this.currentMode === this.MODE_SPIRAL) {
+                    p.position.y = -500;
+                } else {
+                    p.position.y = 4500;
+                    p.velocity.y *= -0.3;
+                }
+            }
             if (p.position.y < -450) {
                 p.position.y = -450;
                 p.velocity.y *= -0.1;
             }
-            const limit = 4500;
-            if (Math.abs(p.position.x) > limit) { p.position.x = Math.sign(p.position.x) * limit; p.velocity.x *= -0.5; }
-            if (Math.abs(p.position.z) > limit) { p.position.z = Math.sign(p.position.z) * limit; p.velocity.z *= -0.5; }
         });
-    }
-
-    generateGeometricTargets(mode) {
-        const targets = [];
-        const count = this.sphereCount;
-        
-        switch(mode) {
-            case this.MODE_GEOM_SPHERE:
-                for (let i = 0; i < count; i++) {
-                    const theta = Math.random() * Math.PI * 2;
-                    const phi = Math.acos(2 * Math.random() - 1);
-                    const r = 800;
-                    targets.push(new THREE.Vector3(r * Math.sin(phi) * Math.cos(theta), r * Math.sin(phi) * Math.sin(theta) + 400, r * Math.cos(phi)));
-                }
-                break;
-            case this.MODE_GEOM_WAVE_GRID:
-                const size = Math.sqrt(count);
-                for (let i = 0; i < count; i++) {
-                    const ix = i % Math.floor(size);
-                    const iz = Math.floor(i / size);
-                    const x = (ix / size - 0.5) * 2500;
-                    const z = (iz / size - 0.5) * 2500;
-                    const y = Math.sin(x * 0.005) * Math.cos(z * 0.005) * 400 + 400;
-                    targets.push(new THREE.Vector3(x, y, z));
-                }
-                break;
-            case this.MODE_GEOM_SPIRAL:
-                for (let i = 0; i < count; i++) {
-                    const t = i / count;
-                    const theta = t * Math.PI * 20;
-                    const r = t * 1200;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * r, t * 1500 - 300, Math.sin(theta) * r));
-                }
-                break;
-            case this.MODE_GEOM_CUBE:
-                for (let i = 0; i < count; i++) {
-                    targets.push(new THREE.Vector3((Math.random() - 0.5) * 1500, (Math.random() - 0.5) * 1500 + 400, (Math.random() - 0.5) * 1500));
-                }
-                break;
-            case this.MODE_GEOM_RING_STACK:
-                for (let i = 0; i < count; i++) {
-                    const ringIdx = Math.floor(i / (count / 5));
-                    const theta = (i % (count / 5)) / (count / 5) * Math.PI * 2;
-                    const r = 600 + ringIdx * 100;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * r, ringIdx * 250 - 200, Math.sin(theta) * r));
-                }
-                break;
-            case this.MODE_GEOM_DNA:
-                for (let i = 0; i < count; i++) {
-                    const t = i / count;
-                    const strand = i % 2 === 0 ? 0 : Math.PI;
-                    const theta = t * Math.PI * 8 + strand;
-                    targets.push(new THREE.Vector3(Math.cos(theta) * 400, t * 2000 - 600, Math.sin(theta) * 400));
-                }
-                break;
-            case this.MODE_GEOM_PYRAMID:
-                for (let i = 0; i < count; i++) {
-                    const h = Math.random();
-                    const side = (1.0 - h) * 1000;
-                    targets.push(new THREE.Vector3((Math.random() - 0.5) * side * 2, h * 1500 - 400, (Math.random() - 0.5) * side * 2));
-                }
-                break;
-            case this.MODE_GEOM_STAR:
-                for (let i = 0; i < count; i++) {
-                    const axis = Math.floor(Math.random() * 6);
-                    const r = Math.random() * 1500;
-                    if (axis === 0) targets.push(new THREE.Vector3(r, 400, 0));
-                    else if (axis === 1) targets.push(new THREE.Vector3(-r, 400, 0));
-                    else if (axis === 2) targets.push(new THREE.Vector3(0, r + 400, 0));
-                    else if (axis === 3) targets.push(new THREE.Vector3(0, -r + 400, 0));
-                    else if (axis === 4) targets.push(new THREE.Vector3(0, 400, r));
-                    else targets.push(new THREE.Vector3(0, 400, -r));
-                }
-                break;
-            case this.MODE_GEOM_TORUS:
-                for (let i = 0; i < count; i++) {
-                    const t = (i / count) * Math.PI * 2;
-                    const p = 2, q = 3;
-                    const r = 600;
-                    targets.push(new THREE.Vector3(
-                        r * (2 + Math.cos(q * t)) * Math.cos(p * t),
-                        r * (2 + Math.cos(q * t)) * Math.sin(p * t) + 400,
-                        r * Math.sin(q * t)
-                    ));
-                }
-                break;
-        }
-        this.geometricTargets.set(mode, targets);
     }
 
     handleTrackNumber(trackNumber, message) {

@@ -11,6 +11,7 @@ export class StudioBox {
         this.roughness = options.roughness !== undefined ? options.roughness : 0.8; // 0.4 -> 0.8
         this.metalness = options.metalness !== undefined ? options.metalness : 0.0;
         this.lightColor = options.lightColor || 0xffffff; // 蛍光灯の色
+        this.lightIntensity = options.lightIntensity !== undefined ? options.lightIntensity : 10.0; // デフォルト10.0
         this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 5.0; // 0.5 -> 5.0
         this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true;
         this.useLights = options.useLights !== undefined ? options.useLights : true;
@@ -43,10 +44,12 @@ export class StudioBox {
         });
 
         const ceilingMat = new THREE.MeshStandardMaterial({
-            color: this.color,
+            color: this.lightColor, // 天井自体をライトの色にする
             side: THREE.BackSide,
             roughness: this.roughness,
-            metalness: this.metalness
+            metalness: this.metalness,
+            emissive: this.lightColor, // 天井を発光させる！
+            emissiveIntensity: this.lightIntensity * 0.5 // 少し抑えめに発光
         });
 
         const materials = [
@@ -94,22 +97,22 @@ export class StudioBox {
      */
     createFluorescentLights() {
         const lightHeight = this.size; 
-        const lightRadius = 10; // 20 -> 10
-        const cornerDist = (this.size / 2) - 50; // 100 -> 50
+        const lightRadius = 50; // 10 -> 50 太くする
+        const cornerDist = (this.size / 2) - 100; // 壁際
         
         const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
         const material = new THREE.MeshStandardMaterial({ 
             color: this.lightColor, 
             emissive: this.lightColor, 
-            emissiveIntensity: 10.0, 
+            emissiveIntensity: this.lightIntensity, 
             envMapIntensity: 1.0 
         });
 
         const positions = [
-            [cornerDist, 500, cornerDist], 
-            [-cornerDist, 500, cornerDist], 
-            [cornerDist, 500, -cornerDist], 
-            [-cornerDist, 500, -cornerDist]
+            [cornerDist, 0, cornerDist], 
+            [-cornerDist, 0, cornerDist], 
+            [cornerDist, 0, -cornerDist], 
+            [-cornerDist, 0, -cornerDist]
         ];
 
         positions.forEach(pos => {

@@ -95,8 +95,9 @@ export class Scene17 extends SceneBase {
         if (this.initialized) return;
         await super.setup();
 
-        // トーンマッピングを解除して自然な光に戻すわ
-        this.renderer.toneMapping = THREE.NoToneMapping;
+        // トーンマッピングをACESFilmicに戻して白飛びを抑えるで！
+        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        this.renderer.toneMappingExposure = 1.3; // 1.0 -> 1.3 露出を上げて全体をパッと明るく！
 
         this.setupLights();
         this.createStudioBox();
@@ -106,8 +107,8 @@ export class Scene17 extends SceneBase {
             generateMipmaps: true, 
             minFilter: THREE.LinearMipmapLinearFilter 
         });
-        this.cubeCamera = new THREE.CubeCamera(500, 10000, this.cubeRenderTarget); // nearを500に強化
-        this.cubeCamera.position.set(0, 1200, 0); // 高さを1200に上げて距離を稼ぐ！
+        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget); // nearを10に戻して近くも映す
+        this.cubeCamera.position.set(0, 500, 0); // 高さを500に戻す
         this.scene.add(this.cubeCamera);
 
         // シーン全体の環境マップとして設定
@@ -127,13 +128,13 @@ export class Scene17 extends SceneBase {
     setupLights() {
         // 部屋の明るさを落ち着かせるで
         const pureWhite = 0xffffff; 
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0xffffff, 3.0); // 0x222222 -> 0xffffff 地面側を真っ白に！
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0xffffff, 0.8); // 0.6 -> 0.8 影をさらに明るく！
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 1.0); // 100.0 -> 1.0 眩しすぎるのを抑えるで！
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.8); // 0.6 -> 0.8 全体的な底上げ！
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 6.0); // 1.2 -> 6.0
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 4.0); // 2.5 -> 4.0 メインライトをガツンと強化！
         directionalLight.position.set(2000, 4000, 2000);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -8000;
@@ -145,17 +146,20 @@ export class Scene17 extends SceneBase {
         directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        const pointLight = new THREE.PointLight(pureWhite, 6.0, 15000); // 100.0 -> 6.0 に戻す
-        pointLight.decay = 1.0; // 0.0 -> 1.0 に戻す
-        pointLight.position.set(0, 3000, 0); // 4000 -> 3000 に戻す
+        const pointLight = new THREE.PointLight(pureWhite, 3.0, 15000); // 1.5 -> 3.0 ポイントライトも倍増！
+        pointLight.decay = 1.0; 
+        pointLight.position.set(0, 3000, 0); 
         this.scene.add(pointLight);
     }
 
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
-            roughness: 0.02, 
-            metalness: 0.9,  // 0.9 -> 0.4 金属度を下げて、ライトの光（白さ）が見えるようにするで！
-            lightColor: 0xffffff 
+            size: 10000,
+            color: 0xaaaaaa, // 0x707070 -> 0xaaaaaa かなり明るいグレーにして部屋全体を明るく！
+            roughness: 0.1,  
+            metalness: 0.8,  
+            lightColor: 0xffffff,
+            lightIntensity: 2.0 // 1.0 -> 2.0 天井ライトも倍増！
         });
         // 床を強制的に両面描画にして、光を確実に受け止めるで！
         if (this.studio.studioFloor) {
@@ -166,11 +170,11 @@ export class Scene17 extends SceneBase {
     createSpheres() {
         // 完璧な鏡面マテリアル（白飛びを抑えつつ、反射をしっかり出す！）
         const mercuryMat = new THREE.MeshStandardMaterial({
-            color: 0xaaaaaa,
-            metalness: 1.0,
-            roughness: 0.02, 
-            envMap: this.cubeRenderTarget.texture, // お互いを映し出す！
-            envMapIntensity: 1.5
+            color: 0xffffff, // 0xcccccc -> 0xffffff ベースカラーを真っ白に！
+            metalness: 0.9,  
+            roughness: 0.05, 
+            envMap: this.cubeRenderTarget.texture,
+            envMapIntensity: 1.2 // 1.0 -> 1.2 反射強度もさらにアップ！
         });
 
         const sphereGeom = new THREE.SphereGeometry(0.6, 16, 16); // 2500個なので16x16で負荷軽減
@@ -207,7 +211,7 @@ export class Scene17 extends SceneBase {
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
         if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.15, 0.1, 1.2); // 0.2 -> 0.15
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {

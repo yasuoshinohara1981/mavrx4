@@ -114,7 +114,7 @@ export class Scene16 extends SceneBase {
                     progress: -0.2, // コアの内側からスタート
                     speed: speed,
                     intensity: value,
-                    hue: (this.trackValues[7] + Math.random() * 0.1) % 1.0 
+                    hue: Math.random() // スキャンの色は全系統ランダムに奔放に！
                 });
             }
         } else if (trackNumber === 6) {
@@ -679,11 +679,11 @@ export class Scene16 extends SceneBase {
             const baseHueOffset = (this.time * colorShiftSpeed + track7Color * 2.0) % 1.0;
             
             // 【色相の刷新】緑系を完全に排除し、青・紫系にトーンを寄せる
-            // ただし、先端（region === 2）は暖色系（赤・オレンジ）を許可する
+            // ただし、先端（region === 2）は全系統の色を奔放に許可する
             let hue;
             if (region > 1.5) { // 先端（Tip）
-                // 暖色系：0.9（赤紫）〜 1.1（オレンジ）の範囲で変化
-                hue = (0.9 + baseHueOffset * 0.2) % 1.0;
+                // 先端は全系統の色を許可（baseHueOffsetをフルに活用）
+                hue = (baseHueOffset + steppedElevation * 0.1) % 1.0;
             } else {
                 // 寒色系：0.55（青）〜 0.85（紫）の範囲
                 hue = 0.55 + ((baseHueOffset + steppedElevation * 0.2) % 1.0) * 0.3;

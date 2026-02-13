@@ -10,6 +10,7 @@ export class StudioBox {
         this.color = options.color || 0xffffff;
         this.roughness = options.roughness !== undefined ? options.roughness : 0.8; // 0.4 -> 0.8
         this.metalness = options.metalness !== undefined ? options.metalness : 0.0;
+        this.lightColor = options.lightColor || 0xffffff; // 蛍光灯の色
         this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 5.0; // 0.5 -> 5.0
         this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true;
         this.useLights = options.useLights !== undefined ? options.useLights : true;
@@ -98,8 +99,8 @@ export class StudioBox {
         
         const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
         const material = new THREE.MeshStandardMaterial({ 
-            color: 0xffffff, 
-            emissive: 0xffffff, 
+            color: this.lightColor, 
+            emissive: this.lightColor, 
             emissiveIntensity: 10.0, 
             envMapIntensity: 1.0 
         });

@@ -23,10 +23,12 @@ export class Scene17 extends SceneBase {
         this.sharedResourceManager = sharedResourceManager;
         this.raycaster = new THREE.Raycaster();
         
-        // 2500個に増量や！
+        // 最大2250個に設定
         this.partTypes = 1; 
-        this.instancesPerType = 2500; 
-        this.sphereCount = this.instancesPerType;
+        this.maxInstances = 2250; 
+        this.instancesPerType = this.maxInstances; 
+        this.sphereCount = this.maxInstances;
+        this.currentVisibleCount = 0;
         this.spawnRadius = 1000; 
         
         this.instancedMeshManagers = []; 
@@ -51,32 +53,24 @@ export class Scene17 extends SceneBase {
         this.gravityForce = new THREE.Vector3(0, 0, 0); // 0, -30.0, 0 -> 0, 0, 0
         this.centeringForce = 0.0002; // 0.001 -> 0.0002 さらに弱めて自然な広がりを！
         
-        // モード管理
-        this.MODE_DEFAULT = 0;   // 浮遊・中心引力
-        this.MODE_GRAVITY = 1;   // 重力落下
-        this.MODE_SPIRAL  = 2;   // DNA二重螺旋
-        this.MODE_TORUS   = 3;   // 捻れトーラス
-        this.MODE_WALL    = 4;   // 垂直グリッド壁
-        this.MODE_WAVE    = 5;   // 巨大な波（サーフェス）
-        this.MODE_BLACK_HOLE = 6; // ブラックホール・ジェット
-        this.MODE_PILLARS = 7;   // 5本の垂直柱
-        this.MODE_CHAOS   = 8;   // 混沌・脈動
-        this.MODE_DEFORM  = 9;   // 変形モード（球体同相）
+        // モード管理（独自カスタマイズ版）
+        this.DNA_HELIX = 'DNA_HELIX';
+        this.ORBIT_SHELL = 'ORBIT_SHELL';
+        this.FLOW_FIELD = 'FLOW_FIELD';
+        this.GALAXY = 'GALAXY';
+        this.HEART_BEAT = 'HEART_BEAT';
+        this.TWIN_TORUS = 'TWIN_TORUS'; // 2つの絡み合うトーラス
 
-        this.currentMode = this.MODE_DEFAULT;
+        this.currentMode = this.DNA_HELIX;
         this.modeTimer = 0;
-        this.modeInterval = 10.0; // 10秒ごとに切り替え
+        this.modeInterval = 8.0; 
         this.modeSequence = [
-            this.MODE_DEFAULT,
-            this.MODE_SPIRAL,
-            this.MODE_WAVE,
-            this.MODE_TORUS,
-            this.MODE_WALL,
-            this.MODE_BLACK_HOLE,
-            this.MODE_PILLARS,
-            this.MODE_DEFORM,
-            this.MODE_CHAOS,
-            this.MODE_GRAVITY
+            this.DNA_HELIX,
+            this.ORBIT_SHELL,
+            this.FLOW_FIELD,
+            this.GALAXY,
+            this.HEART_BEAT,
+            this.TWIN_TORUS
         ];
         this.sequenceIndex = 0;
         this.geometricTargets = new Map();
@@ -100,17 +94,17 @@ export class Scene17 extends SceneBase {
 
         this.setupLights();
 
-        // 1. CubeCameraのセットアップ（createStudioBoxで使うから先にやるで！）
-        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(512, { 
+        // 1. CubeCameraのセットアップ（解像度を256に戻してバランス調整！）
+        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { 
             generateMipmaps: true, 
             minFilter: THREE.LinearMipmapLinearFilter 
         });
-        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget); // nearを10に戻して近くも映す
-        this.cubeCamera.position.set(0, 500, 0); // 高さを500に戻す
+        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget);
+        this.cubeCamera.position.set(0, 500, 0);
         this.scene.add(this.cubeCamera);
 
-        // 2. 壁・床用の静的な環境マップ（スフィアなし）をセットアップ
-        this.staticCubeRenderTarget = new THREE.WebGLCubeRenderTarget(512, {
+        // 2. 壁・床用の静的な環境マップ（こちらも256に！）
+        this.staticCubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
             generateMipmaps: true,
             minFilter: THREE.LinearMipmapLinearFilter
         });
@@ -164,11 +158,11 @@ export class Scene17 extends SceneBase {
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
             size: 10000,
-            color: 0xaaaaaa, // 0x707070 -> 0xaaaaaa かなり明るいグレーにして部屋全体を明るく！
-            roughness: 0.1,  
+            color: 0xbbbbbb, // 0xbbbbbb に下げて落ち着かせる
+            roughness: 0.2,
             metalness: 0.8,  
             lightColor: 0xffffff,
-            lightIntensity: 2.0 // 1.0 -> 2.0 天井ライトも倍増！
+            lightIntensity: 2.8 
         });
         
         // 壁と床には「スフィアが映り込む環境マップ」を個別に設定する
@@ -176,32 +170,31 @@ export class Scene17 extends SceneBase {
         if (this.studio.studioBox && Array.isArray(this.studio.studioBox.material)) {
             this.studio.studioBox.material.forEach(mat => {
                 mat.envMap = this.cubeRenderTarget.texture;
-                mat.envMapIntensity = 0.8; // 壁への映り込みは少し控えめに
+                mat.envMapIntensity = 1.3; // 1.2 -> 1.3 慎重にアップ
             });
         }
         if (this.studio.studioFloor) {
             this.studio.studioFloor.material.side = THREE.DoubleSide;
             this.studio.studioFloor.material.envMap = this.cubeRenderTarget.texture;
-            this.studio.studioFloor.material.envMapIntensity = 1.0;
+            this.studio.studioFloor.material.envMapIntensity = 1.7; // 1.5 -> 1.7 慎重にアップ
         }
     }
 
     createSpheres() {
-        // 完璧な鏡面マテリアル（白飛びを抑えつつ、反射をしっかり出す！）
+        // 完璧な鏡面マテリアル（反射を少し抑えて落ち着かせる！）
         const mercuryMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, // 0xcccccc -> 0xffffff ベースカラーを真っ白に！
+            color: 0xdddddd, 
             metalness: 0.9,  
-            roughness: 0.05, 
-            envMap: this.staticCubeRenderTarget.texture, // スフィアには「背景のみ」のマップを適用！
-            envMapIntensity: 1.2 // 1.0 -> 1.2 反射強度もさらにアップ！
+            roughness: 0.1,  
+            envMap: this.staticCubeRenderTarget.texture, 
+            envMapIntensity: 1.0 
         });
 
-        const sphereGeom = new THREE.SphereGeometry(0.6, 16, 16); // 2500個なので16x16で負荷軽減
+        // ジオメトリの基本サイズを150にする！
+        // ジオメトリの基本サイズを150にする！（ポリゴン数は16x16に抑えて軽量化）
+        const sphereGeom = new THREE.SphereGeometry(25, 12, 12); 
         
         const manager = new InstancedMeshManager(this.scene, sphereGeom, mercuryMat, this.instancesPerType);
-        const mainMesh = manager.getMainMesh();
-        mainMesh.castShadow = true;
-        mainMesh.receiveShadow = true;
         this.instancedMeshManagers.push(manager);
 
         for (let i = 0; i < this.sphereCount; i++) {
@@ -212,12 +205,15 @@ export class Scene17 extends SceneBase {
             const y = r * Math.sin(phi) * Math.sin(theta) + 500;
             const z = r * Math.cos(phi);
 
-            const sizeRand = Math.random();
-            let baseSize = sizeRand < 0.7 ? 10 + Math.random() * 10 : 20 + Math.random() * 20; // 最大値を下げたで！
-            
-            const p = new Scene17Particle(x, y, z, baseSize * 0.5, new THREE.Vector3(baseSize, baseSize, baseSize), 0, i);
+            // パーティクル内部のスケールは1（等倍）にする
+            const p = new Scene17Particle(x, y, z, 75, new THREE.Vector3(1, 1, 1), 0, i);
+            // Scene17Particle内部で勝手にサイズが変わるのを防ぐために強制上書き！
+            p.scale.set(1, 1, 1);
+            p.radius = 75; // 半径も固定！
             this.particles.push(p);
-            manager.setMatrixAt(i, p.position, p.rotation, p.scale);
+            
+            // インスタンスのスケールも1（等倍）で設定（初期状態は画面外へ！）
+            manager.setMatrixAt(i, new THREE.Vector3(0, -10000, 0), p.rotation, new THREE.Vector3(0, 0, 0));
         }
         
         manager.markNeedsUpdate();
@@ -230,7 +226,7 @@ export class Scene17 extends SceneBase {
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
         if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.15, 0.1, 1.2); // 0.2 -> 0.15
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.3, 0.1, 0.8); // 強度を上げて、しきい値を下げる
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
@@ -244,34 +240,63 @@ export class Scene17 extends SceneBase {
 
     onUpdate(deltaTime) {
         if (!this.initialized) return;
-        this.time += deltaTime;
+        
+        // actual_tick に基づく個数制御（384 tick/小節 * 96小節 で1ループ）
+        const actualTick = this.actualTick || 0;
+        const ticksPerMeasure = 384;
+        const totalMeasures = 96;
+        const totalLoopTicks = ticksPerMeasure * totalMeasures; // 36864 ticks
+        
+        const loopTick = actualTick % totalLoopTicks;
+        
+        // ユーザーの要望：phase 6（全体の約60%）付近までに最大数、最後には0
+        // 96小節のうち、60小節（約62%）まで増やす設定にする
+        const increaseUntilTick = ticksPerMeasure * 60;
+        const decreaseFromTick = ticksPerMeasure * 80;
+        
+        let targetCount = 0;
+        if (loopTick < increaseUntilTick) {
+            // 0から60小節にかけて、1個から2250個まで増やす
+            const progress = loopTick / increaseUntilTick;
+            targetCount = Math.floor(1 + (this.maxInstances - 1) * progress);
+        } else if (loopTick >= decreaseFromTick) {
+            // 80小節以降、最後（96小節）に向かって0個に減らす
+            const progress = Math.max(0, Math.min(1, (loopTick - decreaseFromTick) / (totalLoopTicks - decreaseFromTick))); 
+            targetCount = Math.floor(this.maxInstances * (1 - progress));
+        } else {
+            // 60小節から80小節の間は最大数を維持
+            targetCount = this.maxInstances;
+        }
+        
+        this.currentVisibleCount = targetCount;
+        this.setParticleCount(this.currentVisibleCount);
 
-        // モード切り替えタイマー
-        this.modeTimer += deltaTime;
-        if (this.modeTimer >= this.modeInterval) {
-            this.modeTimer = 0;
-            this.sequenceIndex = (this.sequenceIndex + 1) % this.modeSequence.length;
-            this.currentMode = this.modeSequence[this.sequenceIndex];
-            console.log(`Scene17 Mode Switched: ${this.currentMode}`);
-
-            // モード切り替え時の特殊処理
-            if (this.currentMode === this.MODE_SPIRAL) {
-                this.particles.forEach(p => {
-                    const r = Math.random() * this.spawnRadius;
-                    const theta = Math.random() * Math.PI * 2;
-                    p.position.set(
-                        Math.cos(theta) * r,
-                        p.spiralHeightFactor * 2000 - 500,
-                        Math.sin(theta) * r
-                    );
-                    p.velocity.set(0, 0, 0);
-                });
-            }
+        // デバッグ用：HUDに現在の情報を表示
+        if (this.hud) {
+            const currentMeasure = Math.floor(loopTick / ticksPerMeasure) + 1;
+            this.hud.debugText = `Spheres: ${this.currentVisibleCount} / Measure: ${currentMeasure}/96 (Tick: ${loopTick})`;
         }
 
-        // 物理演算
-        this.updatePhysics(deltaTime);
+        // deltaTimeが異常に大きい場合（タブ切り替え後など）の対策
+        const dt = Math.min(deltaTime, 0.1);
+        this.time += dt;
 
+        // フレームカウント
+        this.frameCounter = (this.frameCounter || 0) + 1;
+
+        // モード切り替えタイマー（確実に切り替わるようにシンプルに！）
+        const modeInterval = 8.0;
+        const totalDuration = modeInterval * this.modeSequence.length;
+        const cycleTime = this.time % totalDuration;
+        const newIndex = Math.floor(cycleTime / modeInterval);
+        
+        this.sequenceIndex = newIndex;
+        this.currentMode = this.modeSequence[this.sequenceIndex];
+
+        // 物理演算
+        this.updatePhysics(dt);
+
+        // 環境マップの更新（カクつき防止のため毎フレーム更新に戻す！）
         // 1. スフィア用の環境マップ（背景のみ）を更新
         if (this.staticCubeCamera) {
             let mainMesh = null;
@@ -280,7 +305,7 @@ export class Scene17 extends SceneBase {
                 mainMesh = this.instancedMeshManagers[0].getMainMesh();
                 if (mainMesh) {
                     wasVisible = mainMesh.visible;
-                    mainMesh.visible = false; // スフィアを隠して背景だけ撮る！
+                    mainMesh.visible = false; 
                 }
             }
             this.staticCubeCamera.update(this.renderer, this.scene);
@@ -289,17 +314,10 @@ export class Scene17 extends SceneBase {
 
         // 2. 壁・床用の環境マップ（スフィアあり）を更新
         if (this.cubeCamera) {
-            // ここではスフィアを表示したまま撮影するので、壁や床にスフィアが映り込む！
             this.cubeCamera.update(this.renderer, this.scene);
         }
 
-        if (this.instancedMeshManagers.length > 0) {
-            const manager = this.instancedMeshManagers[0];
-            this.particles.forEach((p, i) => {
-                manager.setMatrixAt(i, p.position, p.rotation, p.scale);
-            });
-            manager.markNeedsUpdate();
-        }
+        // 行列の更新処理は updatePhysics に集約するため、ここからは削除！
         
         // オートフォーカス
         if (this.useDOF && this.bokehPass) {
@@ -314,172 +332,212 @@ export class Scene17 extends SceneBase {
     }
 
     updatePhysics(deltaTime) {
-        const tempVec = new THREE.Vector3();
-        const halfSize = 4950; // スタジオサイズ10000に合わせて拡張
+        // this.currentMode が undefined の場合のフォールバック
+        const mode = this.currentMode || 'DNA_HELIX';
+        const time = this.time;
+        
+        const halfSize = 4950;
 
-        this.particles.forEach((p, idx) => {
-            p.force.set(0, 0, 0);
-            
-            // モード別の力計算（Scene13を参考）
-            if (this.currentMode === this.MODE_SPIRAL) {
-                const side = (idx % 2 === 0) ? 1 : -1;
-                const rotationSpeed = 1.5;
-                const radius = 350 * p.radiusOffset * p.strayRadiusOffset; 
-                const angle = (this.time * rotationSpeed) + (p.position.y * 0.003) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.05);
-                const targetX = Math.cos(angle) * radius;
-                const targetZ = Math.sin(angle) * radius;
-                
-                p.velocity.y *= 0.99; 
-                const spiralSpringK = 0.02 * p.strayFactor;
-                tempVec.set((targetX - p.position.x) * spiralSpringK, 0.1 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK);
-                p.addForce(tempVec);
+        // インスタンス更新用のマネージャーをループの外で取得
+        const manager = this.instancedMeshManagers[0];
+        if (!manager) return;
 
-            } else if (this.currentMode === this.MODE_TORUS) {
-                const mainRadius = 1200;
-                const tubeRadius = 60 * p.radiusOffset * p.strayRadiusOffset; 
-                const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
-                const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5) + p.phaseOffset;
-                const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
-                const ty = tubeRadius * Math.sin(phi) + 300;
-                const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
-                
-                const torusSpringK = 0.01 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
-                p.addForce(tempVec);
-
-            } else if (this.currentMode === this.MODE_WALL) {
-                const cols = 50; 
-                const spacing = 100; 
-                const zOffset = p.isStray ? (p.targetOffset.z * 5.0) : (p.targetOffset.z * 0.2);
-                const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05; 
-                const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
-                const tz = 0 + zOffset;
-                
-                const wallSpringK = 0.01 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
-                p.addForce(tempVec);
-
-            } else if (this.currentMode === this.MODE_WAVE) {
-                const cols = Math.floor(Math.sqrt(this.sphereCount));
-                const spacing = 5000 / cols;
-                const yOffset = p.isStray ? (p.targetOffset.y * 2.0) : (p.targetOffset.y * 0.05);
-                const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
-                const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.05;
-                const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
-                
-                const waveSpringK = 0.01 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
-                p.addForce(tempVec);
-
-            } else if (this.currentMode === this.MODE_BLACK_HOLE) {
-                if (idx % 10 < 7) {
-                    const radius = (idx / this.sphereCount) * 1200 + 50 + p.targetOffset.x * 0.5;
-                    const angle = (idx * 0.05) + (this.time * 3.0) + p.phaseOffset * 0.1;
-                    const tx = Math.cos(angle) * radius;
-                    const tz = Math.sin(angle) * radius;
-                    const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
-                    
-                    const bhSpringK = 0.02 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
-                    p.addForce(tempVec);
-                } else {
-                    const side = (idx % 2 === 0) ? 1 : -1;
-                    const tx = (Math.random() - 0.5) * 40 + p.targetOffset.x * 0.1;
-                    const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
-                    const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
-                    
-                    const jetSpringK = 0.02 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
-                    p.addForce(tempVec);
+        this.particles.forEach((p, i) => {
+            // 現在の表示数を超えているパーティクルは更新しない（または画面外へ飛ばす）
+            if (i >= this.currentVisibleCount) {
+                // 画面外へ飛ばして見えなくする
+                const manager = this.instancedMeshManagers[0];
+                if (manager) {
+                    manager.setMatrixAt(i, new THREE.Vector3(0, -10000, 0), p.rotation, new THREE.Vector3(0, 0, 0));
                 }
-
-            } else if (this.currentMode === this.MODE_PILLARS) {
-                const pillarIdx = idx % 5;
-                const angle = (pillarIdx / 5) * Math.PI * 2;
-                const pillarRadius = 1500;
-                const px = Math.cos(angle) * pillarRadius;
-                const pz = Math.sin(angle) * pillarRadius;
-                const tx = px + (Math.sin(idx + this.time) * 100) + p.targetOffset.x * 0.5;
-                const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
-                const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
-                
-                const pillarSpringK = 0.01 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
-                p.addForce(tempVec);
-
-            } else if (this.currentMode === this.MODE_CHAOS) {
-                const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 0.5 * p.strayFactor;
-                tempVec.copy(p.position).normalize().multiplyScalar(force);
-                p.addForce(tempVec);
-
-            } else if (this.currentMode === this.MODE_DEFORM) {
-                const baseRadius = 600;
-                const noiseSpeed = 0.5;
-                const theta = (idx / this.sphereCount) * Math.PI * 2;
-                const phi = Math.acos(2 * (idx / this.sphereCount) - 1);
-                const nx = Math.cos(theta) * Math.sin(phi);
-                const ny = Math.sin(theta) * Math.sin(phi);
-                const nz = Math.cos(phi);
-                const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) * 
-                                 Math.cos(ny * 5.0 + this.time * noiseSpeed) * 
-                                 Math.sin(nz * 5.0 + this.time * noiseSpeed) * 100;
-                const r = (baseRadius + distortion) * p.radiusOffset;
-                const tx = nx * r;
-                const ty = ny * r + 300;
-                const tz = nz * r;
-                const springK = 0.01 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                p.addForce(tempVec);
-
-            } else if (this.currentMode === this.MODE_GRAVITY) {
-                p.addForce(new THREE.Vector3(0, -10.0, 0)); // 重力復活！
-                p.velocity.multiplyScalar(0.98);
-            } else {
-                // DEFAULT: 中心の引力
-                const tx = p.targetOffset.x;
-                const ty = p.targetOffset.y + 200;
-                const tz = p.targetOffset.z;
-                const defSpringK = 0.0005 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
-                p.addForce(tempVec);
+                return;
             }
 
-            p.update();
-            p.velocity.multiplyScalar(0.95);
+            let target = new THREE.Vector3();
+            let force = new THREE.Vector3();
+
+            switch (mode) {
+                case 'DNA_HELIX': {
+                    const side = i % 2 === 0 ? 1 : -1;
+                    const angle = p.phaseOffset + time * 1.5;
+                    const height = ((i / this.sphereCount) - 0.5) * 3500; // 2200 -> 3500 縦にガッツリ伸ばす
+                    const radius = 1200 + Math.sin(time + height * 0.002) * 400; // 800 -> 1200 半径も大幅拡張
+                    target.set(
+                        Math.cos(angle + (side * Math.PI)) * radius,
+                        height + 500,
+                        Math.sin(angle + (side * Math.PI)) * radius
+                    );
+                    break;
+                }
+                case 'ORBIT_SHELL': {
+                    const angle1 = p.phaseOffset + time * 0.4;
+                    const angle2 = p.radiusOffset * 0.1 + time * 0.25;
+                    const radius = 1800 + Math.sin(time * 0.5 + i * 0.1) * 300; // 1200 -> 1800 球殻をデカく
+                    target.set(
+                        Math.cos(angle1) * Math.sin(angle2) * radius,
+                        Math.cos(angle2) * radius + 500,
+                        Math.sin(angle1) * Math.sin(angle2) * radius
+                    );
+                    break;
+                }
+                case 'FLOW_FIELD': {
+                    const noiseScale = 0.0005;
+                    const noiseX = Math.sin(p.position.x * noiseScale + time * 0.5);
+                    const noiseY = Math.cos(p.position.y * noiseScale + time * 0.5);
+                    const noiseZ = Math.sin(p.position.z * noiseScale + time * 0.5);
+                    force.set(noiseX, noiseY, noiseZ).multiplyScalar(150);
+                    
+                    const center = new THREE.Vector3(0, 500, 0);
+                    const distToCenter = p.position.distanceTo(center);
+                    if (distToCenter > 3000) { // 2000 -> 3000 部屋いっぱいに広げる
+                        const backToCenter = center.clone().sub(p.position).normalize().multiplyScalar(50);
+                        force.add(backToCenter);
+                    }
+                    break;
+                }
+                case 'GALAXY': {
+                    const r = (i / this.sphereCount) * 3000 + 500; // 2000 -> 3000 渦を巨大化
+                    const angle = time * (300 / r) + (i * 0.05);
+                    const spiral = 0.5; // 0.4 -> 0.5
+                    target.set(
+                        Math.cos(angle) * r * (1 + Math.sin(time * 0.2) * spiral),
+                        Math.sin(time * 0.3 + r * 0.005) * 800 + 500, // 500 -> 800 厚みを持たせる
+                        Math.sin(angle) * r * (1 + Math.sin(time * 0.2) * spiral)
+                    );
+                    break;
+                }
+                case 'HEART_BEAT': {
+                    const beat = Math.pow(Math.sin(time * 2.5), 8);
+                    const r = (p.radiusOffset % 1500) + 800 + beat * 1000; // 1000, 600, 700 -> 1500, 800, 1000 爆発的な広がりに
+                    const phi = (i / this.sphereCount) * Math.PI * 2;
+                    const theta = Math.acos(2 * (i / this.sphereCount) - 1);
+                    target.set(
+                        Math.sin(theta) * Math.cos(phi) * r,
+                        Math.cos(theta) * r + 500,
+                        Math.sin(theta) * Math.sin(phi) * r
+                    );
+                    break;
+                }
+                case 'TWIN_TORUS': {
+                    // 2つの絡み合う捻れたトーラス
+                    const group = i % 2 === 0 ? 0 : 1;
+                    const t = time * 0.5 + p.phaseOffset * 0.1;
+                    const mainRadius = 1500;
+                    const tubeRadius = 400;
+                    
+                    // グループごとに回転軸を変えて絡ませる
+                    const angle = (i / (this.sphereCount / 2)) * Math.PI * 2 + time;
+                    const tubeAngle = (i % 30) / 30 * Math.PI * 2 + time * 2;
+                    
+                    const tx = (mainRadius + tubeRadius * Math.cos(tubeAngle)) * Math.cos(angle);
+                    const ty = tubeRadius * Math.sin(tubeAngle);
+                    const tz = (mainRadius + tubeRadius * Math.cos(tubeAngle)) * Math.sin(angle);
+                    
+                    if (group === 0) {
+                        target.set(tx, ty + 500, tz);
+                    } else {
+                        // 2つ目は90度回転させて垂直に絡ませる
+                        target.set(ty, tx + 500, tz);
+                    }
+                    break;
+                }
+            }
+
+            if (mode !== 'FLOW_FIELD') {
+                const steer = target.clone().sub(p.position);
+                const dist = steer.length();
+                if (dist > 0) {
+                    // Scene13並みに強力な引力を設定！
+                    const springK = 0.5; // 0.05 -> 0.5  10倍に強化！
+                    const maxSteerForce = 500; // 制限を大幅に緩和
+                    steer.normalize().multiplyScalar(Math.min(dist * springK, maxSteerForce)); 
+                    force.add(steer);
+                }
+            }
+
+            // 物理更新
+            p.velocity.add(force.multiplyScalar(deltaTime));
+            p.velocity.multiplyScalar(0.92); // 摩擦を少し減らしてキビキビ動かす
+            
+            // 速度制限を大幅に緩和（Scene13並みの爆速移動を許可）
+            const maxVelocity = 1500; 
+            if (p.velocity.length() > maxVelocity) {
+                p.velocity.normalize().multiplyScalar(maxVelocity);
+            }
+            
+            p.position.add(p.velocity.clone().multiplyScalar(deltaTime));
 
             // 壁・床の衝突判定
             if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.3; }
             if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.3; }
             if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.3; }
             if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.3; }
-            
-            if (p.position.y > 4500) { 
-                if (this.currentMode === this.MODE_SPIRAL) {
-                    p.position.y = -500;
-                } else {
-                    p.position.y = 4500;
-                    p.velocity.y *= -0.3;
-                }
-            }
-            if (p.position.y < -450) {
-                p.position.y = -450;
-                p.velocity.y *= -0.1;
+            if (p.position.y > 4500) { p.position.y = 4500; p.velocity.y *= -0.3; }
+            if (p.position.y < -450) { p.position.y = -450; p.velocity.y *= -0.1; }
+
+            // 回転更新
+            p.rotation.x += 0.01;
+            p.rotation.y += 0.02;
+
+            // 行列の更新（サイズを1（等倍）で反映！これで絶対に直径150固定や！）
+            const targetManager = this.instancedMeshManagers[0];
+            if (targetManager) {
+                const finalScale = new THREE.Vector3(1, 1, 1);
+                targetManager.setMatrixAt(i, p.position, p.rotation, finalScale);
             }
         });
+
+        this.instancedMeshManagers[0].markNeedsUpdate();
+    }
+
+    handleOSC(message) {
+        // 親クラスの処理を呼ぶ
+        super.handleOSC(message);
+        
+        // rawPhase を独自に保存（滑らかな個数制御のため）
+        if (message.address === '/phase/' || message.address === '/phase') {
+            const args = message.args || [];
+            if (args.length > 0) {
+                const phaseValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
+                if (!isNaN(phaseValue)) {
+                    this.rawPhase = phaseValue;
+                }
+            }
+        }
     }
 
     handleTrackNumber(trackNumber, message) {
         const args = message.args || [];
         const velocity = args[1] !== undefined ? args[1] : 127;
-        if (trackNumber === 5) this.triggerRandomForce(velocity);
+        
+        // トラック5でパーティクルにランダムな衝撃を加える！
+        if (trackNumber === 5) {
+            this.triggerMidiForce(velocity);
+        }
+        
         if (trackNumber === 6) this.triggerExpandEffect(velocity);
     }
 
-    triggerRandomForce(velocity = 127) {
-        const forceStrength = 200.0 * (velocity / 127.0);
+    triggerMidiForce(velocity = 127) {
+        if (this.particles.length === 0) return;
+
+        // ランダムなパーティクルを1つ選んで、その位置を爆発の中心にする！
+        const targetIdx = Math.floor(Math.random() * this.particles.length);
+        const center = this.particles[targetIdx].position.clone();
+        
+        const forceStrength = 800.0 * (velocity / 127.0); // 3000.0 -> 800.0 大幅に弱めて繊細に！
+        const radius = 400; // 500 -> 400 範囲も少しタイトに
+
         this.particles.forEach(p => {
-            const f = new THREE.Vector3((Math.random()-0.5)*2, Math.random()*1.5, (Math.random()-0.5)*2).normalize().multiplyScalar(forceStrength);
-            p.addForce(f);
+            const diff = p.position.clone().sub(center);
+            const dist = diff.length();
+            
+            if (dist < radius && dist > 0) {
+                // 距離に応じて減衰する衝撃波
+                const falloff = 1.0 - (dist / radius);
+                const f = diff.normalize().multiplyScalar(forceStrength * falloff);
+                p.velocity.add(f);
+            }
         });
     }
 

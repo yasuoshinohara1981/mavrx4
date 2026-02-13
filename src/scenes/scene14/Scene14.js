@@ -93,12 +93,73 @@ export class Scene14 extends SceneBase {
         this.MODE_PSYCHIC_COLLAPSE = 21; // 静止 → 中心へ引力
         this.MODE_GRAVITY_SHOCK = 22;    // 爆発 → 重力落下
 
+        // --- 新規追加：幾何学図形モード ---
+        this.MODE_GEOM_SPHERE = 23;      // 巨大な球体
+        this.MODE_GEOM_CYLINDER_V = 24;  // 縦の円柱
+        this.MODE_GEOM_CYLINDER_H = 25;  // 横の円柱
+        this.MODE_GEOM_SPIRAL_TOWER = 26; // 螺旋タワー
+        this.MODE_GEOM_WAVE_GRID = 27;   // 波打つグリッド（関数グラフ風）
+        this.MODE_GEOM_TORUS_KNOT = 28;  // 複雑なトーラス結び目
+        this.MODE_GEOM_DNA_HELIX = 29;   // 二重螺旋
+        this.MODE_GEOM_PYRAMID = 30;     // ピラミッド（四角錐）
+
+        // --- さらに追加：幾何学図形モード倍増計画！ ---
+        this.MODE_GEOM_DOUBLE_TORUS = 31;  // 2つの交差するトーラス
+        this.MODE_GEOM_CUBE_FRAME = 32;    // 立方体のフレーム
+        this.MODE_GEOM_CONE_UP = 33;       // 上向きの円錐
+        this.MODE_GEOM_CONE_DOWN = 34;     // 下向きの円錐
+        this.MODE_GEOM_HOURGLASS = 35;     // 砂時計型
+        this.MODE_GEOM_HYPERBOLOID = 36;   // 双曲面（鼓型）
+        this.MODE_GEOM_DIAMOND = 37;       // 巨大なダイヤモンド（正八面体）
+        this.MODE_GEOM_CROSS_RODS = 38;    // 三軸で交差する棒
+        this.MODE_GEOM_STAR_BURST = 39;    // 星型放射
+        this.MODE_GEOM_HEXAGON_PLATE = 40; // 六角形のプレート
+        this.MODE_GEOM_SPIRAL_FLAT = 41;   // 平面螺旋（銀河風）
+        this.MODE_GEOM_SINE_TOWER = 42;    // サイン波でうねる塔
+        this.MODE_GEOM_SPHERE_SHELLS = 43; // 三層の球体殻
+        this.MODE_GEOM_GRID_3D = 44;       // 立体格子
+        this.MODE_GEOM_HEART = 45;         // ハート型（お遊び）
+
         this.currentMode = this.MODE_DEFAULT;
         this.modeTimer = 0;
-        this.modeInterval = 12.0; // 少し長めにして演出を見せるで！
+        this.modeInterval = 10.0; // 8.0 -> 10.0 に少し伸ばしてじっくり見せるで！
+
+        // モードの順序を再構成（倍増したパターンを網羅！）
+        this.modeSequence = [
+            this.MODE_GEOM_SPHERE,
+            this.MODE_GEOM_CUBE_FRAME,
+            this.MODE_GEOM_CYLINDER_V,
+            this.MODE_GEOM_DOUBLE_TORUS,
+            this.MODE_PSYCHIC_RINGS,
+            this.MODE_GEOM_CONE_UP,
+            this.MODE_GEOM_WAVE_GRID,
+            this.MODE_GEOM_HOURGLASS,
+            this.MODE_GEOM_SPIRAL_TOWER,
+            this.MODE_GEOM_DIAMOND,
+            this.MODE_GEOM_TORUS_KNOT,
+            this.MODE_GEOM_HEXAGON_PLATE,
+            this.MODE_GEOM_CYLINDER_H,
+            this.MODE_GEOM_SINE_TOWER,
+            this.MODE_GEOM_DNA_HELIX,
+            this.MODE_GEOM_SPHERE_SHELLS,
+            this.MODE_GEOM_PYRAMID,
+            this.MODE_GEOM_CROSS_RODS,
+            this.MODE_GEOM_HYPERBOLOID,
+            this.MODE_GEOM_STAR_BURST,
+            this.MODE_GEOM_SPIRAL_FLAT,
+            this.MODE_GEOM_GRID_3D,
+            this.MODE_GEOM_HEART,
+            this.MODE_SINGULARITY,
+            this.MODE_PSYCHIC_COLLAPSE,
+            this.MODE_GRAVITY_SHOCK,
+            this.MODE_DEFAULT
+        ];
+        this.sequenceIndex = 0;
+        this.currentMode = this.modeSequence[0];
 
         // 物理演算パラメータ
         this.useGravity = false;
+        this.springKBase = 0.15; // 0.08 -> 0.15 に強化して収束を早くするで！
         this.spiralMode = false;
         this.torusMode = false;
         this.currentVisibleCount = this.sphereCount; // 初期値をセット
@@ -495,8 +556,12 @@ export class Scene14 extends SceneBase {
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
             const oldMode = this.currentMode;
-            this.currentMode = (this.currentMode + 1) % 23; // 21 -> 23 に修正や！
-            console.log(`Mode Switched: ${this.currentMode}`);
+            
+            // シーケンスに従ってモードを切り替えるで！
+            this.sequenceIndex = (this.sequenceIndex + 1) % this.modeSequence.length;
+            this.currentMode = this.modeSequence[this.sequenceIndex];
+            
+            console.log(`Mode Switched: ${this.currentMode} (Index: ${this.sequenceIndex})`);
             
             // モード切り替え時の演出
             if (this.currentMode === this.MODE_SINGULARITY || oldMode === this.MODE_GRAVITY_WELL) {
@@ -568,7 +633,7 @@ export class Scene14 extends SceneBase {
                 ty *= breatheScale;
                 tz *= breatheScale;
 
-                let springK = 0.08 * p.strayFactor;
+                let springK = this.springKBase * p.strayFactor;
 
                 // --- 特殊モード固有の物理ロジック ---
                 if (this.currentMode === this.MODE_PSYCHIC_COLLAPSE) {
@@ -823,6 +888,309 @@ export class Scene14 extends SceneBase {
                         -450,
                         (Math.random() - 0.5) * 8000
                     ));
+                }
+                break;
+
+            // --- 新規追加：幾何学図形モードのロジック ---
+
+            case this.MODE_GEOM_SPHERE: // 巨大な球体
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    const r = 1000; // 半径
+                    targets.push(new THREE.Vector3(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta) + 400,
+                        r * Math.cos(phi)
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_CYLINDER_V: // 縦の円柱
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const r = 600;
+                    const h = (Math.random() - 0.5) * 2000;
+                    targets.push(new THREE.Vector3(
+                        Math.cos(theta) * r,
+                        h + 400,
+                        Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_CYLINDER_H: // 横の円柱
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const r = 600;
+                    const l = (Math.random() - 0.5) * 2500;
+                    targets.push(new THREE.Vector3(
+                        l,
+                        Math.cos(theta) * r + 400,
+                        Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_SPIRAL_TOWER: // 螺旋タワー
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const theta = t * Math.PI * 16; // 8回転
+                    const r = 800 * (1.0 - t * 0.5); // 上に行くほど細くなる
+                    const h = t * 2000 - 600;
+                    targets.push(new THREE.Vector3(
+                        Math.cos(theta) * r,
+                        h + 400,
+                        Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_WAVE_GRID: // 波打つグリッド
+                const gridSize = Math.sqrt(count);
+                for (let i = 0; i < count; i++) {
+                    const ix = i % Math.floor(gridSize);
+                    const iz = Math.floor(i / gridSize);
+                    const x = (ix / gridSize - 0.5) * 3000;
+                    const z = (iz / gridSize - 0.5) * 3000;
+                    const d = Math.sqrt(x * x + z * z);
+                    const y = Math.sin(d * 0.005) * 300; // 波の高さ
+                    targets.push(new THREE.Vector3(x, y + 400, z));
+                }
+                break;
+
+            case this.MODE_GEOM_TORUS_KNOT: // 複雑なトーラス結び目
+                for (let i = 0; i < count; i++) {
+                    const t = (i / count) * Math.PI * 2;
+                    const p = 2; // 結び目のパラメータ
+                    const q = 3;
+                    const r = 400; // チューブの太さ感
+                    const R = 800; // 全体の大きさ
+                    
+                    // トーラス結び目の数式
+                    const x = (R + r * Math.cos(q * t)) * Math.cos(p * t);
+                    const y = (R + r * Math.cos(q * t)) * Math.sin(p * t) + 400;
+                    const z = r * Math.sin(q * t);
+                    
+                    // 少し厚みを出すためにランダムに散らす
+                    const offset = new THREE.Vector3(
+                        (Math.random() - 0.5) * 100,
+                        (Math.random() - 0.5) * 100,
+                        (Math.random() - 0.5) * 100
+                    );
+                    targets.push(new THREE.Vector3(x, y, z).add(offset));
+                }
+                break;
+
+            case this.MODE_GEOM_DNA_HELIX: // 二重螺旋
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const strand = i % 2 === 0 ? 0 : Math.PI; // 2本の鎖
+                    const theta = t * Math.PI * 10 + strand;
+                    const r = 400;
+                    const h = t * 2500 - 1250;
+                    
+                    // 鎖の本体
+                    let pos = new THREE.Vector3(
+                        Math.cos(theta) * r,
+                        h + 400,
+                        Math.sin(theta) * r
+                    );
+                    
+                    // たまに橋渡し部分を作る
+                    if (Math.random() < 0.3) {
+                        const lerpT = Math.random();
+                        const otherPos = new THREE.Vector3(
+                            Math.cos(theta + Math.PI) * r,
+                            h + 400,
+                            Math.sin(theta + Math.PI) * r
+                        );
+                        pos.lerp(otherPos, lerpT);
+                    }
+                    
+                    targets.push(pos);
+                }
+                break;
+
+            case this.MODE_GEOM_PYRAMID: // ピラミッド
+                for (let i = 0; i < count; i++) {
+                    const h = Math.random(); // 0 to 1 (高さ)
+                    const side = (1.0 - h) * 1200; // 上に行くほど狭くなる
+                    const x = (Math.random() - 0.5) * side * 2;
+                    const z = (Math.random() - 0.5) * side * 2;
+                    targets.push(new THREE.Vector3(x, h * 1500 - 400, z));
+                }
+                break;
+
+            case this.MODE_GEOM_DOUBLE_TORUS: // 2つの交差するトーラス
+                for (let i = 0; i < count; i++) {
+                    const t = (i / (count/2)) * Math.PI * 2;
+                    const r = 300;
+                    const R = 800;
+                    const isSecond = i > count / 2;
+                    const x = (R + r * Math.cos(t)) * Math.cos(t * 2);
+                    const y = (R + r * Math.cos(t)) * Math.sin(t * 2) + 400;
+                    const z = r * Math.sin(t);
+                    if (isSecond) {
+                        targets.push(new THREE.Vector3(x, z + 400, y - 400));
+                    } else {
+                        targets.push(new THREE.Vector3(x, y, z));
+                    }
+                }
+                break;
+
+            case this.MODE_GEOM_CUBE_FRAME: // 立方体のフレーム
+                for (let i = 0; i < count; i++) {
+                    const edge = Math.floor(Math.random() * 12);
+                    const t = Math.random();
+                    const s = 1000;
+                    let p = new THREE.Vector3();
+                    if (edge === 0) p.set(s, s, (t-0.5)*2*s);
+                    else if (edge === 1) p.set(s, -s, (t-0.5)*2*s);
+                    else if (edge === 2) p.set(-s, s, (t-0.5)*2*s);
+                    else if (edge === 3) p.set(-s, -s, (t-0.5)*2*s);
+                    else if (edge === 4) p.set(s, (t-0.5)*2*s, s);
+                    else if (edge === 5) p.set(s, (t-0.5)*2*s, -s);
+                    else if (edge === 6) p.set(-s, (t-0.5)*2*s, s);
+                    else if (edge === 7) p.set(-s, (t-0.5)*2*s, -s);
+                    else if (edge === 8) p.set((t-0.5)*2*s, s, s);
+                    else if (edge === 9) p.set((t-0.5)*2*s, s, -s);
+                    else if (edge === 10) p.set((t-0.5)*2*s, -s, s);
+                    else if (edge === 11) p.set((t-0.5)*2*s, -s, -s);
+                    targets.push(p.add(new THREE.Vector3(0, 400, 0)));
+                }
+                break;
+
+            case this.MODE_GEOM_CONE_UP: // 上向きの円錐
+                for (let i = 0; i < count; i++) {
+                    const h = Math.random();
+                    const r = (1.0 - h) * 1000;
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta)*r, h * 1800 - 400, Math.sin(theta)*r));
+                }
+                break;
+
+            case this.MODE_GEOM_HOURGLASS: // 砂時計型
+                for (let i = 0; i < count; i++) {
+                    const h = (Math.random() - 0.5) * 2; // -1 to 1
+                    const r = Math.abs(h) * 1000;
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta)*r, h * 1000 + 400, Math.sin(theta)*r));
+                }
+                break;
+
+            case this.MODE_GEOM_DIAMOND: // ダイヤモンド（正八面体）
+                for (let i = 0; i < count; i++) {
+                    const h = (Math.random() - 0.5) * 2; // -1 to 1
+                    const side = (1.0 - Math.abs(h)) * 1200;
+                    const x = (Math.random() - 0.5) * side * 2;
+                    const z = (Math.random() - 0.5) * side * 2;
+                    targets.push(new THREE.Vector3(x, h * 1200 + 400, z));
+                }
+                break;
+
+            case this.MODE_GEOM_HEXAGON_PLATE: // 六角形のプレート
+                for (let i = 0; i < count; i++) {
+                    const r = Math.sqrt(Math.random()) * 1200;
+                    const theta = Math.floor(Math.random() * 6) * (Math.PI / 3) + (Math.random() * 0.1);
+                    targets.push(new THREE.Vector3(Math.cos(theta)*r, 400 + (Math.random()-0.5)*100, Math.sin(theta)*r));
+                }
+                break;
+
+            case this.MODE_GEOM_SINE_TOWER: // サイン波でうねる塔
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const h = t * 2500 - 800;
+                    const theta = Math.random() * Math.PI * 2;
+                    const r = 400 + Math.sin(t * Math.PI * 4) * 200;
+                    targets.push(new THREE.Vector3(Math.cos(theta)*r, h + 400, Math.sin(theta)*r));
+                }
+                break;
+
+            case this.MODE_GEOM_SPHERE_SHELLS: // 三層の球体殻
+                for (let i = 0; i < count; i++) {
+                    const layer = i % 3;
+                    const r = 500 + layer * 400;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    targets.push(new THREE.Vector3(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta) + 400,
+                        r * Math.cos(phi)
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_STAR_BURST: // 星型放射
+                for (let i = 0; i < count; i++) {
+                    const axis = Math.floor(Math.random() * 8);
+                    const r = Math.random() * 1500;
+                    let p = new THREE.Vector3();
+                    if (axis === 0) p.set(r, r, r);
+                    else if (axis === 1) p.set(-r, r, r);
+                    else if (axis === 2) p.set(r, -r, r);
+                    else if (axis === 3) p.set(r, r, -r);
+                    else if (axis === 4) p.set(-r, -r, r);
+                    else if (axis === 5) p.set(-r, r, -r);
+                    else if (axis === 6) p.set(r, -r, -r);
+                    else if (axis === 7) p.set(-r, -r, -r);
+                    targets.push(p.add(new THREE.Vector3(0, 400, 0)));
+                }
+                break;
+
+            case this.MODE_GEOM_SPIRAL_FLAT: // 平面螺旋
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const theta = t * Math.PI * 20;
+                    const r = t * 1500;
+                    targets.push(new THREE.Vector3(Math.cos(theta)*r, 400 + (Math.random()-0.5)*50, Math.sin(theta)*r));
+                }
+                break;
+
+            case this.MODE_GEOM_GRID_3D: // 立体格子
+                const sideCount = Math.pow(count, 1/3);
+                for (let i = 0; i < count; i++) {
+                    const ix = i % Math.floor(sideCount);
+                    const iy = Math.floor(i / sideCount) % Math.floor(sideCount);
+                    const iz = Math.floor(i / (sideCount * sideCount));
+                    targets.push(new THREE.Vector3(
+                        (ix / sideCount - 0.5) * 2000,
+                        (iy / sideCount - 0.5) * 2000 + 400,
+                        (iz / sideCount - 0.5) * 2000
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_HEART: // ハート型
+                for (let i = 0; i < count; i++) {
+                    const t = Math.random() * Math.PI * 2;
+                    const x = 16 * Math.pow(Math.sin(t), 3);
+                    const y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                    const s = 50;
+                    targets.push(new THREE.Vector3(x * s, y * s + 600, (Math.random()-0.5)*200));
+                }
+                break;
+
+            case this.MODE_GEOM_CROSS_RODS: // 三軸で交差する棒
+                for (let i = 0; i < count; i++) {
+                    const axis = i % 3;
+                    const l = (Math.random() - 0.5) * 3000;
+                    const r = 100;
+                    const theta = Math.random() * Math.PI * 2;
+                    if (axis === 0) targets.push(new THREE.Vector3(l, Math.cos(theta)*r + 400, Math.sin(theta)*r));
+                    else if (axis === 1) targets.push(new THREE.Vector3(Math.cos(theta)*r, l + 400, Math.sin(theta)*r));
+                    else targets.push(new THREE.Vector3(Math.cos(theta)*r, Math.sin(theta)*r + 400, l));
+                }
+                break;
+
+            case this.MODE_GEOM_HYPERBOLOID: // 双曲面
+                for (let i = 0; i < count; i++) {
+                    const h = (Math.random() - 0.5) * 2;
+                    const a = 400;
+                    const b = 400;
+                    const r = a * Math.sqrt(1 + h * h);
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta)*r, h * 1000 + 400, Math.sin(theta)*r));
                 }
                 break;
 

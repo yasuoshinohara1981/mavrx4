@@ -190,6 +190,21 @@ export class Scene17 extends SceneBase {
             envMapIntensity: 1.0 
         });
 
+        // バンプマップ（ノーマルマップ）用のテクスチャを作成
+        // 2250個のスフィアに個別のテクスチャは重いので、共通のノイズテクスチャを生成
+        const size = 256;
+        const data = new Uint8Array(size * size * 3);
+        for (let i = 0; i < size * size * 3; i++) {
+            data[i] = Math.random() * 255;
+        }
+        const noiseTex = new THREE.DataTexture(data, size, size, THREE.RGBFormat);
+        noiseTex.wrapS = THREE.RepeatWrapping;
+        noiseTex.wrapT = THREE.RepeatWrapping;
+        noiseTex.needsUpdate = true;
+
+        mercuryMat.normalMap = noiseTex;
+        mercuryMat.normalScale.set(0.05, 0.05); // 控えめにボコボコさせる
+
         // ジオメトリの基本サイズを150にする！
         // ジオメトリの基本サイズを150にする！（ポリゴン数は16x16に抑えて軽量化）
         const sphereGeom = new THREE.SphereGeometry(25, 12, 12); 
@@ -476,13 +491,17 @@ export class Scene17 extends SceneBase {
             if (p.position.y < -450) { p.position.y = -450; p.velocity.y *= -0.1; }
 
             // 回転更新
-            p.rotation.x += 0.01;
-            p.rotation.y += 0.02;
+            p.rotation.x += 0.05; // 0.01 -> 0.05
+            p.rotation.y += 0.1;  // 0.02 -> 0.1
+            p.rotation.z += 0.03; // 追加！
 
             // 行列の更新（サイズを1（等倍）で反映！これで絶対に直径150固定や！）
             const targetManager = this.instancedMeshManagers[0];
             if (targetManager) {
                 const finalScale = new THREE.Vector3(1, 1, 1);
+                
+                // 【修正】パーティクルの回転（p.rotation）を行列に反映させるで！
+                // これで環境マップの映り込みが回転と一緒に動くようになるはずや！
                 targetManager.setMatrixAt(i, p.position, p.rotation, finalScale);
             }
         });

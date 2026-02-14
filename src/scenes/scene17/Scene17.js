@@ -159,24 +159,16 @@ export class Scene17 extends SceneBase {
         this.studio = new StudioBox(this.scene, {
             size: 10000,
             color: 0xbbbbbb, // 0xbbbbbb に下げて落ち着かせる
-            roughness: 0.2,
-            metalness: 0.8,  
+            roughness: 0.2, // 0.2 * 0.3 = 0.06 (床), 0.2 * 0.5 = 0.1 (壁)
+            metalness: 0.8, // 0.8 + 0.2 = 1.0 (床), 0.8 + 0.1 = 0.9 (壁)
             lightColor: 0xffffff,
-            lightIntensity: 2.8 
+            lightIntensity: 2.8,
+            envMap: this.cubeRenderTarget.texture,
+            envMapIntensity: 1.3
         });
         
-        // 壁と床には「スフィアが映り込む環境マップ」を個別に設定する
-        // これにより、scene.environment（スフィア用）とは別のマップを持たせることができる
-        if (this.studio.studioBox && Array.isArray(this.studio.studioBox.material)) {
-            this.studio.studioBox.material.forEach(mat => {
-                mat.envMap = this.cubeRenderTarget.texture;
-                mat.envMapIntensity = 1.3; // 1.2 -> 1.3 慎重にアップ
-            });
-        }
         if (this.studio.studioFloor) {
             this.studio.studioFloor.material.side = THREE.DoubleSide;
-            this.studio.studioFloor.material.envMap = this.cubeRenderTarget.texture;
-            this.studio.studioFloor.material.envMapIntensity = 1.7; // 1.5 -> 1.7 慎重にアップ
         }
     }
 

@@ -175,6 +175,16 @@ export class Scene16 extends SceneBase {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         
         this.setupLights();
+
+        // シーン16用の動的環境マップ（256解像度）
+        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { 
+            generateMipmaps: true, 
+            minFilter: THREE.LinearMipmapLinearFilter 
+        });
+        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget);
+        this.cubeCamera.position.set(0, 500, 0);
+        this.scene.add(this.cubeCamera);
+
         this.createStudioBox();
         this.createTentacles();
         this.initPostProcessing();
@@ -182,7 +192,18 @@ export class Scene16 extends SceneBase {
     }
 
     createStudioBox() {
-        this.studio = new StudioBox(this.scene);
+        this.studio = new StudioBox(this.scene, {
+            size: 10000,
+            color: 0xbbbbbb,
+            roughness: 0.2,
+            metalness: 0.8,
+            envMap: this.cubeRenderTarget.texture,
+            envMapIntensity: 1.3
+        });
+        
+        if (this.studio.studioFloor) {
+            this.studio.studioFloor.material.side = THREE.DoubleSide;
+        }
     }
 
     setupLights() {
@@ -429,6 +450,11 @@ export class Scene16 extends SceneBase {
         if (!this.initialized) return;
         this.time += deltaTime;
         this.stateTimer += deltaTime;
+
+        // 環境マップの更新
+        if (this.cubeCamera) {
+            this.cubeCamera.update(this.renderer, this.scene);
+        }
 
         // RandomLFO 群の更新
         this.speedLFO.update(deltaTime);
@@ -979,6 +1005,7 @@ export class Scene16 extends SceneBase {
     dispose() {
         this.initialized = false;
         if (this.studio) this.studio.dispose();
+        if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         this.tentacles.forEach(t => { if (t.mesh.geometry) t.mesh.geometry.dispose(); if (t.mesh.material) t.mesh.material.dispose(); });
         this.tentacles = []; this.scene.remove(this.tentacleGroup);
         if (this.bokehPass) { if (this.composer) { const idx = this.composer.passes.indexOf(this.bokehPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bokehPass.enabled = false; }

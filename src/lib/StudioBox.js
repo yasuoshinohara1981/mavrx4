@@ -16,6 +16,10 @@ export class StudioBox {
         this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true;
         this.useLights = options.useLights !== undefined ? options.useLights : true;
         
+        // 追加パラメータ（既存の挙動を壊さないようにデフォルト値を設定）
+        this.envMap = options.envMap || null;
+        this.envMapIntensity = options.envMapIntensity !== undefined ? options.envMapIntensity : 1.0;
+        
         this.studioBox = null;
         this.studioFloor = null;
         this.textures = null;
@@ -40,7 +44,9 @@ export class StudioBox {
             bumpScale: 1.0, // 壁も凹凸を抑えて細い線を活かす
             side: THREE.BackSide,
             roughness: this.roughness * 0.5, 
-            metalness: this.metalness + 0.1  
+            metalness: this.metalness + 0.1,
+            envMap: this.envMap,
+            envMapIntensity: this.envMapIntensity
         });
 
         const ceilingMat = new THREE.MeshStandardMaterial({
@@ -49,7 +55,9 @@ export class StudioBox {
             roughness: this.roughness,
             metalness: this.metalness,
             emissive: this.lightColor, // 天井を発光させる！
-            emissiveIntensity: this.lightIntensity * 0.5 // 少し抑えめに発光
+            emissiveIntensity: this.lightIntensity * 0.5, // 少し抑えめに発光
+            envMap: this.envMap,
+            envMapIntensity: this.envMapIntensity
         });
 
         const materials = [
@@ -78,7 +86,9 @@ export class StudioBox {
             bumpMap: this.floorTextures.bumpMap,
             bumpScale: 1.0, // 3.0 -> 1.0 凹凸を抑えて線を細く見せる
             roughness: this.roughness * 0.3, 
-            metalness: this.metalness + 0.2  
+            metalness: this.metalness + 0.2,
+            envMap: this.envMap,
+            envMapIntensity: this.envMapIntensity * 1.3 // 床は少し強めに反射
         });
         this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
         this.studioFloor.rotation.x = -Math.PI / 2;

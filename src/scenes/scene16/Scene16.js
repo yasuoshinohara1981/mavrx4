@@ -206,13 +206,13 @@ export class Scene16 extends SceneBase {
     }
 
     setupLights() {
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 0.8);
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 0.6); // 0.8 -> 0.6
         this.scene.add(hemiLight);
-        // 環境光を1.0にして、影の範囲外が黒くなるのを物理的に防ぐ
-        const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+        // 環境光を下げて、陰影を深くする
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // 1.0 -> 0.4
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // 1.2 -> 1.0
         directionalLight.position.set(2000, 5000, 2000);
         directionalLight.castShadow = true;
         
@@ -260,12 +260,14 @@ export class Scene16 extends SceneBase {
         coreGeo.setAttribute('color', new THREE.BufferAttribute(coreColors, 3));
 
         const coreMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, 
+            color: 0xcccccc, // 0x888888 -> 0xcccccc 少し明るく
             map: textures.map, 
             bumpMap: textures.bumpMap,
             bumpScale: 15.0, 
-            metalness: 0.2, // 0.1 -> 0.2 少し金属感を出す
-            roughness: 0.3, // 0.4 -> 0.3 粗さを下げてツヤを出す
+            metalness: 0.1, 
+            roughness: 0.5, 
+            envMap: this.cubeRenderTarget.texture, 
+            envMapIntensity: 0.7, // 0.6 -> 0.7 反射も少しだけ戻す
             vertexColors: true,
             emissive: 0x000000,
             transparent: false
@@ -357,10 +359,13 @@ export class Scene16 extends SceneBase {
 
     createTentacleMesh(geometry, textures) {
         const material = new THREE.MeshStandardMaterial({
-            color: 0xffffff, map: textures.map, bumpMap: textures.bumpMap,
+            color: 0xcccccc, // 0x888888 -> 0xcccccc 少し明るく
+            map: textures.map, bumpMap: textures.bumpMap,
             bumpScale: 30.0, 
-            metalness: 0.2, // 0.1 -> 0.2
-            roughness: 0.3, // 0.4 -> 0.3
+            metalness: 0.1, 
+            roughness: 0.5, 
+            envMap: this.cubeRenderTarget.texture,
+            envMapIntensity: 0.7, // 0.6 -> 0.7
             vertexColors: true,
             emissive: 0x000000, transparent: false
         });

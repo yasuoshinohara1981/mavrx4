@@ -412,8 +412,8 @@ export class Scene16 extends SceneBase {
         const passesToRemove = this.composer.passes.filter(p => p instanceof UnrealBloomPass || (typeof BokehPass !== 'undefined' && p instanceof BokehPass));
         passesToRemove.forEach(p => this.composer.removePass(p));
 
-        // ブルームを完全に無効化（強度0）
-        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.0, 0.1, 1.0);
+        // ブルームを再設定（バランス調整：さらにほんの少しだけ落とす）
+        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.25, 0.2, 0.9);
         this.composer.addPass(this.bloomPass);
         
         if (this.useDOF) {

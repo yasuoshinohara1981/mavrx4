@@ -231,7 +231,7 @@ export class Scene17 extends SceneBase {
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
         if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.3, 0.1, 0.8); // 強度を上げて、しきい値を下げる
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.25, 0.1, 0.85); // 0.3 -> 0.25 強度をほんの少し落とす
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {

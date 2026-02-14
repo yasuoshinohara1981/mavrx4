@@ -276,8 +276,12 @@ export class SceneBase {
     updateAutoFocus(targetObjects = []) {
         if (!this.useDOF || !this.bokehPass || !this.bokehPass.enabled) return;
 
+        // nullやundefinedを除外
+        const validObjects = targetObjects.filter(obj => obj != null);
+        if (validObjects.length === 0) return;
+
         this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-        const intersects = this.raycaster.intersectObjects(targetObjects, true);
+        const intersects = this.raycaster.intersectObjects(validObjects, true);
         
         let targetDistance = this.dofParams.focus;
         if (intersects.length > 0) {

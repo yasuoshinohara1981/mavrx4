@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
 import { RandomLFO } from '../../lib/RandomLFO.js';
 import { Scene16Particle } from './Scene16Particle.js';
@@ -403,7 +404,7 @@ export class Scene16 extends SceneBase {
         }
         
         // 既存のパスをクリアして、二重に追加されるのを防ぐ（ホットリロード対策）
-        const passesToRemove = this.composer.passes.filter(p => p instanceof UnrealBloomPass || p instanceof BokehPass);
+        const passesToRemove = this.composer.passes.filter(p => p instanceof UnrealBloomPass || (typeof BokehPass !== 'undefined' && p instanceof BokehPass));
         passesToRemove.forEach(p => this.composer.removePass(p));
 
         // ブルームを完全に無効化（強度0）

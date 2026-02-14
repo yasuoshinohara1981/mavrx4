@@ -6,7 +6,6 @@ import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
 import { RandomLFO } from '../../lib/RandomLFO.js';
@@ -60,9 +59,8 @@ export class Scene16 extends SceneBase {
         this.colorCycleLFO = new RandomLFO(0.002, 0.01, 0.0, 1.0);      // 色の移り変わり
 
         // エフェクト設定
-        this.useDOF = true;
+        this.useDOF = true; // SceneBaseのフラグを使用
         this.useBloom = true; 
-        this.bokehPass = null;
         this.bloomPass = null;
 
         this.trackEffects = {
@@ -412,14 +410,13 @@ export class Scene16 extends SceneBase {
         this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.0, 0.1, 1.0);
         this.composer.addPass(this.bloomPass);
         
-        this.bokehPass = new BokehPass(this.scene, this.camera, { 
-            focus: 1500, 
-            aperture: 0.00001, 
-            maxblur: 0.005, 
-            width: window.innerWidth, 
-            height: window.innerHeight 
-        });
-        this.composer.addPass(this.bokehPass);
+        if (this.useDOF) {
+            this.initDOF({
+                focus: 1500,
+                aperture: 0.00001,
+                maxblur: 0.005
+            });
+        }
     }
 
     /**
@@ -991,14 +988,9 @@ export class Scene16 extends SceneBase {
             posAttr.needsUpdate = true; colorAttr.needsUpdate = true; t.mesh.geometry.computeVertexNormals();
         });
         
+        // オートフォーカス
         if (this.useDOF && this.bokehPass) {
-            this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-            const intersects = this.raycaster.intersectObjects(this.tentacleGroup.children);
-            if (intersects.length > 0) {
-                const targetDistance = intersects[0].distance;
-                const currentFocus = this.bokehPass.uniforms.focus.value;
-                this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * 0.1;
-            }
+            this.updateAutoFocus(this.tentacleGroup.children);
         }
     }
 
@@ -1008,7 +1000,6 @@ export class Scene16 extends SceneBase {
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         this.tentacles.forEach(t => { if (t.mesh.geometry) t.mesh.geometry.dispose(); if (t.mesh.material) t.mesh.material.dispose(); });
         this.tentacles = []; this.scene.remove(this.tentacleGroup);
-        if (this.bokehPass) { if (this.composer) { const idx = this.composer.passes.indexOf(this.bokehPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bokehPass.enabled = false; }
         if (this.bloomPass) { if (this.composer) { const idx = this.bloomPass && this.composer.passes.indexOf(this.bloomPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bloomPass.enabled = false; }
         super.dispose();
     }

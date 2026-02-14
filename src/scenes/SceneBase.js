@@ -12,6 +12,7 @@ import { debugLog } from '../lib/DebugLogger.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 
 export class SceneBase {
     constructor(renderer, camera) {
@@ -58,6 +59,13 @@ export class SceneBase {
         this.glitchKeyPressed = false;  // キーが押されているか
         
         this.bokehPass = null; // 被写界深度（DOF）用のパス
+        this.useDOF = false;   // サブクラスで有効化するためのフラグ
+        this.dofParams = {
+            focus: 1000,
+            aperture: 0.000005,
+            maxblur: 0.003
+        };
+        this.raycaster = new THREE.Raycaster(); // オートフォーカス用
         
         // 表示設定
         this.SHOW_PARTICLES = false;
@@ -230,6 +238,56 @@ export class SceneBase {
         // デフォルト値を使用（各Sceneで必要に応じてオーバーライド）
     }
     
+    /**
+     * 被写界深度（DOF）エフェクトを初期化
+     */
+    initDOF(params = {}) {
+        if (!this.composer) {
+            this.composer = new EffectComposer(this.renderer);
+            this.composer.addPass(new RenderPass(this.scene, this.camera));
+        }
+
+        // パラメータの統合
+        this.dofParams = { ...this.dofParams, ...params };
+
+        // 既存のパスがあれば削除
+        if (this.bokehPass) {
+            this.composer.removePass(this.bokehPass);
+        }
+
+        this.bokehPass = new BokehPass(this.scene, this.camera, {
+            focus: this.dofParams.focus,
+            aperture: this.dofParams.aperture,
+            maxblur: this.dofParams.maxblur,
+            width: window.innerWidth,
+            height: window.innerHeight
+        });
+
+        this.bokehPass.enabled = this.useDOF;
+        this.composer.addPass(this.bokehPass);
+        
+        debugLog('effect', 'DOF (BokehPass) initialized');
+    }
+
+    /**
+     * オートフォーカスの更新
+     * @param {Array} targetObjects - レイキャスト対象のオブジェクト配列
+     */
+    updateAutoFocus(targetObjects = []) {
+        if (!this.useDOF || !this.bokehPass || !this.bokehPass.enabled) return;
+
+        this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
+        const intersects = this.raycaster.intersectObjects(targetObjects, true);
+        
+        let targetDistance = this.dofParams.focus;
+        if (intersects.length > 0) {
+            targetDistance = intersects[0].distance;
+        }
+
+        const currentFocus = this.bokehPass.uniforms.focus.value;
+        this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * 0.1;
+    }
+
     /**
      * セットアップ処理（シーン切り替え時に呼ばれる）
      */
@@ -586,20 +644,26 @@ export class SceneBase {
         
         // 色反転エフェクトが有効な場合はColorInversionのcomposerを使用
         if (this.colorInversion && this.colorInversion.isEnabled()) {
-            // トラック2が有効な時もDOFを効かせるため、bokehPassがあれば一時的に追加
+            // トラック2が有効な時も他のパス（DOF, Bloomなど）を効かせるため、一時的に追加
             const invComposer = this.colorInversion.composer;
-            const hasBokeh = this.bokehPass && this.bokehPass.enabled;
             
-            if (invComposer && hasBokeh) {
-                // まだ追加されていなければ追加（RenderPassの次に入れたい）
-                if (!invComposer.passes.includes(this.bokehPass)) {
-                    // RenderPass(0) -> BokehPass(1) -> InversionPass(2) の順にしたい
-                    invComposer.passes.splice(1, 0, this.bokehPass);
+            if (invComposer) {
+                // 既存のパスを一度クリア（RenderPass以外）
+                const baseRenderPass = invComposer.passes[0];
+                const inversionPass = invComposer.passes[invComposer.passes.length - 1];
+                invComposer.passes = [baseRenderPass];
+
+                // シーンのcomposerからパスをコピー（RenderPass以外）
+                if (this.composer) {
+                    this.composer.passes.forEach(pass => {
+                        if (!(pass instanceof RenderPass) && pass.enabled) {
+                            invComposer.addPass(pass);
+                        }
+                    });
                 }
-            } else if (invComposer && this.bokehPass) {
-                // 無効なら削除
-                const idx = invComposer.passes.indexOf(this.bokehPass);
-                if (idx !== -1) invComposer.passes.splice(idx, 1);
+
+                // 最後に色反転パスを追加
+                invComposer.addPass(inversionPass);
             }
 
             // ColorInversionのcomposerがシーンをレンダリングして色反転を適用
@@ -613,10 +677,7 @@ export class SceneBase {
         } else {
             // ポストプロセッシングエフェクトが有効な場合はEffectComposerを使用
             if (this.composer && 
-                ((this.chromaticAberrationPass && this.chromaticAberrationPass.enabled) ||
-                 (this.glitchPass && this.glitchPass.enabled) ||
-                 (this.bokehPass && this.bokehPass.enabled) ||
-                 (this.bloomPass && this.bloomPass.enabled))) {
+                this.composer.passes.some(pass => pass.enabled && !(pass instanceof RenderPass))) {
                 this.composer.render();
             } else {
                 // 通常のレンダリング
@@ -997,6 +1058,12 @@ export class SceneBase {
         if (this.composer) {
             this.composer.dispose();
             this.composer = null;
+        }
+        
+        // DOFの破棄
+        if (this.bokehPass) {
+            this.bokehPass.enabled = false;
+            this.bokehPass = null;
         }
         
         // ColorInversionを破棄

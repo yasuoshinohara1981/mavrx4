@@ -7,7 +7,6 @@ import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { LFO } from '../../lib/LFO.js';
 import { RandomLFO } from '../../lib/RandomLFO.js';
@@ -77,10 +76,9 @@ export class Scene15 extends SceneBase {
         this.studio = null;
         
         // エフェクト設定
-        this.useDOF = true;
+        this.useDOF = true; // SceneBaseのフラグを使用
         this.useBloom = true; 
         this.showMainMesh = true; 
-        this.bokehPass = null;
         this.bloomPass = null;
 
         // ストロボエフェクト管理
@@ -393,8 +391,11 @@ export class Scene15 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.bokehPass = new BokehPass(this.scene, this.camera, { focus: 500, aperture: 0.000005, maxblur: 0.003, width: window.innerWidth, height: window.innerHeight });
-            this.composer.addPass(this.bokehPass);
+            this.initDOF({
+                focus: 500,
+                aperture: 0.000005,
+                maxblur: 0.003
+            });
         }
     }
 
@@ -546,17 +547,7 @@ export class Scene15 extends SceneBase {
 
     updateAutoFocus() {
         if (!this.useDOF || !this.bokehPass || !this.mainMesh) return;
-        this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-        const intersects = this.raycaster.intersectObject(this.mainMesh);
-        let targetDistance;
-        if (intersects.length > 0) targetDistance = intersects[0].distance;
-        else {
-            const targetVec = new THREE.Vector3(0, 0, -1);
-            targetVec.applyQuaternion(this.camera.quaternion);
-            targetDistance = Math.max(100, (this.mainMesh.position.clone().sub(this.camera.position)).dot(targetVec));
-        }
-        const currentFocus = this.bokehPass.uniforms.focus.value;
-        this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * 0.1;
+        super.updateAutoFocus([this.mainMesh]);
     }
 
     updateSwimming(deltaTime) {

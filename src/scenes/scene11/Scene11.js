@@ -4,6 +4,8 @@
 
 import { SceneTemplate } from '../SceneTemplate.js';
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
@@ -13,9 +15,6 @@ import { PlayerParticle } from '../../lib/PlayerParticle.js';
 import { Scene11_CircleEffect } from './Scene11_CircleEffect.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { loadHdrCached } from '../../lib/hdrCache.js';
 import hdri from '../../assets/autumn_field_puresky_1k.hdr';
 
@@ -65,7 +64,7 @@ export class Scene11 extends SceneTemplate {
         // エフェクト設定
         this.useBuildingTextures = false; // 重いので一時的にオフに設定
         this.useBuildingBumpMap = false;  // バンプマップ（ザラザラ感）を使用するかどうかのフラグ
-        this.useDOF = true;              // 被写界深度（DOF）を使用するかどうかのフラグ
+        this.useDOF = true;              // SceneBaseのフラグを使用
 
         // バンプマップ用のノイズテクスチャ
         this.noiseTexture = null;
@@ -75,9 +74,6 @@ export class Scene11 extends SceneTemplate {
                 this.noiseTexture.matrix = new THREE.Matrix3();
             }
         }
-
-        // DOF用のパス
-        this.bokehPass = null;
 
         // プレイヤーパーティクルの初期化（初期高度をさらに低く設定）
         this.player = new PlayerParticle(0, 1.5, 0);
@@ -159,35 +155,12 @@ export class Scene11 extends SceneTemplate {
 
         // DOF（BokehPass）の初期化
         if (this.useDOF) {
-            this.initDOF();
+            this.initDOF({
+                focus: 500.0,
+                aperture: 0.000002,
+                maxblur: 0.0015
+            });
         }
-    }
-
-    /**
-     * DOF（被写界深度）エフェクトを初期化
-     */
-    initDOF() {
-        if (this.bokehPass) return;
-
-        // EffectComposerがなければ作成（SceneBaseのcomposerを利用）
-        if (!this.composer) {
-            this.composer = new EffectComposer(this.renderer);
-            this.composer.addPass(new RenderPass(this.scene, this.camera));
-        }
-
-        const params = {
-            focus: 500.0,
-            aperture: 0.000002, // 0.000005からさらに絞ってピント範囲を拡大
-            maxblur: 0.0015,    // 0.003から半分にしてボケをより自然に
-            width: window.innerWidth,
-            height: window.innerHeight
-        };
-
-        this.bokehPass = new BokehPass(this.scene, this.camera, params);
-        this.bokehPass.enabled = true;
-        this.composer.addPass(this.bokehPass);
-        
-        console.log("DOF (BokehPass) initialized.");
     }
 
     /**
@@ -810,9 +783,7 @@ export class Scene11 extends SceneTemplate {
 
         // DOFの更新（フォーカスをプレイヤーに合わせるなど）
         if (this.useDOF && this.bokehPass && this.player) {
-            const playerPos = this.player.getPosition();
-            const dist = this.camera.position.distanceTo(playerPos);
-            this.bokehPass.uniforms.focus.value = dist;
+            super.updateAutoFocus([this.playerMesh]);
         }
     }
     
@@ -1049,12 +1020,6 @@ export class Scene11 extends SceneTemplate {
         });
         this.demObjects = [];
         
-        // DOFの破棄
-        if (this.bokehPass) {
-            this.bokehPass.enabled = false;
-            this.bokehPass = null;
-        }
-
         // スカイスフィアの破棄
         if (this.skysphere) {
             this.scene.remove(this.skysphere);

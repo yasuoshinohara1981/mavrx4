@@ -6,7 +6,6 @@ import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { StudioBox } from '../../lib/StudioBox.js';
@@ -39,9 +38,8 @@ export class Scene17 extends SceneBase {
         this.cubeRenderTarget = null;
 
         // エフェクト設定
-        this.useDOF = true;
+        this.useDOF = true; // SceneBaseのフラグを使用
         this.useBloom = true; 
-        this.bokehPass = null;
         this.bloomPass = null;
 
         this.trackEffects = {
@@ -237,11 +235,11 @@ export class Scene17 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.bokehPass = new BokehPass(this.scene, this.camera, {
-                focus: 1000, aperture: 0.000005, maxblur: 0.003,
-                width: window.innerWidth, height: window.innerHeight
+            this.initDOF({
+                focus: 1000,
+                aperture: 0.000005,
+                maxblur: 0.003
             });
-            this.composer.addPass(this.bokehPass);
         }
     }
 
@@ -328,13 +326,8 @@ export class Scene17 extends SceneBase {
         
         // オートフォーカス
         if (this.useDOF && this.bokehPass) {
-            this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
             const meshes = this.instancedMeshManagers.map(m => m.getMainMesh());
-            const intersects = this.raycaster.intersectObjects(meshes);
-            let targetDistance = 1500;
-            if (intersects.length > 0) targetDistance = intersects[0].distance;
-            const currentFocus = this.bokehPass.uniforms.focus.value;
-            this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * 0.1;
+            this.updateAutoFocus(meshes);
         }
     }
 
@@ -567,6 +560,7 @@ export class Scene17 extends SceneBase {
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         if (this.staticCubeRenderTarget) this.staticCubeRenderTarget.dispose();
         this.instancedMeshManagers.forEach(m => m.dispose());
+        if (this.bloomPass) { if (this.composer) { const idx = this.bloomPass && this.composer.passes.indexOf(this.bloomPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bloomPass.enabled = false; }
         super.dispose();
     }
 }

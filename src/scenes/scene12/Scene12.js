@@ -6,7 +6,6 @@ import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
@@ -47,12 +46,11 @@ export class Scene12 extends SceneBase {
         this.studio = null;
         
         // エフェクト設定
-        this.useDOF = true;
+        this.useDOF = true; // SceneBaseのフラグを使用
         this.useBloom = true; 
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
         this.useTacoFeet = true;      // 赤い足オン
-        this.bokehPass = null;
         this.bloomPass = null;
         this.ssaoPass = null;
 
@@ -379,15 +377,11 @@ export class Scene12 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            // ピントの芯をクッキリさせつつ、ボケへの移行を自然にするための調整
-            this.bokehPass = new BokehPass(this.scene, this.camera, {
-                focus: 500, 
-                aperture: 0.000005, // 0.00002からさらに絞ってピントの合う範囲を広げる
-                maxblur: 0.003,     // 0.005から下げてボケをマイルドに
-                width: window.innerWidth, 
-                height: window.innerHeight
+            this.initDOF({
+                focus: 500,
+                aperture: 0.000005,
+                maxblur: 0.003
             });
-            this.composer.addPass(this.bokehPass);
         }
     }
 
@@ -436,32 +430,9 @@ export class Scene12 extends SceneBase {
         
         // レイキャストによるオートフォーカス：視線の先にあるオブジェクトにピントを合わせる
         if (this.useDOF && this.bokehPass && this.instancedMeshManager) {
-            // カメラの真ん中（0, 0）からビームを飛ばす
-            this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
-            
-            // インスタンスメッシュとの衝突判定
             const mainMesh = this.instancedMeshManager.getMainMesh();
             if (mainMesh) {
-                const intersects = this.raycaster.intersectObject(mainMesh);
-                
-                let targetDistance;
-                if (intersects.length > 0) {
-                    // 何か当たったら、その一番手前の距離を採用
-                    targetDistance = intersects[0].distance;
-                } else {
-                    // 何も当たらない時は、視線方向の原点投影距離を保険にする
-                    const targetVec = new THREE.Vector3(0, 0, -1);
-                    targetVec.applyQuaternion(this.camera.quaternion);
-                    const toOrigin = new THREE.Vector3(0, 0, 0).sub(this.camera.position);
-                    targetDistance = Math.max(10, toOrigin.dot(targetVec));
-                }
-                
-                // 現在のフォーカス値
-                const currentFocus = this.bokehPass.uniforms.focus.value;
-                
-                // 追従速度（0.2）。ピント送りのような滑らかな動きを維持
-                const lerpFactor = 0.2; 
-                this.bokehPass.uniforms.focus.value = currentFocus + (targetDistance - currentFocus) * lerpFactor;
+                this.updateAutoFocus([mainMesh]);
             }
         }
     }
@@ -748,13 +719,6 @@ export class Scene12 extends SceneBase {
             this.scene.remove(this.lineManager);
             this.lineManager.geometry.dispose();
             this.lineManager.material.dispose();
-        }
-        if (this.bokehPass) {
-            if (this.composer) {
-                const idx = this.composer.passes.indexOf(this.bokehPass);
-                if (idx !== -1) this.composer.passes.splice(idx, 1);
-            }
-            this.bokehPass.enabled = false;
         }
         if (this.ssaoPass) {
             if (this.composer) {

@@ -652,8 +652,8 @@ export class Scene16 extends SceneBase {
         }
 
         // 触手1本あたりの成長幅（重なりを持たせて滑らかにする）
-        // ガッツリ重なりを増やして、より群生感のある生え方にする
-        const growthOverlap = 40.0; 
+        // 250.0 に大幅アップして、1本が伸び切るまでの時間を極限まで長くする
+        const growthOverlap = 250.0; 
         
         // 全体の進捗を触手本数にマッピング
         const totalGrowthSteps = this.tentacleCount + growthOverlap;
@@ -876,8 +876,9 @@ export class Scene16 extends SceneBase {
             // 1. 線形な進捗を計算
             let rawGrowth = Math.max(0, Math.min(1.0, (currentGrowthStep - i) / growthOverlap));
             
-            // 2. Smoothstep で「スッ」とした動きを「ヌルッ」とした動きに変える
-            const individualGrowth = rawGrowth * rawGrowth * (3 - 2 * rawGrowth);
+            // 2. Smootherstep (5次式) で極限まで滑らかに生えるようにする
+            // これで「パッ」と出る感じをなくして「ヌルッ」と生やす
+            const individualGrowth = rawGrowth * rawGrowth * rawGrowth * (rawGrowth * (rawGrowth * 6 - 15) + 10);
             
             const dynamicLength = dynamicLengthBase * individualGrowth;
 

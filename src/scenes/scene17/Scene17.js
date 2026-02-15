@@ -560,6 +560,8 @@ export class Scene17 extends SceneBase {
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         if (this.staticCubeRenderTarget) this.staticCubeRenderTarget.dispose();
         this.instancedMeshManagers.forEach(m => m.dispose());
+        this.instancedMeshManagers = [];
+        this.particles = [];
         if (this.bloomPass) { if (this.composer) { const idx = this.bloomPass && this.composer.passes.indexOf(this.bloomPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bloomPass.enabled = false; }
         super.dispose();
     }

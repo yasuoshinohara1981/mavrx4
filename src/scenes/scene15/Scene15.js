@@ -629,12 +629,18 @@ export class Scene15 extends SceneBase {
         this.initialized = false;
         if (this.studio) this.studio.dispose();
         if (this.mainMesh) {
+            this.scene.remove(this.mainMesh); // シーンから明示的に削除
             this.mainMesh.geometry.dispose();
             this.mainMesh.material.dispose();
             if (this.mainMesh.customDepthMaterial) this.mainMesh.customDepthMaterial.dispose();
+            this.mainMesh = null; // 参照をクリア
         }
         this.fluorescentLights = [];
-        this.scanners.forEach(s => { this.scene.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh.material.dispose(); });
+        this.scanners.forEach(s => { 
+            this.scene.remove(s.mesh); 
+            s.mesh.geometry.dispose(); 
+            s.mesh.material.dispose(); 
+        });
         this.scanners = [];
         super.dispose();
     }

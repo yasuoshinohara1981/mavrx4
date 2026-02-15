@@ -1004,8 +1004,26 @@ export class Scene16 extends SceneBase {
         this.initialized = false;
         if (this.studio) this.studio.dispose();
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
-        this.tentacles.forEach(t => { if (t.mesh.geometry) t.mesh.geometry.dispose(); if (t.mesh.material) t.mesh.material.dispose(); });
-        this.tentacles = []; this.scene.remove(this.tentacleGroup);
+        
+        // 触手のメッシュを確実に破棄
+        this.tentacles.forEach(t => { 
+            if (t.mesh) {
+                this.tentacleGroup.remove(t.mesh);
+                if (t.mesh.geometry) t.mesh.geometry.dispose(); 
+                if (t.mesh.material) t.mesh.material.dispose(); 
+            }
+        });
+        this.tentacles = []; 
+        
+        // コアメッシュを確実に破棄
+        if (this.coreMesh) {
+            this.tentacleGroup.remove(this.coreMesh);
+            if (this.coreMesh.geometry) this.coreMesh.geometry.dispose();
+            if (this.coreMesh.material) this.coreMesh.material.dispose();
+            this.coreMesh = null;
+        }
+        
+        this.scene.remove(this.tentacleGroup);
         if (this.bloomPass) { if (this.composer) { const idx = this.bloomPass && this.composer.passes.indexOf(this.bloomPass); if (idx !== -1) this.composer.passes.splice(idx, 1); } this.bloomPass.enabled = false; }
         super.dispose();
     }

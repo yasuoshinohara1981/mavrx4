@@ -154,6 +154,16 @@ export class StudioBox {
         ctx.fillStyle = '#d0d0d0'; 
         ctx.fillRect(0, 0, size, size);
 
+        // --- 経年劣化風のノイズをベースカラーに追加（控えめに！） ---
+        for (let i = 0; i < 2000; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const s = Math.random() * 1.5 + 0.5;
+            const alpha = Math.random() * 0.02; // 0.05 -> 0.02
+            ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+            ctx.fillRect(x, y, s, s);
+        }
+
         // 目地の線を細く描画
         ctx.strokeStyle = '#808080'; // #c0c0c0 -> #808080 (もう少し黒く)
         ctx.lineWidth = 0.5; 
@@ -230,6 +240,16 @@ export class StudioBox {
         // タイル表面を高く（白）
         bCtx.fillStyle = '#ffffff'; 
         bCtx.fillRect(0, 0, size, size);
+
+        // --- 経年劣化風の凹凸（ノイズ）をバンプマップに追加（控えめに！） ---
+        for (let i = 0; i < 4000; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const s = Math.random() * 2 + 0.5;
+            const gray = Math.floor(Math.random() * 30 + 210); // 180-230 -> 210-240 (より白に近く＝凹みを浅く)
+            bCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+            bCtx.fillRect(x, y, s, s);
+        }
 
         // 目地を細い線で描画（黒/グレーで低くする）
         bCtx.strokeStyle = '#404040'; 

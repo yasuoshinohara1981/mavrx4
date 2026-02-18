@@ -60,6 +60,34 @@ export class InstancedMeshManager {
         this.tempQuaternion = new THREE.Quaternion();
         this.tempPosition = new THREE.Vector3();
         this.tempScale = new THREE.Vector3();
+        this.tempColor = new THREE.Color();
+    }
+    
+    /**
+     * インスタンスの色を設定
+     * @param {number} index - インスタンスのインデックス
+     * @param {THREE.Color|number|string} color - 色
+     */
+    setColorAt(index, color) {
+        if (!this.mainMesh) return;
+        if (index < 0 || index >= this.count) return;
+
+        if (color instanceof THREE.Color) {
+            this.tempColor.copy(color);
+        } else {
+            this.tempColor.set(color);
+        }
+
+        this.mainMesh.setColorAt(index, this.tempColor);
+    }
+
+    /**
+     * 色の更新をマーク
+     */
+    markColorsNeedsUpdate() {
+        if (this.mainMesh && this.mainMesh.instanceColor) {
+            this.mainMesh.instanceColor.needsUpdate = true;
+        }
     }
     
     /**

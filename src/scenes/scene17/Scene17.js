@@ -171,17 +171,16 @@ export class Scene17 extends SceneBase {
     }
 
     createSpheres() {
-        // 完璧な鏡面マテリアル（反射を少し抑えて落ち着かせる！）
-        const mercuryMat = new THREE.MeshStandardMaterial({
-            color: 0xdddddd, 
-            metalness: 0.9,  
-            roughness: 0.1,  
+        // ヒートマップ用の基本マテリアル（デフォルトは黒に近い色）
+        const heatMapMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, // インスタンスカラーを使用するため白に設定
+            metalness: 0.8,  
+            roughness: 0.2,  
             envMap: this.staticCubeRenderTarget.texture, 
             envMapIntensity: 1.0 
         });
 
         // バンプマップ（ノーマルマップ）用のテクスチャを作成
-        // 2250個のスフィアに個別のテクスチャは重いので、共通のノイズテクスチャを生成
         const size = 256;
         const data = new Uint8Array(size * size * 3);
         for (let i = 0; i < size * size * 3; i++) {
@@ -192,14 +191,13 @@ export class Scene17 extends SceneBase {
         noiseTex.wrapT = THREE.RepeatWrapping;
         noiseTex.needsUpdate = true;
 
-        mercuryMat.normalMap = noiseTex;
-        mercuryMat.normalScale.set(0.05, 0.05); // 控えめにボコボコさせる
+        heatMapMat.normalMap = noiseTex;
+        heatMapMat.normalScale.set(0.05, 0.05);
 
-        // ジオメトリの基本サイズを150にする！
-        // ジオメトリの基本サイズを150にする！（ポリゴン数は16x16に抑えて軽量化）
         const sphereGeom = new THREE.SphereGeometry(25, 12, 12); 
         
-        const manager = new InstancedMeshManager(this.scene, sphereGeom, mercuryMat, this.instancesPerType);
+        // マネージャーを1つに戻す
+        const manager = new InstancedMeshManager(this.scene, sphereGeom, heatMapMat, this.instancesPerType);
         this.instancedMeshManagers.push(manager);
 
         for (let i = 0; i < this.sphereCount; i++) {
@@ -210,18 +208,21 @@ export class Scene17 extends SceneBase {
             const y = r * Math.sin(phi) * Math.sin(theta) + 500;
             const z = r * Math.cos(phi);
 
-            // パーティクル内部のスケールは1（等倍）にする
-            const p = new Scene17Particle(x, y, z, 75, new THREE.Vector3(1, 1, 1), 0, i);
-            // Scene17Particle内部で勝手にサイズが変わるのを防ぐために強制上書き！
-            p.scale.set(1, 1, 1);
-            p.radius = 75; // 半径も固定！
+            const randomScale = 0.5 + Math.random() * 1.0;
+            const p = new Scene17Particle(x, y, z, 75 * randomScale, new THREE.Vector3(randomScale, randomScale, randomScale), 0, i);
+            p.scale.set(randomScale, randomScale, randomScale);
+            p.radius = 75 * randomScale; 
             this.particles.push(p);
             
-            // インスタンスのスケールも1（等倍）で設定（初期状態は画面外へ！）
-            manager.setMatrixAt(i, new THREE.Vector3(0, -10000, 0), p.rotation, new THREE.Vector3(0, 0, 0));
+            // 初期状態は画面外へ
+            manager.setMatrixAt(i, new THREE.Vector3(0, -10000, 0), p.rotation, p.scale);
+            manager.setColorAt(i, new THREE.Color(0x050505)); // デフォルトは黒
         }
         
-        manager.markNeedsUpdate();
+        this.instancedMeshManagers.forEach(m => {
+            m.markNeedsUpdate();
+            m.markColorsNeedsUpdate();
+        });
         this.setParticleCount(this.sphereCount);
     }
 
@@ -342,14 +343,13 @@ export class Scene17 extends SceneBase {
         const manager = this.instancedMeshManagers[0];
         if (!manager) return;
 
+        const tempColor = new THREE.Color();
+
         this.particles.forEach((p, i) => {
             // 現在の表示数を超えているパーティクルは更新しない（または画面外へ飛ばす）
             if (i >= this.currentVisibleCount) {
                 // 画面外へ飛ばして見えなくする
-                const manager = this.instancedMeshManagers[0];
-                if (manager) {
-                    manager.setMatrixAt(i, new THREE.Vector3(0, -10000, 0), p.rotation, new THREE.Vector3(0, 0, 0));
-                }
+                manager.setMatrixAt(i, new THREE.Vector3(0, -10000, 0), p.rotation, new THREE.Vector3(0, 0, 0));
                 return;
             }
 
@@ -480,18 +480,25 @@ export class Scene17 extends SceneBase {
             p.rotation.y += 0.1;  // 0.02 -> 0.1
             p.rotation.z += 0.03; // 追加！
 
-            // 行列の更新（サイズを1（等倍）で反映！これで絶対に直径150固定や！）
-            const targetManager = this.instancedMeshManagers[0];
-            if (targetManager) {
-                const finalScale = new THREE.Vector3(1, 1, 1);
-                
-                // 【修正】パーティクルの回転（p.rotation）を行列に反映させるで！
-                // これで環境マップの映り込みが回転と一緒に動くようになるはずや！
-                targetManager.setMatrixAt(i, p.position, p.rotation, finalScale);
-            }
+            // 行列の更新（ランダムなサイズを反映！）
+            manager.setMatrixAt(i, p.position, p.rotation, p.scale);
+
+            // --- モノクロ・ヒートマップ色の計算 ---
+            // 速度（velocity）の大きさを力として扱う
+            const speed = p.velocity.length();
+            const maxSpeedForColor = 800; // 400 -> 800 バランス調整
+            const normSpeed = Math.min(speed / maxSpeedForColor, 1.0);
+
+            // 黒 (0,0,0) -> 白 (1,1,1) のシンプルなグラデーション
+            // 指数関数（2.0乗）を使って、本当に速い時だけシルバーになるようにする
+            const brightness = 0.05 + Math.pow(normSpeed, 2.0) * 0.95; 
+            tempColor.setRGB(brightness, brightness, brightness);
+
+            manager.setColorAt(i, tempColor);
         });
 
-        this.instancedMeshManagers[0].markNeedsUpdate();
+        manager.markNeedsUpdate();
+        manager.markColorsNeedsUpdate();
     }
 
     handleOSC(message) {

@@ -289,22 +289,23 @@ export class Scene16 extends SceneBase {
             const theta = clusterTheta + (Math.random() - 0.5) * 1.2;
 
             const baseThickness = 12 + Math.pow(Math.random(), 2.0) * 60;
-            const r = baseRadius + 400;
+            const r = baseRadius + 400; 
 
             // 個性（群れを外れる確率など）を保存
             const rebellionFactor = Math.random() > 0.8 ? 1.0 : 0.0; // 20%の確率で反抗的
             const coilDirection = Math.random() > 0.5 ? 1.0 : -1.0; // 内巻きか外巻きか
 
-            // 1点目：コアの表面（歪みを考慮して少し内側）からスタート
-            // 根本をコアの表面に固定するため、(0,0,0)ではなく表面の座標を計算
+            // 1点目：コアのさらに中心深くからスタート
+            // コアが縮んだ時（scaleが小さくなった時）でも浮かないように、
+            // 半径の 10% くらいの位置まで下げて、実質的に「中心点」に近い場所から生やす
             const startPoint = new THREE.Vector3(
-                baseRadius * 0.7 * Math.sin(theta) * Math.cos(phi),
-                baseRadius * 0.7 * Math.cos(theta),
-                baseRadius * 0.7 * Math.sin(theta) * Math.sin(phi)
+                baseRadius * 0.1 * Math.sin(theta) * Math.cos(phi),
+                baseRadius * 0.1 * Math.cos(theta),
+                baseRadius * 0.1 * Math.sin(theta) * Math.sin(phi)
             );
             points.push(startPoint);
 
-            const midDist = baseRadius + 200;
+            const midDist = baseRadius * 0.5; // 中間点もコアの内部に配置して、生え際を安定させる
             const midPoint = new THREE.Vector3(
                 midDist * Math.sin(theta + (Math.random()-0.5)*0.5) * Math.cos(phi + (Math.random()-0.5)*0.5),
                 midDist * Math.cos(theta + (Math.random()-0.5)*0.5),
@@ -631,12 +632,14 @@ export class Scene16 extends SceneBase {
         // OSCが来ていない場合（0の場合）は、自前の time を使ってシミュレーションする
         let smoothPhase;
         if (this.actualTick === 0 && this.phase === 0) {
-            // デバッグ用：OSCがない時は20秒で1周するシミュレーション
-            smoothPhase = (this.time % 20.0) / 20.0 * 12.0;
+            // デバッグ用：OSCがない時は60秒で1周するシミュレーション
+            smoothPhase = (this.time % 60.0) / 60.0 * 12.0;
         } else {
-            // フェーズ内の進捗を正しく計算（1フェーズ = 3072 ticks）
-            // actualTick % 3072 / 3072 で 0.0〜1.0 の進捗を出す
-            smoothPhase = this.phase + (this.actualTick % ticksPerPhase) / ticksPerPhase;
+            // 【修正】actualTick が 36864 (96小節) でループすることを考慮する
+            // 1ループ = 36864 ticks
+            const totalTicks = 36864;
+            const currentTick = this.actualTick % totalTicks;
+            smoothPhase = (currentTick / totalTicks) * 12.0;
         }
         
         let globalGrowthProgress = 0;
@@ -648,12 +651,12 @@ export class Scene16 extends SceneBase {
             globalGrowthProgress = 1.0;
         } else {
             // phase 8-12: 1.0 -> 0.0
+            // smoothPhase が 12 を超えても、ここで 0 以下になるようにクランプ
             globalGrowthProgress = Math.max(0, 1.0 - (smoothPhase - 8) / 4.0);
         }
 
         // 触手1本あたりの成長幅（重なりを持たせて滑らかにする）
-        // 250.0 に大幅アップして、1本が伸び切るまでの時間を極限まで長くする
-        const growthOverlap = 250.0; 
+        const growthOverlap = 50.0; 
         
         // 全体の進捗を触手本数にマッピング
         const totalGrowthSteps = this.tentacleCount + growthOverlap;
@@ -865,12 +868,14 @@ export class Scene16 extends SceneBase {
             this.smoothMaxLFO += (targetMaxLFO - this.smoothMaxLFO) * deltaTime * 0.5; 
             
             // 【初期値の徹底固定】ベースを 0.1 にし、最大長を LFO で揺らす
-            const currentMaxScale = 0.5 + this.smoothMaxLFO * 6.0; 
+            // currentMaxScale が 0.5 + 0.08 * 6.0 = 0.98 くらいやと、dynamicLengthBase は最大 1.08 程度
+            // もっとダイナミックに伸ばしたいなら、ここをガツンと上げるやで！
+            const currentMaxScale = 1.0 + this.smoothMaxLFO * 12.0; 
             
             const rawNoise = lengthNoiseBase * 0.5 + 0.5; // 0.0 〜 1.0
             // 5次式の Smoothstep (Smootherstep) で極限まで滑らかに
             const smoothNoise = rawNoise * rawNoise * rawNoise * (rawNoise * (rawNoise * 6 - 15) + 10);
-            const dynamicLengthBase = 0.1 + smoothNoise * currentMaxScale;
+            const dynamicLengthBase = 0.2 + smoothNoise * currentMaxScale;
 
             // 【時間的変化：個別の成長（1本ずつ、かつシームレスに）】
             // 1. 線形な進捗を計算

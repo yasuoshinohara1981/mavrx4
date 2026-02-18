@@ -17,7 +17,7 @@ export class Scene17 extends SceneBase {
         this.title = 'Mercury Mirror';
         this.initialized = false;
         this.sceneNumber = 17;
-        this.kitNo = 13;
+        this.kitNo = 36;
         
         this.sharedResourceManager = sharedResourceManager;
         this.raycaster = new THREE.Raycaster();

@@ -26,6 +26,9 @@ export class Scene13Particle extends Particle {
         this.radiusOffset = 0.8 + Math.random() * 0.4; 
         this.phaseOffset = Math.random() * Math.PI * 2; 
         
+        // 螺旋モード用：上昇速度のノイズ（0.5 〜 1.5倍）
+        this.spiralSpeedFactor = 0.5 + Math.random() * 1.0;
+        
         // 螺旋モードでの担当高度を固定（0.0 〜 1.0）
         this.spiralHeightFactor = Math.random();
         

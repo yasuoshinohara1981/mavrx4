@@ -52,8 +52,9 @@ export class Scene13 extends SceneBase {
         this.ssaoPass = null;
 
         // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
+        // トラック1（カメラランダマイズ）だけはデフォルトでオンにするやで！😎
         for (let i = 1; i <= 9; i++) {
-            this.trackEffects[i] = false;
+            this.trackEffects[i] = (i === 1);
         }
 
         // トラック6用エフェクト管理
@@ -66,6 +67,10 @@ export class Scene13 extends SceneBase {
         this.currentMode = this.MODE_DEFAULT; // 最初は引力モードから開始
         this.modeTimer = 0;
         this.modeInterval = 10.0; // 10秒ごとにランダムに切り替え
+        
+        // モード選択履歴（全モードを一回以上選択させるため）
+        this.modeHistory = new Set([this.MODE_DEFAULT]);
+        this.totalModeCount = 10; // MODE_DEFAULT(0) から MODE_DEFORM(9) まで
         
         // 色管理用
         this.boxColors = new Float32Array(this.sphereCount * 3);
@@ -478,25 +483,61 @@ export class Scene13 extends SceneBase {
                 1.5  // DEFORM 
             ];
             
-            const totalWeight = weights.reduce((a, b) => a + b, 0);
-            let random = Math.random() * totalWeight;
-            let nextMode = 0;
-            
-            for (let i = 0; i < weights.length; i++) {
-                if (random < weights[i]) {
-                    nextMode = i;
-                    break;
+            // 未選択のモードがあるかチェック
+            const unvisitedModes = [];
+            for (let i = 0; i < this.totalModeCount; i++) {
+                if (!this.modeHistory.has(i)) {
+                    unvisitedModes.push(i);
                 }
-                random -= weights[i];
             }
-            
-            // 現在のモードと同じなら再抽選（確率は維持）
-            if (nextMode === this.currentMode) {
-                nextMode = (nextMode + 1) % 10;
+
+            let nextMode = -1;
+
+            if (unvisitedModes.length > 0) {
+                // 未選択のモードがある場合は、その中から重み付きで選ぶ
+                let subTotalWeight = 0;
+                unvisitedModes.forEach(m => subTotalWeight += weights[m]);
+                
+                let random = Math.random() * subTotalWeight;
+                for (const m of unvisitedModes) {
+                    if (random < weights[m]) {
+                        nextMode = m;
+                        break;
+                    }
+                    random -= weights[m];
+                }
+                // 万が一漏れたら最初の未選択モード
+                if (nextMode === -1) nextMode = unvisitedModes[0];
+            } else {
+                // 全モード一周した後は通常通り（ただし今のモード以外）
+                const totalWeight = weights.reduce((a, b) => a + b, 0);
+                let random = Math.random() * totalWeight;
+                
+                for (let i = 0; i < weights.length; i++) {
+                    if (random < weights[i]) {
+                        nextMode = i;
+                        break;
+                    }
+                    random -= weights[i];
+                }
+                
+                // 現在のモードと同じなら再抽選
+                if (nextMode === this.currentMode) {
+                    nextMode = (nextMode + 1) % this.totalModeCount;
+                }
             }
             
             this.currentMode = nextMode;
-            console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted)`);
+            this.modeHistory.add(nextMode);
+
+            // 全モード一周したら履歴をリセットして、また全モード選ばれるようにする
+            if (this.modeHistory.size >= this.totalModeCount) {
+                console.log("All modes visited at least once! Resetting history.");
+                this.modeHistory.clear();
+                this.modeHistory.add(this.currentMode); // 現在のモードは既読にする
+            }
+
+            console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted, History: ${this.modeHistory.size}/${this.totalModeCount})`);
 
             // モードフラグの更新（updatePhysicsで使用）
             this.useGravity = (this.currentMode === this.MODE_GRAVITY);
@@ -568,17 +609,25 @@ export class Scene13 extends SceneBase {
                 if (this.currentMode === this.MODE_SPIRAL) {
                     const side = (idx % 2 === 0) ? 1 : -1;
                     const rotationSpeed = 1.5;
-                    // はみ出し粒子は半径を大きく外側に散らす
-                    const radius = 350 * p.radiusOffset * p.strayRadiusOffset; 
-                    const angle = (this.time * rotationSpeed) + (p.position.y * 0.003) + (side === 1 ? 0 : Math.PI) + (p.phaseOffset * 0.05);
+                    // 螺旋の半径（太さ）をさらにガッツリ広げる（400 -> 800）
+                    const radius = 800 * p.radiusOffset * p.strayRadiusOffset; 
+                    
+                    // 下から上へ移動（ループ処理は境界判定で行う）
+                    const verticalSpeed = 15.0 * p.spiralSpeedFactor; // 基本速度15 + 個体差
+                    p.position.y += verticalSpeed * dt * 60;
+                    
+                    // Y座標に応じた回転角度
+                    // カーブを 0.015 から 0.006 に戻して少しキツめを維持
+                    // 位相のズレを 1.5 から 0.3 に戻して、交差ポイントを適度に離す
+                    const angle = (this.time * rotationSpeed) + (p.position.y * 0.006) + (side === 1 ? 0.3 : Math.PI + 0.3) + (p.phaseOffset * 0.05);
                     const targetX = Math.cos(angle) * radius;
                     const targetZ = Math.sin(angle) * radius;
                     
-                    p.velocity.y *= 0.99; 
+                    p.velocity.y *= 0.9; // Y方向の速度は直接加算するので摩擦を強める
                     
-                    // はみ出し粒子（Stray）は引力を極限まで弱めて「漂わせる」
-                    const spiralSpringK = 0.02 * p.strayFactor; // 0.1 -> 0.02
-                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0.1 * p.strayFactor, (targetZ - p.position.z) * spiralSpringK); // 0.4 -> 0.1
+                    // XZ平面での引力
+                    const spiralSpringK = 0.05 * p.strayFactor;
+                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0, (targetZ - p.position.z) * spiralSpringK);
                     p.addForce(tempVec);
 
                 } else if (this.currentMode === this.MODE_TORUS) {
@@ -729,8 +778,8 @@ export class Scene13 extends SceneBase {
                     // 螺旋モード以外でも高く昇れるようにする
                     if (p.position.y > 4500) { 
                         if (this.currentMode === this.MODE_SPIRAL) {
-                            p.position.y = -500; // 螺旋は循環
-                            p.velocity.y *= 0.5;
+                            p.position.y = -450; // 下端から再出現
+                            p.velocity.y *= 0.1; // 勢いをリセット
                         } else {
                             p.position.y = 4500; // 他は跳ね返り
                             p.velocity.y *= -0.3; // 0.5 -> 0.3

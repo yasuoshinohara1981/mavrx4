@@ -228,11 +228,6 @@ function handleKeyDown(e) {
             // Ctrl+8でScene18に切り替え（index 17）
             sceneManager.switchScene(17);
             return;
-        } else if (e.key === '8' && isCtrlPressed) {
-            e.preventDefault();
-            // Ctrl+8でScene18に切り替え（index 17）
-            sceneManager.switchScene(17);
-            return;
         } else if (e.key === '0' && isCtrlPressed) {
             e.preventDefault();
             // Ctrl+0でScene20に切り替え（index 19）

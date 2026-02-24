@@ -1,6 +1,7 @@
 /**
- * Scene18: Sky & Terrain Test
- * 地面(Terrain)と空(Skydome)のテストシーン
+ * Scene18: Glowing Tiles
+ * 床のタイルがトラック6で光り、せり出すシーン
+ * 色はベロシティに応じたヒートマップ
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -8,39 +9,50 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { LFO } from '../../lib/LFO.js';
-import { RandomLFO } from '../../lib/RandomLFO.js';
-import { Scene18Particle } from './Scene18Particle.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { StudioBox } from '../../lib/StudioBox.js';
 
 export class Scene18 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Infinite Dune';
+        this.title = 'Glowing Tiles';
         this.initialized = false;
         this.sceneNumber = 18;
-        this.kitNo = 18; 
+        this.kitNo = 18;
         
         this.sharedResourceManager = sharedResourceManager;
-        this.terrain = null;
-        this.skydome = null;
-        this.terrainMaterial = null;
+        this.raycaster = new THREE.Raycaster();
+        
+        // タイル関連
+        this.tileInstances = null;
+        this.impactData = new Array(50).fill(null);
+        this.impactIndex = 0;
+        this.lastImpactTime = 0;
+        this.lastImpactPos = new THREE.Vector2(0, 0);
 
+        // 撮影用スタジオ
+        this.studio = null;
+        
+        // エフェクト設定
         this.useDOF = true; 
         this.useBloom = true; 
         this.bloomPass = null;
 
+        // ストロボエフェクト管理
+        this.strobeActive = false;
+        this.strobeEndTime = 0;
+
         this.trackEffects = {
-            1: false, 2: true, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
+            1: true, 2: true, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
         };
 
-        this.moveSpeed = 400.0;
         this.setScreenshotText(this.title);
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        cameraParticle.minDistance = 0;
-        cameraParticle.maxDistance = Infinity; 
-        cameraParticle.minY = -Infinity; 
+        cameraParticle.minDistance = 400;
+        cameraParticle.maxDistance = 5000;
+        cameraParticle.minY = -450; 
     }
 
     async setup() {
@@ -50,172 +62,233 @@ export class Scene18 extends SceneBase {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.3;
 
-        this.camera.position.set(0, 300, 1000);
-        this.camera.lookAt(0, 300, -1000);
+        this.camera.position.set(0, 500, 2000);
+        this.camera.lookAt(0, 200, 0);
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+        // CubeCameraのセットアップ
+        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { 
+            generateMipmaps: true, 
+            minFilter: THREE.LinearMipmapLinearFilter 
+        });
+        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget);
+        this.cubeCamera.position.set(0, 500, 0);
+        this.scene.add(this.cubeCamera);
+
         this.setupLights();
-        this.createSkydome();
-        this.createTerrain();
+        this.createStudioBox();
+        this.createTiles();
         this.initPostProcessing();
         this.initialized = true;
     }
 
     setupLights() {
-        const hemiLight = new THREE.HemisphereLight(0xffaa88, 0x442200, 1.2);
+        const pureWhite = 0xffffff; 
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0xffffff, 0.8);
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(0xffccaa, 0.4);
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.8);
         this.scene.add(ambientLight);
 
-        const sunLight = new THREE.DirectionalLight(0xffddaa, 3.5); 
-        sunLight.position.set(2000, 1000, -2000); 
-        sunLight.castShadow = true;
-        
-        const shadowSize = 15000; 
-        sunLight.shadow.camera.left = -shadowSize;
-        sunLight.shadow.camera.right = shadowSize;
-        sunLight.shadow.camera.top = shadowSize;
-        sunLight.shadow.camera.bottom = -shadowSize;
-        sunLight.shadow.camera.near = 0.5;
-        sunLight.shadow.camera.far = 30000;
-        sunLight.shadow.mapSize.width = 2048;
-        sunLight.shadow.mapSize.height = 2048;
-        sunLight.shadow.bias = -0.0005;
-        this.scene.add(sunLight);
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 4.0);
+        directionalLight.position.set(2000, 4000, 2000);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.camera.left = -8000;
+        directionalLight.shadow.camera.right = 8000;
+        directionalLight.shadow.camera.top = 8000;
+        directionalLight.shadow.camera.bottom = -8000;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.bias = -0.0001;
+        this.scene.add(directionalLight);
+
+        const pointLight = new THREE.PointLight(pureWhite, 3.0, 15000);
+        pointLight.decay = 1.0; 
+        pointLight.position.set(0, 3000, 0); 
+        this.scene.add(pointLight);
     }
 
-    createSkydome() {
-        const geometry = new THREE.SphereGeometry(80000, 64, 64); 
-        const loader = new THREE.TextureLoader();
-        const skyTexture = loader.load('./assets/sky_sunset.png', (texture) => {
-            console.log('✅ Sky texture loaded successfully');
-            texture.colorSpace = THREE.SRGBColorSpace;
-            texture.needsUpdate = true;
+    createStudioBox() {
+        this.studio = new StudioBox(this.scene, {
+            size: 10000,
+            color: 0xbbbbbb,
+            roughness: 0.2, 
+            metalness: 0.8, 
+            lightColor: 0xffffff,
+            lightIntensity: 2.8,
+            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+            envMapIntensity: 1.3,
+            useFloorTile: false 
         });
-
-        const material = new THREE.MeshBasicMaterial({
-            map: skyTexture,
-            side: THREE.BackSide,
-            depthWrite: false,
-            depthTest: true
-        });
-
-        this.skydome = new THREE.Mesh(geometry, material);
-        this.skydome.renderOrder = -1000;
-        this.skydome.rotation.y = Math.PI;
-        this.scene.add(this.skydome);
     }
 
-    getTerrainHeight(worldX, worldZ) {
-        // あの伝説のダブル・ドメインワーピング・ノイズ🏜️✨
-        const warp1X = worldX + Math.sin(worldZ * 0.0004 + worldX * 0.0001) * 1200.0;
-        const warp1Z = worldZ + Math.cos(worldX * 0.0004 + worldZ * 0.0001) * 1200.0;
-        const warp2X = warp1X + Math.sin(warp1Z * 0.002) * 300.0;
-        const warp2Z = warp1Z + Math.cos(warp1X * 0.002) * 300.0;
+    createTiles() {
+        const size = 10000;
+        const segments = 50; 
+        const step = size / segments;
         
-        let h = 0;
-        let n1 = Math.sin(warp2X * 0.00035 + Math.cos(warp2Z * 0.0002) * 2.0);
-        let ridge1 = Math.pow(1.0 - Math.abs(n1), 4.0);
-        const mask = Math.abs(Math.sin(worldX * 0.0001) * Math.cos(worldZ * 0.00015));
-        h += ridge1 * 1800.0 * (0.3 + mask * 1.2);
-        
-        let n2 = Math.sin(warp2Z * 0.0008 - warp2X * 0.0004);
-        let ridge2 = 1.0 - Math.abs(n2);
-        h += ridge2 * 600.0 * (0.2 + Math.abs(Math.sin(worldX * 0.0002)) * 0.8);
-        
-        const rippleAngle = Math.sin(worldX * 0.0001 + worldZ * 0.0001) * Math.PI;
-        const rx = worldX * Math.cos(rippleAngle) - worldZ * Math.sin(rippleAngle);
-        h += Math.sin(rx * 0.025) * 12.0 * ridge1;
-        
-        h += (Math.sin(worldX * 0.005) * Math.cos(worldZ * 0.005)) * 40.0;
-        return h - 500.0;
-    }
+        // 1. ベースとなる床
+        const floorGeo = new THREE.PlaneGeometry(size, size);
+        floorGeo.rotateX(-Math.PI / 2);
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: this.studio.floorTextures.map,
+            bumpMap: this.studio.floorTextures.bumpMap,
+            roughness: 0.05,
+            metalness: 0.9,
+            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+            envMapIntensity: 1.5
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.position.y = -499;
+        floor.receiveShadow = true;
+        this.scene.add(floor);
 
-    createTerrain() {
-        const size = 30000; 
-        const segments = 512; 
-        const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
-        geometry.rotateX(-Math.PI / 2);
-
-        const material = new THREE.MeshStandardMaterial({
-            color: 0xc2a278, 
-            roughness: 0.8,
-            metalness: 0.1,
-            side: THREE.DoubleSide
+        // 2. せり出すタイル（RoundedBoxGeometryで角丸に！）
+        const boxGeo = new RoundedBoxGeometry(step, 2000, step, 2, 5); 
+        const boxMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff, 
+            map: this.studio.floorTextures.map,
+            bumpMap: this.studio.floorTextures.bumpMap,
+            roughness: 0.05,
+            metalness: 0.9,
+            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+            envMapIntensity: 1.5,
+            transparent: false,
+            opacity: 1.0
         });
 
-        material.onBeforeCompile = (shader) => {
+        // シェーダーでUVを調整して、床のテクスチャと位置を合わせる
+        boxMat.onBeforeCompile = (shader) => {
             shader.vertexShader = `
-                varying float vHeight;
-                
-                float getRidge(vec2 p) {
-                    vec2 w1 = p + vec2(sin(p.y * 0.0004 + p.x * 0.0001), cos(p.x * 0.0004 + p.y * 0.0001)) * 1200.0;
-                    vec2 w2 = w1 + vec2(sin(w1.y * 0.002), cos(w1.x * 0.002)) * 300.0;
-                    float n1 = sin(w2.x * 0.00035 + cos(w2.y * 0.0002) * 2.0);
-                    float r1 = pow(1.0 - abs(n1), 4.0);
-                    float mask = abs(sin(p.x * 0.0001) * cos(p.y * 0.00015));
-                    float h = r1 * 1800.0 * (0.3 + mask * 1.2);
-                    float n2 = sin(w2.y * 0.0008 - w2.x * 0.0004);
-                    float r2 = 1.0 - abs(n2);
-                    h += r2 * 600.0 * (0.2 + abs(sin(p.x * 0.0002)) * 0.8);
-                    float rippleAngle = sin(p.x * 0.0001 + p.y * 0.0001) * 3.14159;
-                    float rx = p.x * cos(rippleAngle) - p.y * sin(rippleAngle);
-                    h += sin(rx * 0.025) * 12.0 * r1;
-                    h += (sin(p.x * 0.005) * cos(p.y * 0.005)) * 40.0;
-                    return h - 500.0;
-                }
-            ` + shader.vertexShader;
-
-            shader.vertexShader = shader.vertexShader.replace(
-                '#include <beginnormal_vertex>',
+                varying vec3 vInstanceWorldPos;
+                varying vec2 vMyUv;
+                ${shader.vertexShader}
+            `.replace(
+                `#include <worldpos_vertex>`,
+                `#include <worldpos_vertex>
+                vInstanceWorldPos = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                vMyUv = uv;`
+            );
+            shader.fragmentShader = `
+                varying vec3 vInstanceWorldPos;
+                varying vec2 vMyUv;
+                ${shader.fragmentShader}
+            `.replace(
+                `#include <map_fragment>`,
                 `
-                #include <beginnormal_vertex>
-                float delta = 1.0;
-                vec4 wPos = modelMatrix * vec4(position, 1.0);
-                float h0 = getRidge(wPos.xz);
-                float h1 = getRidge(wPos.xz + vec2(delta, 0.0));
-                float h2 = getRidge(wPos.xz + vec2(0.0, delta));
-                vec3 v1 = vec3(delta, h1 - h0, 0.0);
-                vec3 v2 = vec3(0.0, h2 - h0, delta);
-                objectNormal = normalize(cross(v2, v1));
+                #ifdef USE_MAP
+                    vec2 floorUv = (vInstanceWorldPos.xz + 5000.0) / 10000.0;
+                    vec2 localOffset = (vMyUv - 0.5) / 50.0; 
+                    vec4 sampledColor = texture2D( map, floorUv + localOffset );
+                    diffuseColor *= sampledColor;
+                #endif
                 `
             );
-
-            shader.vertexShader = shader.vertexShader.replace(
-                '#include <begin_vertex>',
-                `
-                #include <begin_vertex>
-                transformed.y = getRidge(wPos.xz);
-                vHeight = transformed.y;
-                `
-            );
-            this.terrainMaterial = shader;
         };
 
-        this.terrain = new THREE.Mesh(geometry, material);
-        this.terrain.receiveShadow = true;
-        this.terrain.castShadow = true;
-        this.scene.add(this.terrain);
-        this.scene.fog = new THREE.FogExp2(0xffaa88, 0.00006);
+        this.tileInstances = new THREE.InstancedMesh(boxGeo, boxMat, 50); 
+        this.tileInstances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.tileInstances.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(50 * 3), 3);
+        this.tileInstances.castShadow = true;
+        this.tileInstances.receiveShadow = true;
+        this.tileInstances.frustumCulled = false;
+        this.scene.add(this.tileInstances);
+
+        const dummy = new THREE.Object3D();
+        for (let i = 0; i < 50; i++) {
+            dummy.position.set(0, -5000, 0);
+            dummy.updateMatrix();
+            this.tileInstances.setMatrixAt(i, dummy.matrix);
+        }
     }
 
-    updateCamera() {
-        if (this.cameraParticles[this.currentCameraIndex]) {
-            const cp = this.cameraParticles[this.currentCameraIndex];
-            const basePos = cp.getPosition();
-            const terrainH = this.getTerrainHeight(basePos.x, basePos.z);
-            const walkingHeight = 250; 
-            const targetY = terrainH + walkingHeight;
-            this.camera.position.x = basePos.x;
-            this.camera.position.y += (targetY - this.camera.position.y) * 0.1;
-            this.camera.position.z = basePos.z;
-            const lookAtTarget = new THREE.Vector3(basePos.x, targetY * 0.8, basePos.z - 1000);
-            this.camera.lookAt(lookAtTarget);
-            this.camera.updateMatrixWorld();
+    onUpdate(deltaTime) {
+        if (!this.initialized) return;
+        this.time += deltaTime;
+
+        if (this.tileInstances) {
+            const dummy = new THREE.Object3D();
+            for (let i = 0; i < 50; i++) {
+                if (this.impactData[i]) {
+                    const data = this.impactData[i];
+                    const age = this.time - data.time;
+                    
+                    if (age >= 0 && age < 4.0) {
+                        // デュレーション（duration）を高さに反映させるやで！
+                        // durationが長いほど、ゆっくり高くせり出す感じや
+                        const liftHeight = data.duration / 1000.0 * 500.0; // 1秒あたり500ユニット
+                        const lift = data.intensity * liftHeight * Math.exp(-age * (2000.0 / data.duration));
+                        dummy.position.set(data.x, -1000 + lift, data.z); 
+                        dummy.updateMatrix();
+                        this.tileInstances.setMatrixAt(i, dummy.matrix);
+                        
+                        const col = this.getHeatmapColor(data.intensity);
+                        this.tileInstances.instanceColor.setXYZ(i, col.r * 5.0, col.g * 5.0, col.b * 5.0);
+                    } else {
+                        dummy.position.set(0, -5000, 0);
+                        dummy.updateMatrix();
+                        this.tileInstances.setMatrixAt(i, dummy.matrix);
+                    }
+                }
+            }
+            this.tileInstances.instanceMatrix.needsUpdate = true;
+            this.tileInstances.instanceColor.needsUpdate = true;
         }
+
+        if (this.strobeActive) {
+            if (Date.now() > this.strobeEndTime) { 
+                this.strobeActive = false; 
+            }
+        }
+
+        if (this.cubeCamera && Math.floor(this.time * 60) % 2 === 0) {
+            this.cubeCamera.update(this.renderer, this.scene);
+        }
+        this.updateAutoFocus();
+    }
+
+    getHeatmapColor(v) {
+        const blue = new THREE.Color(0.0, 0.1, 0.5);
+        const cyan = new THREE.Color(0.0, 1.0, 1.0);
+        const green = new THREE.Color(0.0, 1.0, 0.0);
+        const yellow = new THREE.Color(1.0, 1.0, 0.0);
+        const red = new THREE.Color(1.0, 0.0, 0.0);
+        if (v < 0.25) return blue.clone().lerp(cyan, v * 4.0);
+        if (v < 0.5) return cyan.clone().lerp(green, (v - 0.25) * 4.0);
+        if (v < 0.75) return green.clone().lerp(yellow, (v - 0.5) * 4.0);
+        return yellow.clone().lerp(red, (v - 0.75) * 4.0);
+    }
+
+    triggerImpact(velocity = 127, durationMs = 500) {
+        const intensity = velocity / 127.0;
+        const now = this.time;
+        const timeDiff = now - this.lastImpactTime;
+        
+        let x, z;
+        const size = 10000;
+        const segments = 50; 
+        const step = size / segments;
+
+        if (timeDiff < 1.0) {
+            const range = 1500; 
+            x = this.lastImpactPos.x + (Math.random() - 0.5) * range;
+            z = this.lastImpactPos.y + (Math.random() - 0.5) * range;
+        } else {
+            x = (Math.random() - 0.5) * 8000;
+            z = (Math.random() - 0.5) * 8000;
+        }
+        
+        x = Math.floor((x + size/2) / step) * step - size/2 + step/2;
+        z = Math.floor((z + size/2) / step) * step - size/2 + step/2;
+        
+        this.impactData[this.impactIndex % 50] = { x, z, intensity, time: now, duration: durationMs };
+        
+        this.lastImpactPos.set(x, z);
+        this.lastImpactTime = now;
+        this.impactIndex++;
     }
 
     initPostProcessing() {
@@ -223,54 +296,62 @@ export class Scene18 extends SceneBase {
             this.composer = new EffectComposer(this.renderer);
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
-        this.initChromaticAberration();
         if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.0);
+            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.1, 1.2);
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.initDOF({ focus: 1000, aperture: 0.000005, maxblur: 0.005 });
+            this.initDOF({
+                focus: 500,
+                aperture: 0.000005,
+                maxblur: 0.003
+            });
         }
     }
 
-    onUpdate(deltaTime) {
-        if (!this.initialized) return;
-        this.time += deltaTime;
-        if (this.cameraParticles[this.currentCameraIndex]) {
-            const cp = this.cameraParticles[this.currentCameraIndex];
-            cp.position.z -= this.moveSpeed * deltaTime;
+    handleOSC(message) {
+        super.handleOSC(message);
+    }
+
+    handleTrackNumber(trackNumber, message) {
+        if (trackNumber === 2) {
+            const args = message.args || [];
+            const durationMs = (args.length >= 3) ? args[2] : 500;
+            this.strobeActive = true; 
+            this.strobeEndTime = Date.now() + durationMs;
         }
-        if (this.terrain) {
-            const gridSize = 30000 / 512;
-            const snapX = Math.floor(this.camera.position.x / gridSize) * gridSize;
-            const snapZ = Math.floor(this.camera.position.z / gridSize) * gridSize;
-            this.terrain.position.set(snapX, 0, snapZ);
+        if (trackNumber === 6) {
+            const args = message.args || [];
+            const velocity = args[1] !== undefined ? args[1] : 127;
+            const durationMs = args[2] !== undefined ? args[2] : 500;
+            this.triggerImpact(velocity, durationMs);
         }
-        this.updateCamera();
-        this.updateAutoFocus();
-        if (this.skydome) this.skydome.position.copy(this.camera.position);
     }
 
     updateAutoFocus() {
-        if (!this.useDOF || !this.bokehPass || !this.terrain) return;
-        super.updateAutoFocus([this.terrain]);
+        if (!this.useDOF || !this.bokehPass) return;
+        this.bokehPass.uniforms.focus.value = 2000;
+    }
+
+    render() {
+        if (this.strobeActive) {
+            const isWhite = Math.floor(performance.now() / 32) % 2 === 0;
+            this.renderer.setClearColor(isWhite ? 0xffffff : 0x000000);
+        } else {
+            this.renderer.setClearColor(0x000000);
+        }
+        super.render();
     }
 
     dispose() {
         this.initialized = false;
-        if (this.skydome) {
-            this.scene.remove(this.skydome);
-            this.skydome.geometry.dispose();
-            this.skydome.material.dispose();
-            this.skydome = null;
+        if (this.studio) this.studio.dispose();
+        if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
+        if (this.tileInstances) {
+            this.scene.remove(this.tileInstances);
+            this.tileInstances.geometry.dispose();
+            this.tileInstances.material.dispose();
         }
-        if (this.terrain) {
-            this.scene.remove(this.terrain);
-            this.terrain.geometry.dispose();
-            this.terrain.material.dispose();
-            this.terrain = null;
-        }
-        this.scene.fog = null;
         super.dispose();
     }
 }

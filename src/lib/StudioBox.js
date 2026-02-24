@@ -75,26 +75,26 @@ export class StudioBox {
         this.studioBox.receiveShadow = true;
         this.scene.add(this.studioBox);
 
-        // 床（床用：タイル、赤い十字あり）
         const floorGeo = new THREE.PlaneGeometry(this.size, this.size);
-        
         this.floorTextures = this.generateTileTexture(false);
 
-        const floorMat = new THREE.MeshStandardMaterial({
-            color: this.color,
-            map: this.floorTextures.map,
-            bumpMap: this.floorTextures.bumpMap,
-            bumpScale: 1.0, // 3.0 -> 1.0 凹凸を抑えて線を細く見せる
-            roughness: this.roughness * 0.3, 
-            metalness: this.metalness + 0.2,
-            envMap: this.envMap,
-            envMapIntensity: this.envMapIntensity * 1.3 // 床は少し強めに反射
-        });
-        this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
-        this.studioFloor.rotation.x = -Math.PI / 2;
-        this.studioFloor.position.y = -498; // -499 -> -498 に微上げして Z-Fighting を防止！
-        this.studioFloor.receiveShadow = true;
-        this.scene.add(this.studioFloor);
+        if (this.useFloorTile) {
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: this.color,
+                map: this.floorTextures.map,
+                bumpMap: this.floorTextures.bumpMap,
+                bumpScale: 1.0, 
+                roughness: this.roughness * 0.3, 
+                metalness: this.metalness + 0.2,
+                envMap: this.envMap,
+                envMapIntensity: this.envMapIntensity * 1.3 
+            });
+            this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
+            this.studioFloor.rotation.x = -Math.PI / 2;
+            this.studioFloor.position.y = -498; 
+            this.studioFloor.receiveShadow = true;
+            this.scene.add(this.studioFloor);
+        }
 
         // 蛍光灯の作成
         if (this.useLights) {

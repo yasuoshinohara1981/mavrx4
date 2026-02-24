@@ -1,6 +1,6 @@
 /**
  * Scene18: Glowing Tiles
- * 床のタイルがトラック6で光り、せり出すシーン
+ * 床のタイルがトラック6で光り、波紋のように広がるシーン
  * 色はベロシティに応じたヒートマップ
  */
 
@@ -9,7 +9,6 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { StudioBox } from '../../lib/StudioBox.js';
 
 export class Scene18 extends SceneBase {
@@ -77,6 +76,8 @@ export class Scene18 extends SceneBase {
         this.cubeCamera.position.set(0, 500, 0);
         this.scene.add(this.cubeCamera);
 
+        this.showGridRuler3D = false; 
+
         this.setupLights();
         this.createStudioBox();
         this.createTiles();
@@ -129,72 +130,53 @@ export class Scene18 extends SceneBase {
         const segments = 50; 
         const step = size / segments;
         
-        // 1. ベースとなる床
+        // 1. ベースとなる床（StudioBoxの床を完全に再現）
         const floorGeo = new THREE.PlaneGeometry(size, size);
         floorGeo.rotateX(-Math.PI / 2);
         const floorMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
+            color: 0xbbbbbb, // StudioBoxのデフォルト色
             map: this.studio.floorTextures.map,
             bumpMap: this.studio.floorTextures.bumpMap,
-            roughness: 0.05,
-            metalness: 0.9,
+            bumpScale: 1.0, 
+            roughness: 0.2 * 0.3, // StudioBoxの床の計算式: this.roughness * 0.3 (0.8 * 0.3 = 0.24)
+            metalness: 0.8 + 0.2, // StudioBoxの床の計算式: this.metalness + 0.2 (0.8 + 0.2 = 1.0)
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.5
+            envMapIntensity: 1.3 * 1.3 // StudioBoxの床の計算式: this.envMapIntensity * 1.3
         });
         const floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.position.y = -499;
+        floor.position.y = -498; // StudioBoxの床と同じ高さ
         floor.receiveShadow = true;
         this.scene.add(floor);
 
-        // 2. せり出すタイル（RoundedBoxGeometryで角丸に！）
-        const boxGeo = new RoundedBoxGeometry(step, 2000, step, 2, 5); 
-        const boxMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, 
-            map: this.studio.floorTextures.map,
-            bumpMap: this.studio.floorTextures.bumpMap,
-            roughness: 0.05,
-            metalness: 0.9,
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.5,
-            transparent: false,
-            opacity: 1.0
+        // 2. 丸く光るエフェクト（InstancedMeshのPlaneで軽量化！）
+        const glowGeo = new THREE.PlaneGeometry(step * 4.0, step * 4.0); 
+        glowGeo.rotateX(-Math.PI / 2);
+        
+        // 円形グラデーションのテクスチャを生成
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        grad.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+        grad.addColorStop(0.5, 'rgba(255, 255, 255, 0.3)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 128, 128);
+        const glowTex = new THREE.CanvasTexture(canvas);
+
+        const glowMat = new THREE.MeshBasicMaterial({
+            map: glowTex,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
         });
 
-        // シェーダーでUVを調整して、床のテクスチャと位置を合わせる
-        boxMat.onBeforeCompile = (shader) => {
-            shader.vertexShader = `
-                varying vec3 vInstanceWorldPos;
-                varying vec2 vMyUv;
-                ${shader.vertexShader}
-            `.replace(
-                `#include <worldpos_vertex>`,
-                `#include <worldpos_vertex>
-                vInstanceWorldPos = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-                vMyUv = uv;`
-            );
-            shader.fragmentShader = `
-                varying vec3 vInstanceWorldPos;
-                varying vec2 vMyUv;
-                ${shader.fragmentShader}
-            `.replace(
-                `#include <map_fragment>`,
-                `
-                #ifdef USE_MAP
-                    vec2 floorUv = (vInstanceWorldPos.xz + 5000.0) / 10000.0;
-                    vec2 localOffset = (vMyUv - 0.5) / 50.0; 
-                    vec4 sampledColor = texture2D( map, floorUv + localOffset );
-                    diffuseColor *= sampledColor;
-                #endif
-                `
-            );
-        };
-
-        this.tileInstances = new THREE.InstancedMesh(boxGeo, boxMat, 50); 
+        this.tileInstances = new THREE.InstancedMesh(glowGeo, glowMat, 50);
         this.tileInstances.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.tileInstances.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(50 * 3), 3);
-        this.tileInstances.castShadow = true;
-        this.tileInstances.receiveShadow = true;
-        this.tileInstances.frustumCulled = false;
+        this.tileInstances.renderOrder = 10; 
         this.scene.add(this.tileInstances);
 
         const dummy = new THREE.Object3D();
@@ -215,18 +197,24 @@ export class Scene18 extends SceneBase {
                 if (this.impactData[i]) {
                     const data = this.impactData[i];
                     const age = this.time - data.time;
+                    const life = data.duration / 1000.0 * 2.0; 
                     
-                    if (age >= 0 && age < 4.0) {
-                        // デュレーション（duration）を高さに反映させるやで！
-                        // durationが長いほど、ゆっくり高くせり出す感じや
-                        const liftHeight = data.duration / 1000.0 * 500.0; // 1秒あたり500ユニット
-                        const lift = data.intensity * liftHeight * Math.exp(-age * (2000.0 / data.duration));
-                        dummy.position.set(data.x, -1000 + lift, data.z); 
+                    if (age >= 0 && age < life) {
+                        const progress = age / life;
+                        const scale = 1.0 + progress * 4.0;
+                        const opacity = Math.pow(1.0 - progress, 2.0);
+                        
+                        dummy.position.set(data.x, -497, data.z); 
+                        dummy.scale.set(scale, 1.0, scale);
                         dummy.updateMatrix();
                         this.tileInstances.setMatrixAt(i, dummy.matrix);
                         
                         const col = this.getHeatmapColor(data.intensity);
-                        this.tileInstances.instanceColor.setXYZ(i, col.r * 5.0, col.g * 5.0, col.b * 5.0);
+                        this.tileInstances.instanceColor.setXYZ(i, 
+                            col.r * opacity * 5.0, 
+                            col.g * opacity * 5.0, 
+                            col.b * opacity * 5.0
+                        );
                     } else {
                         dummy.position.set(0, -5000, 0);
                         dummy.updateMatrix();

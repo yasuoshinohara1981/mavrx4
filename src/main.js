@@ -67,8 +67,8 @@ function initCamera() {
     camera = new THREE.PerspectiveCamera(
         60,  
         window.innerWidth / window.innerHeight,
-        0.1,
-        50000 // 10000 -> 50000 に拡大してクリッピングを防止！
+        1.0,  // 0.1 -> 1.0
+        100000 // 50000 -> 100000 にさらに拡大！
     );
     camera.position.z = 1000;
 }
@@ -220,7 +220,20 @@ function handleKeyDown(e) {
             // Ctrl+1=Scene11(index 10), Ctrl+2=Scene12(index 11), Ctrl+3=Scene13(index 12)...
             sceneManager.switchScene(num + 9);
             return;
-        } else if (e.key === '0') {
+            // Ctrl+8でScene18に切り替え（index 17）
+            sceneManager.switchScene(17);
+            return;
+        } else if (e.key === '8' && isCtrlPressed) {
+            e.preventDefault();
+            // Ctrl+8でScene18に切り替え（index 17）
+            sceneManager.switchScene(17);
+            return;
+        } else if (e.key === '8' && isCtrlPressed) {
+            e.preventDefault();
+            // Ctrl+8でScene18に切り替え（index 17）
+            sceneManager.switchScene(17);
+            return;
+        } else if (e.key === '0' && isCtrlPressed) {
             e.preventDefault();
             // Ctrl+0でScene20に切り替え（index 19）
             sceneManager.switchScene(19);

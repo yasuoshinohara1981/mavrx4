@@ -255,8 +255,8 @@ export class Scene18 extends SceneBase {
     }
 
     createSphereDetails() {
-        const detailColor = 0x444444; // パーツも少し暗めに
-        const detailCount = 200; 
+        const detailColor = 0x444444;
+        const clusterCount = 40; // クラスターの数を少し増やす
         const textures = this.generateDirtyTextures(512, detailColor, false); 
         const metallicMat = new THREE.MeshStandardMaterial({
             color: detailColor, 
@@ -269,40 +269,123 @@ export class Scene18 extends SceneBase {
             envMapIntensity: 0.8 
         });
 
-        for (let i = 0; i < detailCount; i++) {
+        for (let i = 0; i < clusterCount; i++) {
             const phi = Math.random() * Math.PI * 2;
             const theta = Math.random() * Math.PI;
             
             const x = this.coreRadius * Math.sin(theta) * Math.cos(phi);
             const y = this.coreRadius * Math.cos(theta) + 400;
             const z = this.coreRadius * Math.sin(theta) * Math.sin(phi);
+            const pos = new THREE.Vector3(x, y, z);
+            const normal = pos.clone().sub(new THREE.Vector3(0, 400, 0)).normalize();
 
-            const type = Math.floor(Math.random() * 3);
-            let geometry;
-            let mesh;
+            // 下半分に集中させる（メインケーブルとの調和）
+            if (y > 600 && Math.random() > 0.3) continue;
 
-            if (type === 0) {
-                // シリンダー/パイプ
-                geometry = new THREE.CylinderGeometry(10 + Math.random() * 20, 10 + Math.random() * 20, 40 + Math.random() * 60, 12);
-            } else if (type === 1) {
-                // ボックス/パネル
-                geometry = new THREE.BoxGeometry(20 + Math.random() * 40, 20 + Math.random() * 40, 10 + Math.random() * 30);
+            const clusterType = Math.floor(Math.random() * 4); // 4種類に増やす
+
+            if (clusterType === 0) {
+                // --- パネルユニット (ベースプレート + Box + スイッチ列) ---
+                const baseWidth = 60 + Math.random() * 100;
+                const baseHeight = 60 + Math.random() * 100;
+                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 10);
+                const baseMesh = new THREE.Mesh(baseGeo, metallicMat);
+                baseMesh.position.copy(pos);
+                baseMesh.lookAt(pos.clone().add(normal));
+                this.detailGroup.add(baseMesh);
+
+                // パネルの上のBox
+                const boxGeo = new THREE.BoxGeometry(baseWidth * 0.6, baseHeight * 0.6, 20);
+                const boxMesh = new THREE.Mesh(boxGeo, metallicMat);
+                boxMesh.position.copy(pos).add(normal.clone().multiplyScalar(15));
+                boxMesh.quaternion.copy(baseMesh.quaternion);
+                this.detailGroup.add(boxMesh);
+
+                // スイッチの列
+                const switchCount = 4 + Math.floor(Math.random() * 4);
+                const switchGeo = new THREE.BoxGeometry(10, 10, 15);
+                for (let j = 0; j < switchCount; j++) {
+                    const sMesh = new THREE.Mesh(switchGeo, metallicMat);
+                    const offset = new THREE.Vector3(
+                        (j / (switchCount - 1) - 0.5) * baseWidth * 0.8,
+                        -baseHeight * 0.3,
+                        20
+                    );
+                    sMesh.position.copy(pos).add(offset.applyQuaternion(baseMesh.quaternion));
+                    sMesh.quaternion.copy(baseMesh.quaternion);
+                    this.detailGroup.add(sMesh);
+                }
+            } else if (clusterType === 1) {
+                // --- 円形コネクタユニット (大円盤 + 小円盤 + パイプ) ---
+                const baseRadius = 50 + Math.random() * 50;
+                const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, 10, 24);
+                const baseMesh = new THREE.Mesh(baseGeo, metallicMat);
+                baseMesh.position.copy(pos);
+                baseMesh.lookAt(pos.clone().add(normal));
+                baseMesh.rotateX(Math.PI / 2);
+                this.detailGroup.add(baseMesh);
+
+                // 重ねる小円盤
+                const subGeo = new THREE.CylinderGeometry(baseRadius * 0.6, baseRadius * 0.6, 15, 24);
+                const subMesh = new THREE.Mesh(subGeo, metallicMat);
+                subMesh.position.copy(pos).add(normal.clone().multiplyScalar(10));
+                subMesh.quaternion.copy(baseMesh.quaternion);
+                this.detailGroup.add(subMesh);
+
+                // 突き出るパイプ
+                const pipeGeo = new THREE.CylinderGeometry(10, 10, 60, 12);
+                const pipeMesh = new THREE.Mesh(pipeGeo, metallicMat);
+                pipeMesh.position.copy(pos).add(normal.clone().multiplyScalar(30));
+                pipeMesh.quaternion.copy(baseMesh.quaternion);
+                this.detailGroup.add(pipeMesh);
+            } else if (clusterType === 2) {
+                // --- メンテナンスハッチユニット (プレート + ボルト風ディテール) ---
+                const size = 80 + Math.random() * 40;
+                const hatchGeo = new THREE.CylinderGeometry(size, size, 5, 6); // 六角形ハッチ
+                const hatchMesh = new THREE.Mesh(hatchGeo, metallicMat);
+                hatchMesh.position.copy(pos);
+                hatchMesh.lookAt(pos.clone().add(normal));
+                hatchMesh.rotateX(Math.PI / 2);
+                this.detailGroup.add(hatchMesh);
+
+                // ボルト風の小さい円柱を角に配置
+                const boltGeo = new THREE.CylinderGeometry(5, 5, 10, 8);
+                for (let j = 0; j < 6; j++) {
+                    const bMesh = new THREE.Mesh(boltGeo, metallicMat);
+                    const angle = (j / 6) * Math.PI * 2;
+                    const offset = new THREE.Vector3(Math.cos(angle) * size * 0.8, Math.sin(angle) * size * 0.8, 5);
+                    bMesh.position.copy(pos).add(offset.applyQuaternion(hatchMesh.quaternion));
+                    bMesh.quaternion.copy(hatchMesh.quaternion);
+                    this.detailGroup.add(bMesh);
+                }
             } else {
-                // 円盤/ハッチ
-                geometry = new THREE.CylinderGeometry(30 + Math.random() * 50, 30 + Math.random() * 50, 5 + Math.random() * 10, 24);
+                // --- サブケーブル・ジャンクションユニット ---
+                const baseGeo = new THREE.BoxGeometry(60, 60, 20);
+                const baseMesh = new THREE.Mesh(baseGeo, metallicMat);
+                baseMesh.position.copy(pos);
+                baseMesh.lookAt(pos.clone().add(normal));
+                this.detailGroup.add(baseMesh);
+
+                // そこから生える細いケーブル
+                const subCableCount = 2 + Math.floor(Math.random() * 3);
+                for (let j = 0; j < subCableCount; j++) {
+                    const subRadius = 5 + Math.random() * 5;
+                    const subPoints = [];
+                    const startOffset = new THREE.Vector3((j - 1) * 15, 0, 10).applyQuaternion(baseMesh.quaternion);
+                    const subStartPos = pos.clone().add(startOffset);
+                    subPoints.push(subStartPos);
+                    
+                    // 適当に地面に向かって垂らす
+                    subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(100)).add(new THREE.Vector3(0, -200, 0)));
+                    subPoints.push(new THREE.Vector3(pos.x * 1.2, -498, pos.z * 1.2));
+
+                    const subCurve = new THREE.CatmullRomCurve3(subPoints);
+                    const subGeo = new THREE.TubeGeometry(subCurve, 32, subRadius, 8, false);
+                    const subMesh = new THREE.Mesh(subGeo, metallicMat);
+                    subMesh.castShadow = true;
+                    this.detailGroup.add(subMesh);
+                }
             }
-
-            mesh = new THREE.Mesh(geometry, metallicMat);
-            mesh.position.set(x, y, z);
-            
-            // 球体の中心を向くように回転
-            const center = new THREE.Vector3(0, 400, 0);
-            mesh.lookAt(center);
-            if (type !== 1) mesh.rotateX(Math.PI / 2); // Cylinderは軸が違うので調整
-
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            this.detailGroup.add(mesh);
         }
     }
 

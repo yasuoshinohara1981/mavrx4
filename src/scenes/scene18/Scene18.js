@@ -71,9 +71,14 @@ export class Scene18 extends SceneBase {
 
     setupCameraParticleDistance(cameraParticle) {
         // 球体の半径が1300、中心高さが400
-        cameraParticle.minDistance = 2500; 
-        cameraParticle.maxDistance = 4800; 
-        cameraParticle.minY = 300; 
+        // 最小距離を少し詰めて迫力を出しつつ、最大距離を広げて引きの絵も作れるようにするやで！
+        cameraParticle.minDistance = 2000; 
+        cameraParticle.maxDistance = 6500; // 4800 -> 6500 (部屋の隅々まで！)
+        
+        // 高さのバリエーションを大幅に増やす！
+        // 地面スレスレ（100）から、コアを見下ろす高所（5000）まで！
+        cameraParticle.minY = 100; 
+        cameraParticle.maxY = 5000; 
     }
 
     /**
@@ -89,12 +94,19 @@ export class Scene18 extends SceneBase {
             const distToCore = cameraPos.distanceTo(coreCenter);
             
             // 安全距離（半径1300 + 余裕分）
-            const safeDistance = 1800; 
+            const safeDistance = 1600; 
             
             if (distToCore < safeDistance) {
                 const dir = cameraPos.clone().sub(coreCenter).normalize();
                 cameraPos.copy(coreCenter.clone().add(dir.multiplyScalar(safeDistance)));
             }
+
+            // 部屋の境界（StudioBox）を突き抜けないようにクランプ
+            // StudioBoxのサイズは大体 10000x10000x10000 くらい
+            const roomLimit = 4800;
+            cameraPos.x = THREE.MathUtils.clamp(cameraPos.x, -roomLimit, roomLimit);
+            cameraPos.z = THREE.MathUtils.clamp(cameraPos.z, -roomLimit, roomLimit);
+            cameraPos.y = THREE.MathUtils.clamp(cameraPos.y, 100, 6000);
             
             this.camera.position.copy(cameraPos);
             this.camera.lookAt(coreCenter);
@@ -110,12 +122,19 @@ export class Scene18 extends SceneBase {
         
         const cp = this.cameraParticles[this.currentCameraIndex];
         if (cp) {
-            const dist = cp.position.length();
-            if (dist > 4800) {
-                cp.position.normalize().multiplyScalar(4800);
-            }
-            if (dist < 2500) {
-                cp.position.normalize().multiplyScalar(3500 + Math.random() * 1000);
+            // ランダム切り替え時に、意図的に極端な位置へ飛ばす確率を作るやで！
+            const rand = Math.random();
+            if (rand < 0.3) {
+                // 地面スレスレのローアングル
+                cp.position.y = 150 + Math.random() * 200;
+                cp.position.normalize().multiplyScalar(2500 + Math.random() * 1500);
+            } else if (rand < 0.6) {
+                // 上空からのハイアングル
+                cp.position.y = 3500 + Math.random() * 1500;
+                cp.position.normalize().multiplyScalar(3000 + Math.random() * 2000);
+            } else {
+                // 標準的な距離
+                cp.position.normalize().multiplyScalar(2500 + Math.random() * 2000);
             }
         }
     }
@@ -159,15 +178,15 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff; 
-        // 環境光を極限まで下げる（真っ暗に近く！）
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x000000, 0.05); 
+        // 環境光を少しだけ上げる（0.05 -> 0.12）
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x222222, 0.12); 
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.02); 
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.08); // 0.02 -> 0.08
         this.scene.add(ambientLight);
 
-        // 指向性ライトもかなり弱める
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.1); 
+        // 指向性ライトも少しだけ強化（0.1 -> 0.25）
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.25); 
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -8000;

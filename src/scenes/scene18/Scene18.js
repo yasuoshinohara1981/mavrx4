@@ -29,7 +29,7 @@ export class Scene18 extends SceneBase {
 
         // 中央の球体
         this.centralSphere = null;
-        this.coreRadius = 700; // 500 -> 700 (画面を埋め尽くす巨大さ！)
+        this.coreRadius = 1300; // 1000 -> 1300 (さらに巨大化！もはや天体や！)
         this.detailGroup = new THREE.Group(); // 球体やケーブルの部品用
         this.clusterPositions = []; // パーツの配置場所を記録してケーブルと被らんようにするで！
 
@@ -56,10 +56,10 @@ export class Scene18 extends SceneBase {
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        // 球体の半径が700、中心高さが400
-        cameraParticle.minDistance = 2000; 
+        // 球体の半径が1300、中心高さが400
+        cameraParticle.minDistance = 3000; // 2500 -> 3000 (巨大化したから離す)
         cameraParticle.maxDistance = 4800; 
-        cameraParticle.minY = 200; 
+        cameraParticle.minY = 400; // 300 -> 400 (少し上げる)
     }
 
     /**
@@ -74,8 +74,8 @@ export class Scene18 extends SceneBase {
             const coreCenter = new THREE.Vector3(0, 400, 0);
             const distToCore = cameraPos.distanceTo(coreCenter);
             
-            // 安全距離（半径700 + 余裕分）
-            const safeDistance = 1200; 
+            // 安全距離（半径1300 + 余裕分）
+            const safeDistance = 1800; // 1600 -> 1800 (ガード範囲も拡大！)
             
             if (distToCore < safeDistance) {
                 const dir = cameraPos.clone().sub(coreCenter).normalize();
@@ -114,7 +114,7 @@ export class Scene18 extends SceneBase {
         this.renderer.toneMappingExposure = 1.3;
 
         // 初期位置も十分に離す
-        this.camera.position.set(0, 3000, 8000); 
+        this.camera.position.set(0, 5000, 10000); // 4000, 9000 -> 5000, 10000
         this.camera.lookAt(0, 400, 0);
         if (this.camera.fov !== 60) {
             this.camera.fov = 60;

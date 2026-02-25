@@ -127,19 +127,20 @@ export class Scene18 extends SceneBase {
     }
 
     createCore() {
-        const textures = this.generateDirtyTextures(1024, 0xeeeeee, true); // 球体用：明るいグレーベース
+        const unifiedColor = 0x888888; // 全体で統一するベースカラー
+        const textures = this.generateDirtyTextures(1024, unifiedColor, true); 
         const sphereGeo = new THREE.SphereGeometry(this.coreRadius, 64, 64);
         const sphereMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
+            color: unifiedColor,
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 5.0,
-            emissive: 0xffffff,
-            emissiveIntensity: 0.15, 
-            metalness: 0.1, // 低めにして非金属感を
-            roughness: 0.9, // 高めにしてマットに
+            emissive: unifiedColor,
+            emissiveIntensity: 0.1, 
+            metalness: 0.1,
+            roughness: 0.9,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.5 // 反射も抑えめに
+            envMapIntensity: 0.5
         });
         this.centralSphere = new THREE.Mesh(sphereGeo, sphereMat);
         this.centralSphere.position.y = 400;
@@ -218,14 +219,15 @@ export class Scene18 extends SceneBase {
     }
 
     createSphereDetails() {
+        const unifiedColor = 0x888888;
         const detailCount = 200; 
-        const textures = this.generateDirtyTextures(512, 0x888888, false); // パーツ用
+        const textures = this.generateDirtyTextures(512, unifiedColor, false); 
         const metallicMat = new THREE.MeshStandardMaterial({
-            color: 0xaaaaaa, 
+            color: unifiedColor, 
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 2.0,
-            metalness: 0.95,
+            metalness: 0.9,
             roughness: 0.2,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
             envMapIntensity: 2.0
@@ -269,13 +271,14 @@ export class Scene18 extends SceneBase {
     }
 
     createCableRings(curve, cableRadius) {
-        const ringCount = 2 + Math.floor(Math.random() * 4); // 1-3 -> 2-6 (密度アップ)
+        const unifiedColor = 0x888888;
+        const ringCount = 2 + Math.floor(Math.random() * 4); 
         const ringMat = new THREE.MeshStandardMaterial({
-            color: 0xcccccc,
+            color: unifiedColor,
             metalness: 1.0,
-            roughness: 0.05,
+            roughness: 0.1,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 2.5
+            envMapIntensity: 2.0
         });
 
         for (let i = 0; i < ringCount; i++) {
@@ -296,9 +299,10 @@ export class Scene18 extends SceneBase {
     }
 
     createCables() {
+        const unifiedColor = 0x888888;
         this.scene.add(this.cableGroup);
         const floorY = -498;
-        const cableTextures = this.generateDirtyTextures(1024, 0x333333, false); // ケーブル用：暗いグレーベース
+        const cableTextures = this.generateDirtyTextures(1024, unifiedColor, false); 
 
         for (let i = 0; i < this.cableCount; i++) {
             // 球体表面からランダムな方向に生やす
@@ -323,9 +327,9 @@ export class Scene18 extends SceneBase {
             // --- 根本のリング（取り付け感） ---
             const ringGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24); // より重厚に
             const ringMat = new THREE.MeshStandardMaterial({
-                color: 0x999999,
-                metalness: 0.95,
-                roughness: 0.1,
+                color: unifiedColor,
+                metalness: 0.9,
+                roughness: 0.2,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
                 envMapIntensity: 2.0
             });
@@ -364,7 +368,7 @@ export class Scene18 extends SceneBase {
             const geometry = new THREE.TubeGeometry(curve, 128, radius, 12, false);
             
             const material = new THREE.MeshStandardMaterial({
-                color: 0x444444,
+                color: unifiedColor,
                 map: cableTextures.map,
                 bumpMap: cableTextures.bumpMap,
                 bumpScale: 3.0,
@@ -418,7 +422,7 @@ export class Scene18 extends SceneBase {
             // --- 先端のリング（地面への固定感） ---
             const endRingGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24);
             const endRingMat = new THREE.MeshStandardMaterial({
-                color: 0x777777,
+                color: unifiedColor,
                 metalness: 0.9,
                 roughness: 0.2,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,

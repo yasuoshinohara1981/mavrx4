@@ -49,6 +49,10 @@ export class Scene18 extends SceneBase {
         this.strobeActive = false;
         this.strobeEndTime = 0;
 
+        // カラー管理（トラック8で変化）
+        this.pulseColor = new THREE.Color(1.0, 0.0, 0.0); // 初期値は赤
+        this.targetPulseColor = new THREE.Color(1.0, 0.0, 0.0);
+
         this.trackEffects = {
             1: true, 2: false, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
         };
@@ -669,6 +673,7 @@ export class Scene18 extends SceneBase {
             if (!isWhiteNonGlowing) {
                 material.onBeforeCompile = (shader) => {
                     shader.uniforms.uPulses = { value: new Float32Array(10).fill(-1.0) };
+                    shader.uniforms.uPulseColor = { value: this.pulseColor }; // トラック8で変える色！
                     
                     shader.vertexShader = `
                         varying vec2 vUv;
@@ -681,6 +686,7 @@ export class Scene18 extends SceneBase {
 
                     shader.fragmentShader = `
                         uniform float uPulses[10];
+                        uniform vec3 uPulseColor;
                         varying vec2 vUv;
                         ${shader.fragmentShader}
                     `.replace(
@@ -695,9 +701,9 @@ export class Scene18 extends SceneBase {
                                 pulseEffect += smoothstep(0.03, 0.0, dist);
                             }
                         }
-                        vec3 pulseColor = vec3(1.0, 0.0, 0.0);
+                        vec3 pCol = uPulseColor;
                         float constantGlow = smoothstep(0.15, 0.0, vUv.x) * 0.3;
-                        gl_FragColor.rgb += pulseColor * (pulseEffect * 12.0 + constantGlow); 
+                        gl_FragColor.rgb += pCol * (pulseEffect * 12.0 + constantGlow); 
                         `
                     );
                     material.userData.shader = shader;
@@ -740,6 +746,9 @@ export class Scene18 extends SceneBase {
         // カメラの更新を明示的に呼ぶ
         this.updateCamera();
 
+        // カラーの補間（トラック8で変化）
+        this.pulseColor.lerp(this.targetPulseColor, 0.1);
+
         for (let i = this.pulses.length - 1; i >= 0; i--) {
             const p = this.pulses[i];
             p.progress += deltaTime * p.speed;
@@ -756,6 +765,7 @@ export class Scene18 extends SceneBase {
                     if (idx < 10) pulseArray[idx] = p.progress;
                 });
                 shader.uniforms.uPulses.value = pulseArray;
+                shader.uniforms.uPulseColor.value = this.pulseColor; // 補間後の色を渡す！
             }
         });
 
@@ -804,6 +814,17 @@ export class Scene18 extends SceneBase {
             const args = message.args || [];
             const velocity = args[1] !== undefined ? args[1] : 127;
             this.triggerPulse(velocity);
+        }
+
+        // トラック8で色を変化させるやで！
+        if (trackNumber === 8) {
+            const args = message.args || [];
+            const value = args[1] !== undefined ? args[1] : 0;
+            
+            // value(0-127)に応じて色を変える
+            // 0:赤, 42:緑, 84:青, 127:紫 みたいなイメージや！
+            const hue = (value / 127);
+            this.targetPulseColor.setHSL(hue, 1.0, 0.5);
         }
     }
 

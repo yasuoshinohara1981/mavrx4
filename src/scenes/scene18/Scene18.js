@@ -482,21 +482,22 @@ export class Scene18 extends SceneBase {
 
             // --- ケーブルの属性決定 ---
             // 確率で白・グレー・黒を分けるやで！
+            // 合計10%（白5%、グレー5%）に下げて、黒（光る方）を90%にするやで！
             const colorRand = Math.random();
             let finalCableColor;
             let isWhiteNonGlowing = false;
             let isGreyNonGlowing = false;
 
-            if (colorRand < 0.25) {
-                // 白 (25%)
+            if (colorRand < 0.05) {
+                // 白 (5%)
                 finalCableColor = 0xffffff;
                 isWhiteNonGlowing = true;
-            } else if (colorRand < 0.5) {
-                // グレー (25%)
+            } else if (colorRand < 0.1) {
+                // グレー (5%)
                 finalCableColor = 0x666666;
                 isGreyNonGlowing = true;
             } else {
-                // 黒 (50%)
+                // 黒 (90%)
                 finalCableColor = 0x111111;
             }
 

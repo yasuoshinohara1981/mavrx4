@@ -184,7 +184,7 @@ export class Scene18 extends SceneBase {
             color: coreColor,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 5.0,
+            bumpScale: 15.0, // 5.0 -> 15.0 (バンプをガッツリ効かせる！)
             emissive: coreColor,
             emissiveIntensity: 0.1, // 0.2 -> 0.1 (発光も少し抑えて重厚に)
             metalness: 0.1,
@@ -216,25 +216,41 @@ export class Scene18 extends SceneBase {
         bCtx.fillStyle = '#808080'; // 中間グレー
         bCtx.fillRect(0, 0, size, size);
         
-        // 汚れ・かすれの描画
-        for (let i = 0; i < 2000; i++) {
+        // 汚れ・かすれの描画（もっとボロっちくするために密度アップ！）
+        const dirtCount = isMatte ? 4000 : 2000;
+        for (let i = 0; i < dirtCount; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = Math.random() * (isMatte ? 5 : 2);
-            const alpha = Math.random() * 0.3;
+            const r = Math.random() * (isMatte ? 8 : 4);
+            const alpha = Math.random() * 0.5;
             
             // カラーキャンバスに暗い汚れ
-            cCtx.fillStyle = `rgba(50, 50, 50, ${alpha})`;
+            cCtx.fillStyle = `rgba(30, 30, 30, ${alpha})`;
             cCtx.beginPath();
             cCtx.arc(x, y, r, 0, Math.PI * 2);
             cCtx.fill();
             
-            // バンプキャンバスに凹凸
-            const val = 128 + (Math.random() - 0.5) * 60;
+            // バンプキャンバスに凹凸（もっと深く！）
+            const val = 128 + (Math.random() - 0.5) * 120;
             bCtx.fillStyle = `rgb(${val}, ${val}, ${val})`;
             bCtx.beginPath();
             bCtx.arc(x, y, r, 0, Math.PI * 2);
             bCtx.fill();
+        }
+
+        // ひっかき傷のようなディテールを追加
+        for (let i = 0; i < 200; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const len = 10 + Math.random() * 50;
+            const angle = Math.random() * Math.PI * 2;
+            
+            bCtx.strokeStyle = Math.random() > 0.5 ? '#ffffff' : '#000000';
+            bCtx.lineWidth = 0.5 + Math.random();
+            bCtx.beginPath();
+            bCtx.moveTo(x, y);
+            bCtx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+            bCtx.stroke();
         }
 
         // ケーブル用のかすれた線（プラスチック感）
@@ -277,7 +293,7 @@ export class Scene18 extends SceneBase {
             color: detailColor, 
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 2.0,
+            bumpScale: 8.0, // 2.0 -> 8.0 (パーツもボロっちく！)
             metalness: 0.2, 
             roughness: 0.8, 
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,

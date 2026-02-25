@@ -488,7 +488,7 @@ export class Scene18 extends SceneBase {
             // 太さを調整
             let radius;
             if (isWhiteNonGlowing) {
-                // 白いケーブルは常に極太にして絶対に隠れさせない！
+                // 白いケーブルは常に極太にして絶対に隠れさせない！ (60-120)
                 radius = 60 + Math.random() * 60; 
             } else {
                 const radiusRand = Math.random();
@@ -510,11 +510,11 @@ export class Scene18 extends SceneBase {
             // 1. ベースの巨大なフランジ（多角形プレート）
             const flangeGeo = new THREE.CylinderGeometry(radius * 2.2, radius * 2.2, 15, 8);
             const unitMat = new THREE.MeshStandardMaterial({
-                color: finalCableColor, // ケーブルの色に合わせる
-                metalness: 0.6,
-                roughness: 0.4,
+                color: isWhiteNonGlowing ? 0xffffff : 0x444444, // 白ケーブルならユニットも白に！
+                metalness: isWhiteNonGlowing ? 0.0 : 0.6,
+                roughness: isWhiteNonGlowing ? 1.0 : 0.4,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.0
+                envMapIntensity: isWhiteNonGlowing ? 0.1 : 1.0
             });
             const flange = new THREE.Mesh(flangeGeo, unitMat);
             flange.rotateX(Math.PI / 2);
@@ -594,14 +594,22 @@ export class Scene18 extends SceneBase {
             
             const material = new THREE.MeshStandardMaterial({
                 color: finalCableColor,
-                map: cableTextures.map,
-                bumpMap: cableTextures.bumpMap,
+                // map: cableTextures.map, // テクスチャが暗くしてる可能性があるので白ケーブルの時は外す
+                // bumpMap: cableTextures.bumpMap,
                 bumpScale: 3.0,
+                emissive: isWhiteNonGlowing ? 0xffffff : 0x000000, // 白ケーブルは自己発光させて確実に白く！
+                emissiveIntensity: isWhiteNonGlowing ? 0.2 : 0.0,
                 metalness: isWhiteNonGlowing ? 0.0 : 0.9, 
                 roughness: isWhiteNonGlowing ? 1.0 : 0.1, 
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: isWhiteNonGlowing ? 0.2 : 2.5 
+                envMapIntensity: isWhiteNonGlowing ? 0.0 : 2.5 // 反射も完全にカット
             });
+            
+            // 白ケーブルの時だけテクスチャを適用しない（真っ白を維持）
+            if (!isWhiteNonGlowing) {
+                material.map = cableTextures.map;
+                material.bumpMap = cableTextures.bumpMap;
+            }
 
             if (!isWhiteNonGlowing) {
                 material.onBeforeCompile = (shader) => {

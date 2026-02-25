@@ -16,7 +16,7 @@ import { StudioBox } from '../../lib/StudioBox.js';
 export class Scene18 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Fiber Core';
+        this.title = 'Xeno Lab: Nucleus';
         this.initialized = false;
         this.sceneNumber = 18;
         this.kitNo = 18;
@@ -205,14 +205,14 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff; 
-        // 環境光を大幅に上げる（0.12 -> 0.6）
+        // 環境光を元の明るさに戻す（0.6）
         const hemiLight = new THREE.HemisphereLight(pureWhite, 0x444444, 0.6); 
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.4); // 0.08 -> 0.4
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.4); // 元の0.4に戻す
         this.scene.add(ambientLight);
 
-        // 指向性ライトも強化（0.25 -> 1.2）
+        // 指向性ライトも元の強度に戻す（1.2）
         const directionalLight = new THREE.DirectionalLight(pureWhite, 1.2); 
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
@@ -227,7 +227,7 @@ export class Scene18 extends SceneBase {
         directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        // パルス連動用の点光源は残しつつ、ベースの明るさを確保
+        // パルス連動用の点光源は維持
         this.pointLight = new THREE.PointLight(pureWhite, 0.0, 8000); 
         this.pointLight.position.set(0, 500, 0); 
         this.pointLight.castShadow = false; 
@@ -247,7 +247,7 @@ export class Scene18 extends SceneBase {
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 8.0, // 2.0 -> 8.0 (バンプをガッツリ効かせる！)
-            emissive: 0x444444, 
+            emissive: 0x444444, // 元の明るさに戻す
             emissiveIntensity: 0.1, 
             metalness: 0.3, // 少し金属感をアップ
             roughness: 0.7, // ざらつきを出す
@@ -616,23 +616,24 @@ export class Scene18 extends SceneBase {
             const bundleEndOffsetZ = (Math.random() - 0.5) * 2000;
 
             for (let c = 0; c < cablesInBundle && generatedCount < this.cableCount; c++) {
-                // 束の中で少しだけ位置をずらす
-                const phi = bundlePhi + (Math.random() - 0.5) * 0.15;
-                const theta = bundleTheta + (Math.random() - 0.5) * 0.15;
+                // 束の中でさらに密集させるやで！
+                const spread = 0.08; // 生え際をタイトに！
+                const phi = bundlePhi + (Math.random() - 0.5) * spread;
+                const theta = bundleTheta + (Math.random() - 0.5) * spread;
                 
                 const normal = new THREE.Vector3(
                     Math.sin(phi) * Math.cos(theta),
                     Math.cos(phi),
                     Math.sin(phi) * Math.sin(theta)
-                );
+                ).normalize();
 
                 const startPos = normal.clone().multiplyScalar(this.coreRadius);
                 startPos.y += 400;
 
-                // 既存のパーツ位置との距離をチェック（少し判定を甘くして生成しやすくする）
+                // 既存のパーツ位置との距離をチェック（束感重視でさらに判定を緩める）
                 let isTooClose = false;
                 for (const clusterPos of this.clusterPositions) {
-                    if (startPos.distanceTo(clusterPos) < 120) { // 150 -> 120
+                    if (startPos.distanceTo(clusterPos) < 100) { // 120 -> 100
                         isTooClose = true;
                         break;
                     }
@@ -707,17 +708,17 @@ export class Scene18 extends SceneBase {
                 points.push(startPos.clone());
                 
                 const isUpper = startPos.y > 400;
-                const pushDist = (isUpper ? 300 : 150) + (radius * 2.0) + (Math.random() * 100);
+                const pushDist = (isUpper ? 300 : 150) + (radius * 2.0) + (Math.random() * 50); // ランダム幅を半分に
                 const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
                 points.push(point1);
 
-                // --- 終端の計算（束ごとの偏りを適用） ---
+                // --- 終端の計算（目的地への集中度をアップ！） ---
                 let groundDist = isUpper ? (3500 + Math.random() * 3000) : (2000 + Math.random() * 2500);
-                const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 0.5;
+                const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 0.2; 
                 
-                // 束のオフセットをノイズ的に加える
-                let groundX = Math.cos(groundAngle) * groundDist + bundleEndOffsetX * (0.8 + Math.random() * 0.4);
-                let groundZ = Math.sin(groundAngle) * groundDist + bundleEndOffsetZ * (0.8 + Math.random() * 0.4);
+                // 束のオフセットをノイズ的に加える（ばらつきを抑えて目的地を集中させる）
+                let groundX = Math.cos(groundAngle) * groundDist + bundleEndOffsetX * (0.9 + Math.random() * 0.2);
+                let groundZ = Math.sin(groundAngle) * groundDist + bundleEndOffsetZ * (0.9 + Math.random() * 0.2);
 
                 const roomLimit = 4500;
                 if (Math.abs(groundX) > roomLimit || Math.abs(groundZ) > roomLimit) {
@@ -749,8 +750,16 @@ export class Scene18 extends SceneBase {
                 points.push(endPos);
 
                 const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
-                const segments = radius > 60 ? 140 : 70;
-                const geometry = new THREE.TubeGeometry(curve, segments, radius, 10, false); 
+                
+                // --- バグ修正：TubeGeometryの生成に失敗する場合の安全策 ---
+                let geometry;
+                try {
+                    const segments = radius > 60 ? 140 : 70;
+                    geometry = new THREE.TubeGeometry(curve, segments, radius, 10, false); 
+                } catch (e) {
+                    console.error("TubeGeometry creation failed:", e);
+                    continue; // このケーブルの生成をスキップ
+                }
                 
                 const material = new THREE.MeshStandardMaterial({
                     color: finalCableColor,
@@ -901,12 +910,12 @@ export class Scene18 extends SceneBase {
         this.pulseColor.lerp(this.targetPulseColor, 0.1);
 
         // 球体の発光強度の補間（トラック5連動は解除！）
-        this.coreEmissiveIntensity = 0.1; // ベースの明るさに固定
+        this.coreEmissiveIntensity = 0.1; // 元の明るさに戻す
         if (this.centralSphere && this.centralSphere.material) {
             this.centralSphere.material.emissiveIntensity = this.coreEmissiveIntensity;
-            this.centralSphere.material.emissive.setHex(0x222222); // 固定色
+            this.centralSphere.material.emissive.setHex(0x222222); // 元の色に戻す
         }
-        // パーツのマテリアルも固定！
+        // パーツのマテリアルも元に戻す！
         if (this.detailMaterials) {
             this.detailMaterials.forEach(mat => {
                 mat.emissiveIntensity = this.coreEmissiveIntensity;

@@ -193,15 +193,15 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff; 
-        // 環境光を少しだけ上げる（0.05 -> 0.12）
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x222222, 0.12); 
+        // 環境光を大幅に上げる（0.12 -> 0.6）
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x444444, 0.6); 
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.08); // 0.02 -> 0.08
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.4); // 0.08 -> 0.4
         this.scene.add(ambientLight);
 
-        // 指向性ライトも少しだけ強化（0.1 -> 0.25）
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.25); 
+        // 指向性ライトも強化（0.25 -> 1.2）
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 1.2); 
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -8000;
@@ -215,7 +215,7 @@ export class Scene18 extends SceneBase {
         directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        // 【重要】パルス連動用の点光源！
+        // パルス連動用の点光源は残しつつ、ベースの明るさを確保
         this.pointLight = new THREE.PointLight(pureWhite, 0.0, 8000); 
         this.pointLight.position.set(0, 500, 0); 
         this.pointLight.castShadow = false; 
@@ -798,20 +798,17 @@ export class Scene18 extends SceneBase {
         // カラーの補間（トラック8で変化）
         this.pulseColor.lerp(this.targetPulseColor, 0.1);
 
-        // 球体の発光強度の補間（トラック5で変化）
-        this.coreEmissiveIntensity += (this.targetCoreEmissiveIntensity - this.coreEmissiveIntensity) * 0.1;
+        // 球体の発光強度の補間（トラック5連動は解除！）
+        this.coreEmissiveIntensity = 0.1; // ベースの明るさに固定
         if (this.centralSphere && this.centralSphere.material) {
             this.centralSphere.material.emissiveIntensity = this.coreEmissiveIntensity;
-            // 発光色もパルス色に合わせるやで！
-            this.centralSphere.material.emissive.copy(this.pulseColor);
+            this.centralSphere.material.emissive.setHex(0xcccccc); // 固定色
         }
-        // パーツのマテリアルも連動させるやで！
+        // パーツのマテリアルも固定！
         if (this.detailMaterial) {
             this.detailMaterial.emissiveIntensity = this.coreEmissiveIntensity;
-            this.detailMaterial.emissive.copy(this.pulseColor);
+            this.detailMaterial.emissive.setHex(0xcccccc);
         }
-        // ターゲット強度は常にベースの0.1に戻ろうとするようにするで
-        this.targetCoreEmissiveIntensity += (0.1 - this.targetCoreEmissiveIntensity) * 0.05;
 
         // ライト強度の補間（パルス連動）
         this.lightIntensity += (this.targetLightIntensity - this.lightIntensity) * 0.15;
@@ -857,10 +854,9 @@ export class Scene18 extends SceneBase {
             speed: speed
         });
 
-        // 球体を光らせる（トラック5の時だけとかの判別はhandleTrackNumber側でやるやで）
-        this.targetCoreEmissiveIntensity = 0.1 + (velocity / 127.0) * 0.8; // 最大0.9まで光る！
+        // 球体は光らせない（ロジック削除）
 
-        // 【追加】ライトを光らせる！
+        // ライトを光らせる！
         this.targetLightIntensity = (velocity / 127.0) * 10.0; // 瞬間的に強く照らす！
     }
 

@@ -127,15 +127,19 @@ export class Scene18 extends SceneBase {
     }
 
     createCore() {
+        const textures = this.generateDirtyTextures(1024, 0xeeeeee, true); // 球体用：明るいグレーベース
         const sphereGeo = new THREE.SphereGeometry(this.coreRadius, 64, 64);
         const sphereMat = new THREE.MeshStandardMaterial({
             color: 0xffffff,
+            map: textures.map,
+            bumpMap: textures.bumpMap,
+            bumpScale: 5.0,
             emissive: 0xffffff,
-            emissiveIntensity: 0.2, // ほんのり発光
-            metalness: 0.2,
-            roughness: 0.8,
+            emissiveIntensity: 0.15, 
+            metalness: 0.1, // 低めにして非金属感を
+            roughness: 0.9, // 高めにしてマットに
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.0
+            envMapIntensity: 0.5 // 反射も抑えめに
         });
         this.centralSphere = new THREE.Mesh(sphereGeo, sphereMat);
         this.centralSphere.position.y = 400;
@@ -145,12 +149,84 @@ export class Scene18 extends SceneBase {
         this.scene.add(this.detailGroup);
     }
 
+    generateDirtyTextures(size = 512, baseColor = 0xffffff, isMatte = false) {
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = size; colorCanvas.height = size;
+        const cCtx = colorCanvas.getContext('2d');
+        
+        // ベースカラー
+        const hex = '#' + new THREE.Color(baseColor).getHexString();
+        cCtx.fillStyle = hex;
+        cCtx.fillRect(0, 0, size, size);
+        
+        const bumpCanvas = document.createElement('canvas');
+        bumpCanvas.width = size; bumpCanvas.height = size;
+        const bCtx = bumpCanvas.getContext('2d');
+        bCtx.fillStyle = '#808080'; // 中間グレー
+        bCtx.fillRect(0, 0, size, size);
+        
+        // 汚れ・かすれの描画
+        for (let i = 0; i < 2000; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = Math.random() * (isMatte ? 5 : 2);
+            const alpha = Math.random() * 0.3;
+            
+            // カラーキャンバスに暗い汚れ
+            cCtx.fillStyle = `rgba(50, 50, 50, ${alpha})`;
+            cCtx.beginPath();
+            cCtx.arc(x, y, r, 0, Math.PI * 2);
+            cCtx.fill();
+            
+            // バンプキャンバスに凹凸
+            const val = 128 + (Math.random() - 0.5) * 60;
+            bCtx.fillStyle = `rgb(${val}, ${val}, ${val})`;
+            bCtx.beginPath();
+            bCtx.arc(x, y, r, 0, Math.PI * 2);
+            bCtx.fill();
+        }
+
+        // ケーブル用のかすれた線（プラスチック感）
+        if (!isMatte) {
+            for (let i = 0; i < 100; i++) {
+                const x = Math.random() * size;
+                const y = Math.random() * size;
+                const len = 20 + Math.random() * 100;
+                const angle = Math.random() * Math.PI * 2;
+                
+                cCtx.strokeStyle = `rgba(100, 100, 100, 0.1)`;
+                cCtx.lineWidth = 1;
+                cCtx.beginPath();
+                cCtx.moveTo(x, y);
+                cCtx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+                cCtx.stroke();
+                
+                bCtx.strokeStyle = `rgb(100, 100, 100)`;
+                bCtx.beginPath();
+                bCtx.moveTo(x, y);
+                bCtx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+                bCtx.stroke();
+            }
+        }
+        
+        const map = new THREE.CanvasTexture(colorCanvas);
+        const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+        map.wrapS = map.wrapT = THREE.RepeatWrapping;
+        bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;
+        
+        return { map, bumpMap };
+    }
+
     createSphereDetails() {
-        const detailCount = 200; // 80 -> 200 (超高密度！)
+        const detailCount = 200; 
+        const textures = this.generateDirtyTextures(512, 0x888888, false); // パーツ用
         const metallicMat = new THREE.MeshStandardMaterial({
-            color: 0xaaaaaa, // さらに明るくしてディテールを強調
+            color: 0xaaaaaa, 
+            map: textures.map,
+            bumpMap: textures.bumpMap,
+            bumpScale: 2.0,
             metalness: 0.95,
-            roughness: 0.15,
+            roughness: 0.2,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
             envMapIntensity: 2.0
         });
@@ -222,6 +298,7 @@ export class Scene18 extends SceneBase {
     createCables() {
         this.scene.add(this.cableGroup);
         const floorY = -498;
+        const cableTextures = this.generateDirtyTextures(1024, 0x333333, false); // ケーブル用：暗いグレーベース
 
         for (let i = 0; i < this.cableCount; i++) {
             // 球体表面からランダムな方向に生やす
@@ -287,11 +364,14 @@ export class Scene18 extends SceneBase {
             const geometry = new THREE.TubeGeometry(curve, 128, radius, 12, false);
             
             const material = new THREE.MeshStandardMaterial({
-                color: 0x333333,
-                metalness: 0.8,
-                roughness: 0.2,
+                color: 0x444444,
+                map: cableTextures.map,
+                bumpMap: cableTextures.bumpMap,
+                bumpScale: 3.0,
+                metalness: 0.3, // プラスチック感を出すために低めに
+                roughness: 0.6, // かすれた感じを出すために中程度
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.5
+                envMapIntensity: 1.0
             });
 
             material.onBeforeCompile = (shader) => {

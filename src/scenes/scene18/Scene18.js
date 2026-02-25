@@ -339,11 +339,13 @@ export class Scene18 extends SceneBase {
         const clusterCount = 100; // 40 -> 100 (パーツをガッツリ増やすで！)
         this.clusterPositions = []; // 初期化
         const textures = this.generateDirtyTextures(512, detailColor, false); 
-        const metallicMat = new THREE.MeshStandardMaterial({
+        this.detailMaterial = new THREE.MeshStandardMaterial({
             color: detailColor, 
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 1.5, // 8.0 -> 1.5 (パーツも上品な質感へ)
+            emissive: detailColor,
+            emissiveIntensity: 0.1,
             metalness: 0.2, 
             roughness: 0.8, 
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
@@ -471,7 +473,7 @@ export class Scene18 extends SceneBase {
         // 全てのジオメトリを一つにマージ！これでDraw Callが激減するやで！
         if (geometries.length > 0) {
             const mergedGeo = BufferGeometryUtils.mergeGeometries(geometries);
-            const mergedMesh = new THREE.Mesh(mergedGeo, metallicMat);
+            const mergedMesh = new THREE.Mesh(mergedGeo, this.detailMaterial);
             mergedMesh.castShadow = true;
             mergedMesh.receiveShadow = true;
             this.detailGroup.add(mergedMesh);
@@ -802,6 +804,11 @@ export class Scene18 extends SceneBase {
             this.centralSphere.material.emissiveIntensity = this.coreEmissiveIntensity;
             // 発光色もパルス色に合わせるやで！
             this.centralSphere.material.emissive.copy(this.pulseColor);
+        }
+        // パーツのマテリアルも連動させるやで！
+        if (this.detailMaterial) {
+            this.detailMaterial.emissiveIntensity = this.coreEmissiveIntensity;
+            this.detailMaterial.emissive.copy(this.pulseColor);
         }
         // ターゲット強度は常にベースの0.1に戻ろうとするようにするで
         this.targetCoreEmissiveIntensity += (0.1 - this.targetCoreEmissiveIntensity) * 0.05;

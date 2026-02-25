@@ -574,36 +574,46 @@ export class Scene18 extends SceneBase {
             const points = [];
             points.push(startPos.clone()); // 根本
             
-            // 中間点1：法線方向に真っ直ぐ突き出す
-            // 距離をさらに伸ばして、根本の急カーブを物理的に不可能にするやで！
-            const pushDist = 600 + (radius * 4.0); 
+            // 中間点1：法線方向に突き出す（上なら上へ、下なら横へ）
+            // ここだけ修正！太さに合わせて突き出し距離を調整して、根本の折れを防止するやで！
+            const pushDistBase = isUpper ? 400 : 200;
+            const pushDist = pushDistBase + (radius * 2.5) + (Math.random() * 200);
             const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
             points.push(point1);
 
-            // 中間点2：重力で下に落ちる前の「溜め」
-            // point1から少しだけ外側にずらして、さらにゆったりさせる
-            const point2 = point1.clone().add(new THREE.Vector3(normal.x * 200, -200, normal.z * 200));
-            points.push(point2);
-
-            // 中間点3：地面に向かう途中の点
-            const groundDist = isUpper ? (3000 + Math.random() * 2000) : (1800 + Math.random() * 1500);
-            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
+            // 中間点2：重力の影響（ここから先は「さっきのまま」の自然な挙動に戻すで！）
+            const groundDist = isUpper ? (2500 + Math.random() * 3000) : (1500 + Math.random() * 2000);
+            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.5;
             const groundX = Math.cos(groundAngle) * groundDist;
             const groundZ = Math.sin(groundAngle) * groundDist;
             
-            const midY = isUpper ? (floorY + 1500) : (floorY + 800);
-            points.push(new THREE.Vector3(groundX * 0.7, midY, groundZ * 0.7));
+            if (isUpper) {
+                // 上から生える場合は、一度大きく外に回ってから地面へ
+                const bulgeScale = 1.2 + (radius / 300); 
+                points.push(new THREE.Vector3(
+                    point1.x * bulgeScale,
+                    point1.y * 0.5,
+                    point1.z * bulgeScale
+                ));
+            } else {
+                // 下から生える場合は、地面を這うように
+                points.push(new THREE.Vector3(
+                    groundX * 0.5,
+                    floorY + 300,
+                    groundZ * 0.5
+                ));
+            }
 
-            // 終点：地面
+            // 終点：地面に向かって垂直に突き刺さるような配置
             const endPos = new THREE.Vector3(groundX, floorY, groundZ);
-            // 地面に刺さる直前の点（垂直に着地させるために少し高く）
-            points.push(new THREE.Vector3(groundX, floorY + 500 + (radius * 2.0), groundZ)); 
+            const approachHeight = 300 + (radius * 1.5);
+            points.push(new THREE.Vector3(groundX, floorY + approachHeight, groundZ)); 
             points.push(endPos);
 
-            // CatmullRomCurve3のテンションを下げて、より「紐」らしい滑らかさに！
+            // テンションを少しだけ調整（0.0は直線的すぎるので0.2くらいで滑らかに）
             const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
             
-            // 太いケーブルほどセグメントをさらに増やして、カクつきを撲滅！
+            // セグメント数は多めを維持してカクつきを防止！
             const segments = radius > 60 ? 160 : 80;
             const geometry = new THREE.TubeGeometry(curve, segments, radius, 12, false); 
             

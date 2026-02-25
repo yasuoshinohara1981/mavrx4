@@ -57,15 +57,9 @@ export class Scene18 extends SceneBase {
 
     setupCameraParticleDistance(cameraParticle) {
         // 球体の半径が700、中心高さが400
-        // minDistanceを球体の半径 + ニアクリップ分以上に設定
-        cameraParticle.minDistance = 1500; // 4000 -> 1500 (物理的な制限)
-        cameraParticle.maxDistance = 15000;
-        cameraParticle.minY = 0;
-        
-        // ニアクリップによる「中身透け」を防ぐため、
-        // 物理的な minDistance をさらに大きく取るやで。
-        // ここは Scene17 の updateCamera ロジックを参考に、
-        // 毎フレームの更新で強制的に距離を保つようにするで。
+        cameraParticle.minDistance = 2000; // 1500 -> 2000 (少し離す)
+        cameraParticle.maxDistance = 4800; // 15000 -> 4800 (部屋の半径5000以内ギリギリ！)
+        cameraParticle.minY = 200; // 地面スレスレを避ける
     }
 
     /**
@@ -100,11 +94,15 @@ export class Scene18 extends SceneBase {
         await super.setup();
 
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.3;
+        this.renderer.toneMappingExposure = 1.3; // Scene14はデフォルト(1.0)やけど、一旦1.3で様子見
 
         // 初期位置も十分に離す
         this.camera.position.set(0, 3000, 8000); 
         this.camera.lookAt(0, 400, 0);
+        if (this.camera.fov !== 60) {
+            this.camera.fov = 60;
+            this.camera.updateProjectionMatrix();
+        }
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -150,12 +148,9 @@ export class Scene18 extends SceneBase {
         directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        const pointLight = new THREE.PointLight(pureWhite, 2.5, 5000); // 4.0 -> 2.5
-        pointLight.position.set(0, 500, 0);
-        pointLight.castShadow = true;
-        pointLight.shadow.camera.near = 10;
-        pointLight.shadow.camera.far = 10000;
-        pointLight.shadow.bias = -0.001;
+        const pointLight = new THREE.PointLight(pureWhite, 2.5, 5000); 
+        pointLight.position.set(0, 500, 0); 
+        pointLight.castShadow = false; // 影をオフにして爆速化や！PointLightの影は激重なんや...
         this.scene.add(pointLight);
     }
 
@@ -256,7 +251,7 @@ export class Scene18 extends SceneBase {
     }
 
     createSphereDetails() {
-        const detailColor = 0x444444;
+        const detailColor = 0xffffff; // 球体と同じ純白に！
         const clusterCount = 40; 
         this.clusterPositions = []; // 初期化
         const textures = this.generateDirtyTextures(512, detailColor, false); 
@@ -265,10 +260,10 @@ export class Scene18 extends SceneBase {
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 2.0,
-            metalness: 0.4, 
-            roughness: 0.7, 
+            metalness: 0.2, // 球体に合わせて少しマットに
+            roughness: 0.8, 
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.8 
+            envMapIntensity: 0.5 
         });
 
         for (let i = 0; i < clusterCount; i++) {
@@ -504,7 +499,7 @@ export class Scene18 extends SceneBase {
             points.push(endPos);
 
             const curve = new THREE.CatmullRomCurve3(points);
-            const geometry = new THREE.TubeGeometry(curve, 128, radius, 12, false);
+            const geometry = new THREE.TubeGeometry(curve, 64, radius, 8, false); // 128, 12 -> 64, 8 (セグメントを減らして軽量化！)
             
             const material = new THREE.MeshStandardMaterial({
                 color: cableColor,
@@ -577,6 +572,27 @@ export class Scene18 extends SceneBase {
             // ケーブルにリングを追加
             if (Math.random() > 0.3) {
                 this.createCableRings(curve, radius);
+            }
+        }
+    }
+
+    /**
+     * カメラをランダムに切り替える（SceneBaseのオーバーライド）
+     * 部屋の境界（5000）を超えない範囲で、なるべく遠くに配置するで！
+     */
+    switchCameraRandom() {
+        super.switchCameraRandom();
+        
+        const cp = this.cameraParticles[this.currentCameraIndex];
+        if (cp) {
+            // 部屋のサイズ（10000）の半分（5000）を超えないように強制クランプ
+            const dist = cp.position.length();
+            if (dist > 4800) {
+                cp.position.normalize().multiplyScalar(4800);
+            }
+            // 逆に近すぎたら離す（updateCameraでもやってるけど念のため）
+            if (dist < 2500) {
+                cp.position.normalize().multiplyScalar(3500 + Math.random() * 1000);
             }
         }
     }

@@ -57,6 +57,11 @@ export class Scene18 extends SceneBase {
         this.coreEmissiveIntensity = 0.1;
         this.targetCoreEmissiveIntensity = 0.1;
 
+        // ライト管理（パルス連動）
+        this.pointLight = null;
+        this.lightIntensity = 0.0;
+        this.targetLightIntensity = 0.0;
+
         this.trackEffects = {
             1: true, 2: false, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
         };
@@ -154,13 +159,15 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff; 
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x888888, 0.8); // 1.5 -> 0.8
+        // 環境光を極限まで下げる（真っ暗に近く！）
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x000000, 0.05); 
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.3); // 1.0 -> 0.3
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.02); 
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 1.5); // 5.0 -> 1.5
+        // 指向性ライトもかなり弱める
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.1); 
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -8000;
@@ -174,10 +181,11 @@ export class Scene18 extends SceneBase {
         directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        const pointLight = new THREE.PointLight(pureWhite, 2.5, 5000); 
-        pointLight.position.set(0, 500, 0); 
-        pointLight.castShadow = false; // 影をオフにして爆速化や！PointLightの影は激重なんや...
-        this.scene.add(pointLight);
+        // 【重要】パルス連動用の点光源！
+        this.pointLight = new THREE.PointLight(pureWhite, 0.0, 8000); 
+        this.pointLight.position.set(0, 500, 0); 
+        this.pointLight.castShadow = false; 
+        this.scene.add(this.pointLight);
     }
 
     createStudioBox() {
@@ -763,6 +771,16 @@ export class Scene18 extends SceneBase {
         // ターゲット強度は常にベースの0.1に戻ろうとするようにするで
         this.targetCoreEmissiveIntensity += (0.1 - this.targetCoreEmissiveIntensity) * 0.05;
 
+        // ライト強度の補間（パルス連動）
+        this.lightIntensity += (this.targetLightIntensity - this.lightIntensity) * 0.15;
+        if (this.pointLight) {
+            this.pointLight.intensity = this.lightIntensity;
+            // ライトの色もパルス色に合わせる！
+            this.pointLight.color.copy(this.pulseColor);
+        }
+        // ライトもすぐに暗く戻ろうとする
+        this.targetLightIntensity += (0.0 - this.targetLightIntensity) * 0.1;
+
         for (let i = this.pulses.length - 1; i >= 0; i--) {
             const p = this.pulses[i];
             p.progress += deltaTime * p.speed;
@@ -799,6 +817,9 @@ export class Scene18 extends SceneBase {
 
         // 球体を光らせる（トラック5の時だけとかの判別はhandleTrackNumber側でやるやで）
         this.targetCoreEmissiveIntensity = 0.1 + (velocity / 127.0) * 0.8; // 最大0.9まで光る！
+
+        // 【追加】ライトを光らせる！
+        this.targetLightIntensity = (velocity / 127.0) * 10.0; // 瞬間的に強く照らす！
     }
 
     initPostProcessing() {

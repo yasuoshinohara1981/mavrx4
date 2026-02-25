@@ -589,9 +589,10 @@ export class Scene18 extends SceneBase {
             
             if (isUpper) {
                 // 上から生える場合は、一度大きく外に回ってから地面へ
-                const bulgeScale = 1.2 + (radius / 300); 
-                // 球体への再突入を防ぐため、y座標を下げすぎないように調整！
-                const midY = Math.max(point1.y * 0.5, 600); 
+                // 【重要】細いケーブルほど球体に刺さりやすいので、強制的に外側に押し出す！
+                const bulgeScale = 1.3 + (radius < 40 ? 0.4 : (radius / 300)); 
+                // y座標も球体の表面（radius 1300 + 400 = 1700）より確実に外へ
+                const midY = Math.max(point1.y * 0.6, 800); 
                 points.push(new THREE.Vector3(
                     point1.x * bulgeScale,
                     midY,
@@ -599,11 +600,11 @@ export class Scene18 extends SceneBase {
                 ));
             } else {
                 // 下から生える場合は、地面を這うように
-                // 球体に刺さらないよう、外側にしっかり押し出す！
-                const midDistScale = 1.3 + (Math.random() * 0.5);
+                // 【重要】細いケーブルでも球体の下腹部に刺さらないよう、外側にガッツリ押し出す！
+                const midDistScale = 1.5 + (radius < 40 ? 0.5 : 0.0);
                 points.push(new THREE.Vector3(
                     point1.x * midDistScale,
-                    floorY + 300,
+                    floorY + 400,
                     point1.z * midDistScale
                 ));
             }

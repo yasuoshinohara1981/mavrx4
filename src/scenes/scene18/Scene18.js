@@ -480,18 +480,23 @@ export class Scene18 extends SceneBase {
             generatedCount++;
 
             // --- ケーブルの属性決定 ---
-            const isWhiteNonGlowing = Math.random() < 0.2; // 20%の確率で球体と同じ色の光らないケーブルに！
-            const finalCableColor = isWhiteNonGlowing ? 0xcccccc : cableColor;
+            const isWhiteNonGlowing = Math.random() < 0.35; // 20% -> 35% (確率を上げて確実に存在感を出す！)
+            const finalCableColor = isWhiteNonGlowing ? 0xeeeeee : cableColor; // 0xcccccc -> 0xeeeeee (より明るい白に！)
 
-            // 太さを調整 (極太を絞って、バランスを整える)
+            // 太さを調整
             const radiusRand = Math.random();
             let radius;
-            if (radiusRand < 0.4) {
-                radius = 15 + Math.random() * 20; // 40%は細め
-            } else if (radiusRand < 0.9) {
-                radius = 40 + Math.random() * 40; // 50%は中くらい
+            if (isWhiteNonGlowing) {
+                // 白いケーブルは中〜太めにして目立たせる！
+                radius = 40 + Math.random() * 60; 
             } else {
-                radius = 90 + Math.random() * 40; // 10%は超極太！
+                if (radiusRand < 0.4) {
+                    radius = 15 + Math.random() * 20;
+                } else if (radiusRand < 0.9) {
+                    radius = 40 + Math.random() * 40;
+                } else {
+                    radius = 90 + Math.random() * 40;
+                }
             }
 
             // --- 根本の「意味ありげな」接続ユニットユニット ---

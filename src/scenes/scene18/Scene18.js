@@ -536,7 +536,8 @@ export class Scene18 extends SceneBase {
                     for(int i = 0; i < 10; i++) {
                         if(uPulses[i] >= 0.0) {
                             float dist = abs(vUv.x - uPulses[i]);
-                            pulseEffect += smoothstep(0.1, 0.0, dist);
+                            // 0.1 -> 0.03 (光の弾丸を短く鋭く！)
+                            pulseEffect += smoothstep(0.03, 0.0, dist);
                         }
                     }
                     vec3 pulseColor = vec3(1.0, 0.0, 0.0);
@@ -672,8 +673,10 @@ export class Scene18 extends SceneBase {
     }
 
     updateAutoFocus() {
-        if (!this.useDOF || !this.bokehPass) return;
-        this.bokehPass.uniforms.focus.value = 3000;
+        if (!this.useDOF || !this.bokehPass || !this.centralSphere) return;
+        // 球体（核）までの距離を計算して動的にフォーカスを合わせるやで！
+        const dist = this.camera.position.distanceTo(this.centralSphere.position);
+        this.bokehPass.uniforms.focus.value = dist;
     }
 
     render() {

@@ -475,15 +475,15 @@ export class Scene18 extends SceneBase {
             // 中間の赤道付近は少し減らして、上下のメリハリを出す
             if (Math.abs(startPos.y - 400) < 200 && Math.random() > 0.3) continue;
 
-            // 太さを極端にランダム化 (5〜120)
+            // 太さを調整 (細いのを減らして、全体的に太めにシフト)
             const radiusRand = Math.random();
             let radius;
-            if (radiusRand < 0.6) {
-                radius = 5 + Math.random() * 15; // 60%は細い
-            } else if (radiusRand < 0.9) {
-                radius = 30 + Math.random() * 40; // 30%は中くらい
+            if (radiusRand < 0.3) {
+                radius = 15 + Math.random() * 20; // 30%は細め (5-20 -> 15-35)
+            } else if (radiusRand < 0.8) {
+                radius = 40 + Math.random() * 40; // 50%は中くらい (30-70 -> 40-80)
             } else {
-                radius = 80 + Math.random() * 40; // 10%は超極太！
+                radius = 90 + Math.random() * 60; // 20%は超極太！ (80-120 -> 90-150)
             }
 
             // --- 根本の「意味ありげな」接続ユニットユニット ---

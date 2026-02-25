@@ -260,7 +260,17 @@ export class Scene18 extends SceneBase {
         const clusterCount = 40; 
         this.clusterPositions = []; // 初期化
         const textures = this.generateDirtyTextures(512, detailColor, false); 
-        // ... (省略) ...
+        const metallicMat = new THREE.MeshStandardMaterial({
+            color: detailColor, 
+            map: textures.map,
+            bumpMap: textures.bumpMap,
+            bumpScale: 2.0,
+            metalness: 0.4, 
+            roughness: 0.7, 
+            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+            envMapIntensity: 0.8 
+        });
+
         for (let i = 0; i < clusterCount; i++) {
             const phi = Math.random() * Math.PI * 2;
             const theta = Math.random() * Math.PI;
@@ -275,7 +285,8 @@ export class Scene18 extends SceneBase {
 
             this.clusterPositions.push(pos); // 位置を記録！
             const normal = pos.clone().sub(new THREE.Vector3(0, 400, 0)).normalize();
-            // ... (以下、各ユニットの生成処理) ...
+
+            const clusterType = Math.floor(Math.random() * 4); // ここで定義！
 
             if (clusterType === 0) {
                 // --- パネルユニット (ベースプレート + Box + スイッチ列) ---

@@ -269,7 +269,7 @@ export class Scene18 extends SceneBase {
 
     createSphereDetails() {
         const detailColor = 0xcccccc; // 球体に合わせてグレーに
-        const clusterCount = 40; 
+        const clusterCount = 100; // 40 -> 100 (パーツをガッツリ増やすで！)
         this.clusterPositions = []; // 初期化
         const textures = this.generateDirtyTextures(512, detailColor, false); 
         const metallicMat = new THREE.MeshStandardMaterial({
@@ -294,10 +294,9 @@ export class Scene18 extends SceneBase {
             const normal = pos.clone().sub(new THREE.Vector3(0, 400, 0)).normalize();
 
             // 下半分に集中させる（メインケーブルとの調和）
-            if (y > 600 && Math.random() > 0.3) continue;
+            if (y > 600 && Math.random() > 0.4) continue; // 少し判定を緩めてパーツを残す
 
             this.clusterPositions.push(pos); // 位置を記録！
-
             const clusterType = Math.floor(Math.random() * 4); 
 
             if (clusterType === 0) {
@@ -473,17 +472,17 @@ export class Scene18 extends SceneBase {
             const isUpper = startPos.y > 400;
             
             // 中間の赤道付近は少し減らして、上下のメリハリを出す
-            if (Math.abs(startPos.y - 400) < 200 && Math.random() > 0.3) continue;
+            if (Math.abs(startPos.y - 400) < 200 && Math.random() > 0.5) continue;
 
-            // 太さを調整 (細いのを減らして、全体的に太めにシフト)
+            // 太さを調整 (極太を絞って、バランスを整える)
             const radiusRand = Math.random();
             let radius;
-            if (radiusRand < 0.3) {
-                radius = 15 + Math.random() * 20; // 30%は細め (5-20 -> 15-35)
-            } else if (radiusRand < 0.8) {
-                radius = 40 + Math.random() * 40; // 50%は中くらい (30-70 -> 40-80)
+            if (radiusRand < 0.4) {
+                radius = 15 + Math.random() * 20; // 40%は細め
+            } else if (radiusRand < 0.9) {
+                radius = 40 + Math.random() * 40; // 50%は中くらい
             } else {
-                radius = 90 + Math.random() * 60; // 20%は超極太！ (80-120 -> 90-150)
+                radius = 90 + Math.random() * 40; // 10%は超極太！（本数を絞ってレア感を）
             }
 
             // --- 根本の「意味ありげな」接続ユニットユニット ---

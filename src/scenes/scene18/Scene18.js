@@ -404,8 +404,7 @@ export class Scene18 extends SceneBase {
         }
     }
 
-    createCableRings(curve, cableRadius) {
-        const ringColor = 0x222222; // リングはかなり黒く
+    createCableRings(curve, cableRadius, ringColor) {
         const ringCount = 2 + Math.floor(Math.random() * 4); 
         const ringMat = new THREE.MeshStandardMaterial({
             color: ringColor,
@@ -689,7 +688,7 @@ export class Scene18 extends SceneBase {
 
             // ケーブルにリングを追加
             if (Math.random() > 0.3) {
-                this.createCableRings(curve, radius);
+                this.createCableRings(curve, radius, finalCableColor);
             }
         }
     }

@@ -590,17 +590,21 @@ export class Scene18 extends SceneBase {
             if (isUpper) {
                 // 上から生える場合は、一度大きく外に回ってから地面へ
                 const bulgeScale = 1.2 + (radius / 300); 
+                // 球体への再突入を防ぐため、y座標を下げすぎないように調整！
+                const midY = Math.max(point1.y * 0.5, 600); 
                 points.push(new THREE.Vector3(
                     point1.x * bulgeScale,
-                    point1.y * 0.5,
+                    midY,
                     point1.z * bulgeScale
                 ));
             } else {
                 // 下から生える場合は、地面を這うように
+                // 球体に刺さらないよう、外側にしっかり押し出す！
+                const midDistScale = 1.3 + (Math.random() * 0.5);
                 points.push(new THREE.Vector3(
-                    groundX * 0.5,
+                    point1.x * midDistScale,
                     floorY + 300,
-                    groundZ * 0.5
+                    point1.z * midDistScale
                 ));
             }
 

@@ -263,10 +263,10 @@ export class Scene18 extends SceneBase {
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 2.0,
-            metalness: 0.9,
-            roughness: 0.2,
+            metalness: 0.4, // 0.9 -> 0.4 (光沢を抑える)
+            roughness: 0.7, // 0.2 -> 0.7 (マット寄りに)
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 2.0
+            envMapIntensity: 0.8 // 2.0 -> 0.8 (反射を抑える)
         });
 
         for (let i = 0; i < detailCount; i++) {
@@ -311,10 +311,10 @@ export class Scene18 extends SceneBase {
         const ringCount = 2 + Math.floor(Math.random() * 4); 
         const ringMat = new THREE.MeshStandardMaterial({
             color: unifiedColor,
-            metalness: 1.0,
-            roughness: 0.1,
+            metalness: 0.5, // 1.0 -> 0.5 (光沢を抑える)
+            roughness: 0.6, // 0.1 -> 0.6 (マット寄りに)
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 2.0
+            envMapIntensity: 1.0 // 2.0 -> 1.0 (反射を抑える)
         });
 
         for (let i = 0; i < ringCount; i++) {
@@ -364,10 +364,10 @@ export class Scene18 extends SceneBase {
             const ringGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24); // より重厚に
             const ringMat = new THREE.MeshStandardMaterial({
                 color: unifiedColor,
-                metalness: 0.9,
-                roughness: 0.2,
+                metalness: 0.5, // 0.9 -> 0.5 (光沢を抑える)
+                roughness: 0.6, // 0.2 -> 0.6 (マット寄りに)
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 2.0
+                envMapIntensity: 1.0 // 2.0 -> 1.0 (反射を抑える)
             });
             const baseRing = new THREE.Mesh(ringGeo, ringMat);
             baseRing.position.copy(startPos);
@@ -409,7 +409,7 @@ export class Scene18 extends SceneBase {
                 bumpMap: cableTextures.bumpMap,
                 bumpScale: 3.0,
                 metalness: 0.9, // 0.3 -> 0.9 (ガッツリ金属光沢を！)
-                roughness: 0.1, // 0.6 -> 0.1 (ツルツルにしてテカらせる！)
+                roughness: 0.6, // 0.6 -> 0.1 (ツルツルにしてテカらせる！)
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
                 envMapIntensity: 2.5 // 1.0 -> 2.5 (反射を強調！)
             });
@@ -459,10 +459,10 @@ export class Scene18 extends SceneBase {
             const endRingGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24);
             const endRingMat = new THREE.MeshStandardMaterial({
                 color: unifiedColor,
-                metalness: 0.9,
-                roughness: 0.2,
+                metalness: 0.5, // 0.9 -> 0.5 (光沢を抑える)
+                roughness: 0.6, // 0.2 -> 0.6 (マット寄りに)
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.5
+                envMapIntensity: 1.0 // 1.5 -> 1.0 (反射を抑える)
             });
             const endRing = new THREE.Mesh(endRingGeo, endRingMat);
             endRing.position.copy(endPos);

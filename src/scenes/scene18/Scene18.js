@@ -48,7 +48,7 @@ export class Scene18 extends SceneBase {
         this.strobeEndTime = 0;
 
         this.trackEffects = {
-            1: true, 2: true, 3: false, 4: false, 5: true, 6: false, 7: false, 8: false, 9: false
+            1: true, 2: false, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
         };
 
         this.setScreenshotText(this.title);
@@ -627,7 +627,8 @@ export class Scene18 extends SceneBase {
             this.strobeActive = true; 
             this.strobeEndTime = Date.now() + durationMs;
         }
-        if (trackNumber === 5) {
+        // トラック5と6の両方でパルスをトリガーできるようにするやで！
+        if (trackNumber === 5 || trackNumber === 6) {
             const args = message.args || [];
             const velocity = args[1] !== undefined ? args[1] : 127;
             this.triggerPulse(velocity);

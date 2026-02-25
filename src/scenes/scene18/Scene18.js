@@ -903,7 +903,7 @@ export class Scene18 extends SceneBase {
     updateAutoFocus() {
         if (!this.useDOF || !this.bokehPass || !this.centralSphere) return;
         
-        // カメラのワールド座標を取得
+        // カメラのワールド座標を確実に取得
         const cameraWorldPos = new THREE.Vector3();
         this.camera.getWorldPosition(cameraWorldPos);
         

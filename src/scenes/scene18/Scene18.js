@@ -24,7 +24,7 @@ export class Scene18 extends SceneBase {
         
         // ケーブル関連
         this.cables = [];
-        this.cableCount = 120; // 60 -> 120 (さらに倍増！限界に挑戦や！)
+        this.cableCount = 100; // 120 -> 100 (少し減らしてバランス調整！)
         this.cableGroup = new THREE.Group();
 
         // 中央の球体

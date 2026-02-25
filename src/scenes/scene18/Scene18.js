@@ -584,15 +584,17 @@ export class Scene18 extends SceneBase {
             points.push(point1);
 
             // 中間点2：重力の影響（ここから先は「さっきのまま」の自然な挙動に戻すで！）
-            const groundDist = isUpper ? (2500 + Math.random() * 3000) : (1500 + Math.random() * 2000);
-            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.5;
+            // 【修正】着地点をより遠く（4000〜8000）に飛ばして、放射状に広げるやで！
+            const groundDist = isUpper ? (4000 + Math.random() * 4000) : (2500 + Math.random() * 3000);
+            // 角度もノイズを乗せつつ、基本は外向きに！
+            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
             const groundX = Math.cos(groundAngle) * groundDist;
             const groundZ = Math.sin(groundAngle) * groundDist;
             
             if (isUpper) {
                 // 上から生える場合は、一度大きく外に回ってから地面へ
                 // 【重要】細いケーブルほど球体に刺さりやすいので、強制的に外側に押し出す！
-                const bulgeScale = 1.3 + (radius < 40 ? 0.4 : (radius / 300)); 
+                const bulgeScale = 1.5 + (radius < 40 ? 0.5 : (radius / 200)); 
                 // y座標も球体の表面（radius 1300 + 400 = 1700）より確実に外へ
                 const midY = Math.max(point1.y * 0.6, 800); 
                 points.push(new THREE.Vector3(
@@ -603,7 +605,7 @@ export class Scene18 extends SceneBase {
             } else {
                 // 下から生える場合は、地面を這うように
                 // 【重要】細いケーブルでも球体の下腹部に刺さらないよう、外側にガッツリ押し出す！
-                const midDistScale = 1.5 + (radius < 40 ? 0.5 : 0.0);
+                const midDistScale = 1.8 + (radius < 40 ? 0.7 : 0.0);
                 points.push(new THREE.Vector3(
                     point1.x * midDistScale,
                     floorY + 400,

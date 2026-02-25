@@ -24,12 +24,12 @@ export class Scene18 extends SceneBase {
         
         // ケーブル関連
         this.cables = [];
-        this.cableCount = 60; // 30 -> 60 (倍増！)
+        this.cableCount = 120; // 60 -> 120 (さらに倍増！限界に挑戦や！)
         this.cableGroup = new THREE.Group();
 
         // 中央の球体
         this.centralSphere = null;
-        this.coreRadius = 500; // 350 -> 500 (もっと巨大に！)
+        this.coreRadius = 700; // 500 -> 700 (画面を埋め尽くす巨大さ！)
         this.detailGroup = new THREE.Group(); // 球体やケーブルの部品用
 
         // 光の弾丸（ファイバーエフェクト）管理
@@ -146,13 +146,13 @@ export class Scene18 extends SceneBase {
     }
 
     createSphereDetails() {
-        const detailCount = 80; // 40 -> 80 (増量！)
+        const detailCount = 200; // 80 -> 200 (超高密度！)
         const metallicMat = new THREE.MeshStandardMaterial({
-            color: 0x888888, // 少し明るく
-            metalness: 0.9,
-            roughness: 0.2,
+            color: 0xaaaaaa, // さらに明るくしてディテールを強調
+            metalness: 0.95,
+            roughness: 0.15,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.5
+            envMapIntensity: 2.0
         });
 
         for (let i = 0; i < detailCount; i++) {
@@ -193,13 +193,13 @@ export class Scene18 extends SceneBase {
     }
 
     createCableRings(curve, cableRadius) {
-        const ringCount = 1 + Math.floor(Math.random() * 3);
+        const ringCount = 2 + Math.floor(Math.random() * 4); // 1-3 -> 2-6 (密度アップ)
         const ringMat = new THREE.MeshStandardMaterial({
-            color: 0x888888,
+            color: 0xcccccc,
             metalness: 1.0,
-            roughness: 0.1,
+            roughness: 0.05,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 2.0
+            envMapIntensity: 2.5
         });
 
         for (let i = 0; i < ringCount; i++) {
@@ -241,16 +241,16 @@ export class Scene18 extends SceneBase {
             // 球体の下半分から生える確率を高くする（画像イメージ）
             if (startPos.y > 600 && Math.random() > 0.2) continue;
 
-            const radius = 15 + Math.random() * 65; // 10〜60 -> 15〜80 (もっと太く！)
+            const radius = 10 + Math.random() * 80; // 15〜80 -> 10〜90 (さらにバリエーション豊かに)
 
             // --- 根本のリング（取り付け感） ---
-            const ringGeo = new THREE.TorusGeometry(radius * 1.3, radius * 0.3, 12, 24);
+            const ringGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24); // より重厚に
             const ringMat = new THREE.MeshStandardMaterial({
-                color: 0x666666,
-                metalness: 0.9,
-                roughness: 0.2,
+                color: 0x999999,
+                metalness: 0.95,
+                roughness: 0.1,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.5
+                envMapIntensity: 2.0
             });
             const baseRing = new THREE.Mesh(ringGeo, ringMat);
             baseRing.position.copy(startPos);

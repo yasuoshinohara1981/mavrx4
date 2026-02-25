@@ -479,6 +479,10 @@ export class Scene18 extends SceneBase {
             // ここまで来たら生成確定！
             generatedCount++;
 
+            // --- ケーブルの属性決定 ---
+            const isWhiteNonGlowing = Math.random() < 0.2; // 20%の確率で球体と同じ色の光らないケーブルに！
+            const finalCableColor = isWhiteNonGlowing ? 0xcccccc : cableColor;
+
             // 太さを調整 (極太を絞って、バランスを整える)
             const radiusRand = Math.random();
             let radius;
@@ -499,7 +503,7 @@ export class Scene18 extends SceneBase {
             // 1. ベースの巨大なフランジ（多角形プレート）
             const flangeGeo = new THREE.CylinderGeometry(radius * 2.2, radius * 2.2, 15, 8);
             const unitMat = new THREE.MeshStandardMaterial({
-                color: 0x888888,
+                color: finalCableColor, // ケーブルの色に合わせる
                 metalness: 0.6,
                 roughness: 0.4,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
@@ -582,62 +586,64 @@ export class Scene18 extends SceneBase {
             const geometry = new THREE.TubeGeometry(curve, 64, radius, 8, false); // 128, 12 -> 64, 8 (セグメントを減らして軽量化！)
             
             const material = new THREE.MeshStandardMaterial({
-                color: cableColor,
+                color: finalCableColor,
                 map: cableTextures.map,
                 bumpMap: cableTextures.bumpMap,
                 bumpScale: 3.0,
-                metalness: 0.9, 
-                roughness: 0.1, 
+                metalness: isWhiteNonGlowing ? 0.1 : 0.9, // 白いのはマットに、黒いのはテカテカに
+                roughness: isWhiteNonGlowing ? 0.9 : 0.1, 
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 2.5 
+                envMapIntensity: isWhiteNonGlowing ? 0.5 : 2.5 
             });
 
-            material.onBeforeCompile = (shader) => {
-                shader.uniforms.uPulses = { value: new Float32Array(10).fill(-1.0) };
-                
-                shader.vertexShader = `
-                    varying vec2 vUv;
-                    ${shader.vertexShader}
-                `.replace(
-                    `#include <begin_vertex>`,
-                    `#include <begin_vertex>
-                    vUv = uv;`
-                );
+            if (!isWhiteNonGlowing) {
+                material.onBeforeCompile = (shader) => {
+                    shader.uniforms.uPulses = { value: new Float32Array(10).fill(-1.0) };
+                    
+                    shader.vertexShader = `
+                        varying vec2 vUv;
+                        ${shader.vertexShader}
+                    `.replace(
+                        `#include <begin_vertex>`,
+                        `#include <begin_vertex>
+                        vUv = uv;`
+                    );
 
-                shader.fragmentShader = `
-                    uniform float uPulses[10];
-                    varying vec2 vUv;
-                    ${shader.fragmentShader}
-                `.replace(
-                    `#include <dithering_fragment>`,
-                    `
-                    #include <dithering_fragment>
-                    float pulseEffect = 0.0;
-                    for(int i = 0; i < 10; i++) {
-                        if(uPulses[i] >= 0.0) {
-                            float dist = abs(vUv.x - uPulses[i]);
-                            // 0.1 -> 0.03 (光の弾丸を短く鋭く！)
-                            pulseEffect += smoothstep(0.03, 0.0, dist);
+                    shader.fragmentShader = `
+                        uniform float uPulses[10];
+                        varying vec2 vUv;
+                        ${shader.fragmentShader}
+                    `.replace(
+                        `#include <dithering_fragment>`,
+                        `
+                        #include <dithering_fragment>
+                        float pulseEffect = 0.0;
+                        for(int i = 0; i < 10; i++) {
+                            if(uPulses[i] >= 0.0) {
+                                float dist = abs(vUv.x - uPulses[i]);
+                                // 0.1 -> 0.03 (光の弾丸を短く鋭く！)
+                                pulseEffect += smoothstep(0.03, 0.0, dist);
+                            }
                         }
-                    }
-                    vec3 pulseColor = vec3(1.0, 0.0, 0.0);
-                    float constantGlow = smoothstep(0.15, 0.0, vUv.x) * 0.3;
-                    gl_FragColor.rgb += pulseColor * (pulseEffect * 12.0 + constantGlow); 
-                    `
-                );
-                material.userData.shader = shader;
-            };
+                        vec3 pulseColor = vec3(1.0, 0.0, 0.0);
+                        float constantGlow = smoothstep(0.15, 0.0, vUv.x) * 0.3;
+                        gl_FragColor.rgb += pulseColor * (pulseEffect * 12.0 + constantGlow); 
+                        `
+                    );
+                    material.userData.shader = shader;
+                };
+            }
 
             const mesh = new THREE.Mesh(geometry, material);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             this.cableGroup.add(mesh);
-            this.cables.push({ mesh, material });
+            this.cables.push({ mesh, material, isGlowing: !isWhiteNonGlowing });
 
             // --- 先端のリング（地面への固定感） ---
             const endRingGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24);
             const endRingMat = new THREE.MeshStandardMaterial({
-                color: cableColor,
+                color: finalCableColor,
                 metalness: 0.5, 
                 roughness: 0.6, 
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
@@ -654,6 +660,8 @@ export class Scene18 extends SceneBase {
             if (Math.random() > 0.3) {
                 this.createCableRings(curve, radius);
             }
+        }
+    }
         }
     }
 

@@ -55,11 +55,43 @@ export class Scene18 extends SceneBase {
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        // 球体の半径が700、中心高さが400なので、余裕を持って3500以上に設定
-        // これで球体の内部に入り込んで消えるのを防ぐやで！
-        cameraParticle.minDistance = 4000; // 3500 -> 4000 (安全マージン確保)
-        cameraParticle.maxDistance = 15000; // 12000 -> 15000 (より広大に)
-        cameraParticle.minY = 0; // 地面（-500）より少し上に制限
+        // 球体の半径が700、中心高さが400
+        // minDistanceを球体の半径 + ニアクリップ分以上に設定
+        cameraParticle.minDistance = 1500; // 4000 -> 1500 (物理的な制限)
+        cameraParticle.maxDistance = 15000;
+        cameraParticle.minY = 0;
+        
+        // ニアクリップによる「中身透け」を防ぐため、
+        // 物理的な minDistance をさらに大きく取るやで。
+        // ここは Scene17 の updateCamera ロジックを参考に、
+        // 毎フレームの更新で強制的に距離を保つようにするで。
+    }
+
+    /**
+     * カメラの位置を更新（SceneBaseのオーバーライド）
+     */
+    updateCamera() {
+        if (this.cameraParticles[this.currentCameraIndex]) {
+            const cp = this.cameraParticles[this.currentCameraIndex];
+            const cameraPos = cp.getPosition();
+            
+            // --- 球体の内部に入らないように強制補正 ---
+            // 球体の中心 (0, 400, 0) からの距離を計算
+            const coreCenter = new THREE.Vector3(0, 400, 0);
+            const distToCore = cameraPos.distanceTo(coreCenter);
+            
+            // 安全距離（半径700 + 余裕分）
+            const safeDistance = 1200; 
+            
+            if (distToCore < safeDistance) {
+                const dir = cameraPos.clone().sub(coreCenter).normalize();
+                cameraPos.copy(coreCenter.clone().add(dir.multiplyScalar(safeDistance)));
+            }
+            
+            this.camera.position.copy(cameraPos);
+            this.camera.lookAt(coreCenter);
+            this.camera.matrixWorldNeedsUpdate = false;
+        }
     }
 
     async setup() {
@@ -448,6 +480,9 @@ export class Scene18 extends SceneBase {
     onUpdate(deltaTime) {
         if (!this.initialized) return;
         this.time += deltaTime;
+
+        // カメラの更新を明示的に呼ぶ
+        this.updateCamera();
 
         for (let i = this.pulses.length - 1; i >= 0; i--) {
             const p = this.pulses[i];

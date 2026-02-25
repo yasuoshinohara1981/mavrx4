@@ -481,16 +481,17 @@ export class Scene18 extends SceneBase {
             generatedCount++;
 
             // --- ケーブルの属性決定 ---
-            const isWhiteNonGlowing = Math.random() < 0.35; // 20% -> 35% (確率を上げて確実に存在感を出す！)
-            const finalCableColor = isWhiteNonGlowing ? 0xeeeeee : cableColor; // 0xcccccc -> 0xeeeeee (より明るい白に！)
+            // 確率を50%に上げて、さらにデバッグ用に色を極端にするやで！
+            const isWhiteNonGlowing = Math.random() < 0.5; 
+            const finalCableColor = isWhiteNonGlowing ? 0xffffff : 0x111111; // 真っ白 vs 真っ黒
 
             // 太さを調整
-            const radiusRand = Math.random();
             let radius;
             if (isWhiteNonGlowing) {
-                // 白いケーブルは中〜太めにして目立たせる！
-                radius = 40 + Math.random() * 60; 
+                // 白いケーブルは常に極太にして絶対に隠れさせない！
+                radius = 60 + Math.random() * 60; 
             } else {
+                const radiusRand = Math.random();
                 if (radiusRand < 0.4) {
                     radius = 15 + Math.random() * 20;
                 } else if (radiusRand < 0.9) {
@@ -745,8 +746,17 @@ export class Scene18 extends SceneBase {
 
     updateAutoFocus() {
         if (!this.useDOF || !this.bokehPass || !this.centralSphere) return;
-        // 球体（核）までの距離を計算して動的にフォーカスを合わせるやで！
-        const dist = this.camera.position.distanceTo(this.centralSphere.position);
+        
+        // カメラのワールド座標を確実に取得
+        const cameraWorldPos = new THREE.Vector3();
+        this.camera.getWorldPosition(cameraWorldPos);
+        
+        // 球体（核）のワールド座標を確実に取得
+        const coreWorldPos = new THREE.Vector3();
+        this.centralSphere.getWorldPosition(coreWorldPos);
+        
+        // 距離を計算してフォーカスを更新
+        const dist = cameraWorldPos.distanceTo(coreWorldPos);
         this.bokehPass.uniforms.focus.value = dist;
     }
 

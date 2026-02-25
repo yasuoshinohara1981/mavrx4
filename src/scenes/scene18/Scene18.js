@@ -575,7 +575,9 @@ export class Scene18 extends SceneBase {
             points.push(startPos.clone()); // 根本
             
             // 中間点1：法線方向に突き出す（上なら上へ、下なら横へ）
-            const pushDist = isUpper ? (200 + Math.random() * 400) : (100 + Math.random() * 200);
+            // 太いケーブルほど、折れないように遠くまで突き出させて緩やかに曲げるやで！
+            const pushDistBase = isUpper ? 400 : 200;
+            const pushDist = pushDistBase + (radius * 3.0) + (Math.random() * 200);
             const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
             points.push(point1);
 
@@ -587,10 +589,12 @@ export class Scene18 extends SceneBase {
             
             if (isUpper) {
                 // 上から生える場合は、一度大きく外に回ってから地面へ
+                // ここも太さに合わせて膨らみを調整するで！
+                const bulgeScale = 1.2 + (radius / 200); 
                 points.push(new THREE.Vector3(
-                    point1.x * 1.2,
+                    point1.x * bulgeScale,
                     point1.y * 0.5,
-                    point1.z * 1.2
+                    point1.z * bulgeScale
                 ));
             } else {
                 // 下から生える場合は、地面を這うように
@@ -603,11 +607,15 @@ export class Scene18 extends SceneBase {
 
             // 終点：地面に向かって垂直に突き刺さるような配置
             const endPos = new THREE.Vector3(groundX, floorY, groundZ);
-            points.push(new THREE.Vector3(groundX, floorY + 300, groundZ)); 
+            // 地面に刺さる直前の点も、太さに合わせて高さを変えて滑らかにするやで！
+            const approachHeight = 300 + (radius * 2.0);
+            points.push(new THREE.Vector3(groundX, floorY + approachHeight, groundZ)); 
             points.push(endPos);
 
             const curve = new THREE.CatmullRomCurve3(points);
-            const geometry = new THREE.TubeGeometry(curve, 64, radius, 8, false); // 128, 12 -> 64, 8 (セグメントを減らして軽量化！)
+            // 太いケーブルほどセグメントを増やして滑らかに見せるやで！
+            const segments = radius > 80 ? 128 : 64;
+            const geometry = new THREE.TubeGeometry(curve, segments, radius, 8, false); 
             
             const material = new THREE.MeshStandardMaterial({
                 color: finalCableColor,

@@ -227,15 +227,15 @@ export class Scene18 extends SceneBase {
     }
 
     createCore() {
-        const coreColor = 0xcccccc; // 0xffffff -> 0xcccccc (少しグレー寄りに)
+        const coreColor = 0xaaaaaa; // 0x777777 -> 0xaaaaaa (さらに明るめのグレーに！)
         const textures = this.generateDirtyTextures(1024, coreColor, true); 
         const sphereGeo = new THREE.SphereGeometry(this.coreRadius, 64, 64);
         const sphereMat = new THREE.MeshStandardMaterial({
             color: coreColor,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 2.0, // 15.0 -> 2.0 (バンプも大幅に抑えて質感を滑らかに！)
-            emissive: coreColor,
+            bumpScale: 2.0, 
+            emissive: 0x444444, // 自己発光も少し明るく
             emissiveIntensity: 0.1, 
             metalness: 0.1,
             roughness: 0.9,
@@ -335,25 +335,15 @@ export class Scene18 extends SceneBase {
     }
 
     createSphereDetails() {
-        const detailColor = 0xcccccc; // 球体に合わせてグレーに
         const clusterCount = 100; // 40 -> 100 (パーツをガッツリ増やすで！)
         this.clusterPositions = []; // 初期化
-        const textures = this.generateDirtyTextures(512, detailColor, false); 
-        this.detailMaterial = new THREE.MeshStandardMaterial({
-            color: detailColor, 
-            map: textures.map,
-            bumpMap: textures.bumpMap,
-            bumpScale: 1.5, // 8.0 -> 1.5 (パーツも上品な質感へ)
-            emissive: detailColor,
-            emissiveIntensity: 0.1,
-            metalness: 0.2, 
-            roughness: 0.8, 
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.5 
-        });
-
-        // ジオメトリをマージするための準備や！
-        const geometries = [];
+        
+        // ジオメトリをマージするための準備（色ごとに分けるやで！）
+        const geometriesByColor = {
+            dark: [],
+            mid: [],
+            light: []
+        };
 
         for (let i = 0; i < clusterCount; i++) {
             const phi = Math.random() * Math.PI * 2;
@@ -371,6 +361,13 @@ export class Scene18 extends SceneBase {
             this.clusterPositions.push(pos); // 位置を記録！
             const clusterType = Math.floor(Math.random() * 4); 
 
+            // このクラスターの色を決定（濃淡バリエーション！）
+            const colorTypeRand = Math.random();
+            let targetList;
+            if (colorTypeRand < 0.4) targetList = geometriesByColor.dark;
+            else if (colorTypeRand < 0.8) targetList = geometriesByColor.mid;
+            else targetList = geometriesByColor.light;
+
             // ダミーのObject3Dを使って行列計算を楽にするやで
             const dummy = new THREE.Object3D();
             dummy.position.copy(pos);
@@ -383,13 +380,13 @@ export class Scene18 extends SceneBase {
                 const baseHeight = 300 + Math.random() * 400;
                 const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 40); // 厚みもアップ
                 baseGeo.applyMatrix4(dummy.matrix);
-                geometries.push(baseGeo);
+                targetList.push(baseGeo);
 
                 // パネルの上のBox
                 const boxGeo = new THREE.BoxGeometry(baseWidth * 0.7, baseHeight * 0.7, 80);
                 const boxMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, 40));
                 boxGeo.applyMatrix4(boxMatrix);
-                geometries.push(boxGeo);
+                targetList.push(boxGeo);
 
                 // スイッチの列（スイッチも巨大化！）
                 const switchCount = 3 + Math.floor(Math.random() * 3);
@@ -402,7 +399,7 @@ export class Scene18 extends SceneBase {
                         70
                     ));
                     sGeo.applyMatrix4(sMatrix);
-                    geometries.push(sGeo);
+                    targetList.push(sGeo);
                 }
             } else if (clusterType === 1) {
                 // --- 円形コネクタユニット (大円盤 + 小円盤 + パイプ) ---
@@ -410,26 +407,26 @@ export class Scene18 extends SceneBase {
                 const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, 40, 24);
                 const baseMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
                 baseGeo.applyMatrix4(baseMatrix);
-                geometries.push(baseGeo);
+                targetList.push(baseGeo);
 
                 // 重ねる小円盤
                 const subGeo = new THREE.CylinderGeometry(baseRadius * 0.6, baseRadius * 0.6, 60, 24);
                 const subMatrix = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 30, 0));
                 subGeo.applyMatrix4(subMatrix);
-                geometries.push(subGeo);
+                targetList.push(subGeo);
 
                 // 突き出るパイプ（太く長く！）
                 const pipeGeo = new THREE.CylinderGeometry(50, 50, 300, 12);
                 const pipeMatrix = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 100, 0));
                 pipeGeo.applyMatrix4(pipeMatrix);
-                geometries.push(pipeGeo);
+                targetList.push(pipeGeo);
             } else if (clusterType === 2) {
                 // --- メンテナンスハッチユニット (プレート + ボルト風ディテール) ---
                 const size = 300 + Math.random() * 250; // 150-250 -> 300-550
                 const hatchGeo = new THREE.CylinderGeometry(size, size, 30, 6);
                 const hatchMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
                 hatchGeo.applyMatrix4(hatchMatrix);
-                geometries.push(hatchGeo);
+                targetList.push(hatchGeo);
 
                 // ボルト風の小さい円柱を角に配置（ボルトもデカい！）
                 const boltGeo = new THREE.CylinderGeometry(30, 30, 50, 8);
@@ -442,14 +439,14 @@ export class Scene18 extends SceneBase {
                         Math.sin(angle) * size * 0.8
                     ));
                     bGeo.applyMatrix4(bMatrix);
-                    geometries.push(bGeo);
+                    targetList.push(bGeo);
                 }
             } else {
                 // --- サブケーブル・ジャンクションユニット ---
                 const boxSize = 250 + Math.random() * 200;
                 const baseGeo = new THREE.BoxGeometry(boxSize, boxSize, 100);
                 baseGeo.applyMatrix4(dummy.matrix);
-                geometries.push(baseGeo);
+                targetList.push(baseGeo);
 
                 // そこから生える細いケーブル（サブケーブルも太く！）
                 const subCableCount = 2 + Math.floor(Math.random() * 2);
@@ -465,18 +462,44 @@ export class Scene18 extends SceneBase {
 
                     const subCurve = new THREE.CatmullRomCurve3(subPoints);
                     const subGeo = new THREE.TubeGeometry(subCurve, 32, subRadius, 8, false);
-                    geometries.push(subGeo);
+                    targetList.push(subGeo);
                 }
             }
         }
 
-        // 全てのジオメトリを一つにマージ！これでDraw Callが激減するやで！
-        if (geometries.length > 0) {
-            const mergedGeo = BufferGeometryUtils.mergeGeometries(geometries);
-            const mergedMesh = new THREE.Mesh(mergedGeo, this.detailMaterial);
-            mergedMesh.castShadow = true;
-            mergedMesh.receiveShadow = true;
-            this.detailGroup.add(mergedMesh);
+        // 色ごとのマテリアル作成とメッシュ生成
+        const colors = {
+            dark: 0x666666,  // 0x444444 -> 0x666666 (全体的に一段階アップ！)
+            mid: 0x999999,   // 0x888888 -> 0x999999
+            light: 0xdddddd  // 0xcccccc -> 0xdddddd
+        };
+
+        this.detailMaterials = []; // 管理用
+
+        for (const [key, geoList] of Object.entries(geometriesByColor)) {
+            if (geoList.length > 0) {
+                const color = colors[key];
+                const textures = this.generateDirtyTextures(512, color, false);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: color,
+                    map: textures.map,
+                    bumpMap: textures.bumpMap,
+                    bumpScale: 1.5,
+                    emissive: 0x222222,
+                    emissiveIntensity: 0.1,
+                    metalness: 0.2,
+                    roughness: 0.8,
+                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                    envMapIntensity: 0.5
+                });
+                this.detailMaterials.push(mat);
+
+                const mergedGeo = BufferGeometryUtils.mergeGeometries(geoList);
+                const mergedMesh = new THREE.Mesh(mergedGeo, mat);
+                mergedMesh.castShadow = true;
+                mergedMesh.receiveShadow = true;
+                this.detailGroup.add(mergedMesh);
+            }
         }
     }
 
@@ -661,11 +684,19 @@ export class Scene18 extends SceneBase {
 
             // 中間点2：重力の影響（ここから先は「さっきのまま」の自然な挙動に戻すで！）
             // 【修正】着地点をより遠く（4000〜8000）に飛ばして、放射状に広げるやで！
-            const groundDist = isUpper ? (4000 + Math.random() * 4000) : (2500 + Math.random() * 3000);
+            let groundDist = isUpper ? (4000 + Math.random() * 4000) : (2500 + Math.random() * 3000);
             // 角度もノイズを乗せつつ、基本は外向きに！
             const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
-            const groundX = Math.cos(groundAngle) * groundDist;
-            const groundZ = Math.sin(groundAngle) * groundDist;
+            let groundX = Math.cos(groundAngle) * groundDist;
+            let groundZ = Math.sin(groundAngle) * groundDist;
+
+            // --- 部屋の境界（StudioBox）からはみ出ないように制限！ ---
+            const roomLimit = 4800; // 壁にめり込まない安全圏
+            if (Math.abs(groundX) > roomLimit || Math.abs(groundZ) > roomLimit) {
+                const scale = roomLimit / Math.max(Math.abs(groundX), Math.abs(groundZ));
+                groundX *= scale;
+                groundZ *= scale;
+            }
             
             if (isUpper) {
                 // 上から生える場合は、一度大きく外に回ってから地面へ
@@ -802,12 +833,14 @@ export class Scene18 extends SceneBase {
         this.coreEmissiveIntensity = 0.1; // ベースの明るさに固定
         if (this.centralSphere && this.centralSphere.material) {
             this.centralSphere.material.emissiveIntensity = this.coreEmissiveIntensity;
-            this.centralSphere.material.emissive.setHex(0xcccccc); // 固定色
+            this.centralSphere.material.emissive.setHex(0x222222); // 固定色
         }
         // パーツのマテリアルも固定！
-        if (this.detailMaterial) {
-            this.detailMaterial.emissiveIntensity = this.coreEmissiveIntensity;
-            this.detailMaterial.emissive.setHex(0xcccccc);
+        if (this.detailMaterials) {
+            this.detailMaterials.forEach(mat => {
+                mat.emissiveIntensity = this.coreEmissiveIntensity;
+                mat.emissive.setHex(0x111111);
+            });
         }
 
         // ライト強度の補間（パルス連動）
@@ -899,7 +932,8 @@ export class Scene18 extends SceneBase {
             
             // value(0-127)に応じて色を変える
             // 0:赤, 42:緑, 84:青, 127:紫 みたいなイメージや！
-            const hue = (value / 127);
+            // Hueの範囲を1.0まで使い切って、赤から紫、そして赤に戻る直前まで！
+            const hue = (value / 127.0); // 0.0〜1.0 (赤〜緑〜青〜紫〜赤)
             this.targetPulseColor.setHSL(hue, 1.0, 0.5);
         }
     }
@@ -911,8 +945,9 @@ export class Scene18 extends SceneBase {
         const cameraWorldPos = new THREE.Vector3();
         this.camera.getWorldPosition(cameraWorldPos);
         
-        // 球体（核）の中心座標
-        const coreCenter = new THREE.Vector3(0, 400, 0);
+        // 球体（核）の中心座標（動的に取得するように変更！）
+        const coreCenter = new THREE.Vector3();
+        this.centralSphere.getWorldPosition(coreCenter);
         
         // カメラから球体中心までの距離
         const distToCenter = cameraWorldPos.distanceTo(coreCenter);

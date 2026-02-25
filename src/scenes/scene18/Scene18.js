@@ -390,6 +390,7 @@ export class Scene18 extends SceneBase {
                     const subStartPos = pos.clone().add(startOffset);
                     subPoints.push(subStartPos);
                     
+                    // 適当に地面に向かって垂らす
                     subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(250)).add(new THREE.Vector3(0, -400, 0)));
                     subPoints.push(new THREE.Vector3(pos.x * 1.4, -498, pos.z * 1.4));
 
@@ -595,10 +596,10 @@ export class Scene18 extends SceneBase {
                 map: cableTextures.map,
                 bumpMap: cableTextures.bumpMap,
                 bumpScale: 3.0,
-                metalness: isWhiteNonGlowing ? 0.1 : 0.9, // 白いのはマットに、黒いのはテカテカに
-                roughness: isWhiteNonGlowing ? 0.9 : 0.1, 
+                metalness: isWhiteNonGlowing ? 0.0 : 0.9, 
+                roughness: isWhiteNonGlowing ? 1.0 : 0.1, 
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: isWhiteNonGlowing ? 0.5 : 2.5 
+                envMapIntensity: isWhiteNonGlowing ? 0.2 : 2.5 
             });
 
             if (!isWhiteNonGlowing) {

@@ -554,7 +554,8 @@ export class Scene18 extends SceneBase {
                 unitGroup.add(bolt);
             }
 
-            // 4. ユニットから派生する細いサブワイヤー
+            // 4. ユニットから派生する細いサブワイヤー（クリップみたいに見えるので削除！）
+            /*
             const subWireCount = 2 + Math.floor(Math.random() * 3);
             for (let j = 0; j < subWireCount; j++) {
                 const subRadius = 3 + Math.random() * 4;
@@ -570,6 +571,7 @@ export class Scene18 extends SceneBase {
                 const subMesh = new THREE.Mesh(subGeo, unitMat);
                 this.detailGroup.add(subMesh);
             }
+            */
 
             const points = [];
             points.push(startPos.clone()); // 根本

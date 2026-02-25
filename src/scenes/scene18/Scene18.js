@@ -438,50 +438,47 @@ export class Scene18 extends SceneBase {
         const floorY = -498;
         const cableTextures = this.generateDirtyTextures(1024, cableColor, false); 
 
-        for (let i = 0; i < this.cableCount; i++) {
-            let phi, theta, normal, startPos;
-            let isValid = false;
-            let attempts = 0;
+        let generatedCount = 0;
+        let attempts = 0;
+        const maxAttempts = 2000; // 確実に120本生やすために試行回数を増やす
 
-            // パーツと被らない場所を探すループや！
-            while (!isValid && attempts < 20) {
-                phi = Math.acos(2 * Math.random() - 1);
-                theta = Math.random() * Math.PI * 2;
-                
-                normal = new THREE.Vector3(
-                    Math.sin(phi) * Math.cos(theta),
-                    Math.cos(phi),
-                    Math.sin(phi) * Math.sin(theta)
-                );
+        while (generatedCount < this.cableCount && attempts < maxAttempts) {
+            attempts++;
+            
+            const phi = Math.acos(2 * Math.random() - 1);
+            const theta = Math.random() * Math.PI * 2;
+            
+            const normal = new THREE.Vector3(
+                Math.sin(phi) * Math.cos(theta),
+                Math.cos(phi),
+                Math.sin(phi) * Math.sin(theta)
+            );
 
-                startPos = normal.clone().multiplyScalar(this.coreRadius);
-                startPos.y += 400;
-
-                // 既存のパーツ位置との距離をチェック
-                isValid = true;
-                for (const clusterPos of this.clusterPositions) {
-                    if (startPos.distanceTo(clusterPos) < 180) { // 180ユニット以内はNG！
-                        isValid = false;
-                        break;
-                    }
-                }
-                attempts++;
-            }
+            const startPos = normal.clone().multiplyScalar(this.coreRadius);
+            startPos.y += 400; // 球体の中心高さ
 
             // --- 生え方の調整（ノイズを使って不均一に偏らせる） ---
-            // phiとthetaを使った擬似ノイズで、生える場所を「塊（クラスター）」にするやで
             const spawnNoise = Math.sin(phi * 4.0) * Math.cos(theta * 4.0) + Math.sin(phi * 8.0) * 0.5;
-            
-            // 基本的な出現判定（ノイズが低い場所は間引く）
             if (spawnNoise < -0.2 && Math.random() > 0.2) continue;
 
-            // 上下の配分調整（上部を少し控えめにして、下半分〜横にボリュームを出す）
             const isUpper = startPos.y > 400;
-            if (isUpper && Math.random() > 0.5) continue; // 上から生える確率をさらに半分に！
+            if (isUpper && Math.random() > 0.5) continue; 
             
-            // 赤道付近（横方向）に太いのが集まるとカッコええから、そこは残す
             const isEquator = Math.abs(startPos.y - 400) < 300;
-            if (!isEquator && !isUpper && Math.random() > 0.3) continue; // 真下すぎるのも少し間引く
+            if (!isEquator && !isUpper && Math.random() > 0.3) continue;
+
+            // 既存のパーツ位置との距離をチェック
+            let isTooClose = false;
+            for (const clusterPos of this.clusterPositions) {
+                if (startPos.distanceTo(clusterPos) < 180) {
+                    isTooClose = true;
+                    break;
+                }
+            }
+            if (isTooClose) continue;
+
+            // ここまで来たら生成確定！
+            generatedCount++;
 
             // 太さを調整 (極太を絞って、バランスを整える)
             const radiusRand = Math.random();
@@ -491,7 +488,7 @@ export class Scene18 extends SceneBase {
             } else if (radiusRand < 0.9) {
                 radius = 40 + Math.random() * 40; // 50%は中くらい
             } else {
-                radius = 90 + Math.random() * 40; // 10%は超極太！（本数を絞ってレア感を）
+                radius = 90 + Math.random() * 40; // 10%は超極太！
             }
 
             // --- 根本の「意味ありげな」接続ユニットユニット ---

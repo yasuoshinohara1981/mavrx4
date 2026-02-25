@@ -55,9 +55,11 @@ export class Scene18 extends SceneBase {
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        cameraParticle.minDistance = 3500; // 2500 -> 3500 (巨大化したから離す)
-        cameraParticle.maxDistance = 12000; // 8000 -> 12000 (より広大に)
-        cameraParticle.minY = -450; 
+        // 球体の半径が700、中心高さが400なので、余裕を持って3500以上に設定
+        // これで球体の内部に入り込んで消えるのを防ぐやで！
+        cameraParticle.minDistance = 4000; // 3500 -> 4000 (安全マージン確保)
+        cameraParticle.maxDistance = 15000; // 12000 -> 15000 (より広大に)
+        cameraParticle.minY = 0; // 地面（-500）より少し上に制限
     }
 
     async setup() {
@@ -67,8 +69,9 @@ export class Scene18 extends SceneBase {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.3;
 
-        this.camera.position.set(0, 2000, 6000); // 1500, 4500 -> 2000, 6000
-        this.camera.lookAt(0, 200, 0);
+        // 初期位置も十分に離す
+        this.camera.position.set(0, 3000, 8000); 
+        this.camera.lookAt(0, 400, 0);
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;

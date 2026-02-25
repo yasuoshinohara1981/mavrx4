@@ -782,17 +782,29 @@ export class Scene18 extends SceneBase {
     updateAutoFocus() {
         if (!this.useDOF || !this.bokehPass || !this.centralSphere) return;
         
-        // カメラのワールド座標を確実に取得
+        // カメラのワールド座標と向きを取得
         const cameraWorldPos = new THREE.Vector3();
+        const cameraDirection = new THREE.Vector3();
         this.camera.getWorldPosition(cameraWorldPos);
+        this.camera.getWorldDirection(cameraDirection);
         
-        // 球体（核）のワールド座標を確実に取得
-        const coreWorldPos = new THREE.Vector3();
-        this.centralSphere.getWorldPosition(coreWorldPos);
+        // 球体（核）の中心座標
+        const coreCenter = new THREE.Vector3(0, 400, 0);
         
-        // 距離を計算してフォーカスを更新
-        const dist = cameraWorldPos.distanceTo(coreWorldPos);
-        this.bokehPass.uniforms.focus.value = dist;
+        // カメラから球体中心へのベクトル
+        const toCore = coreCenter.clone().sub(cameraWorldPos);
+        
+        // 視線方向と球体中心へのベクトルの投影距離を計算（これが視線上の距離になるやで！）
+        let focusDist = toCore.dot(cameraDirection);
+        
+        // もし視線が球体の方を向いていない（または球体より後ろにいる）場合は、
+        // 単純な距離にフォールバックするやで
+        if (focusDist < 0) {
+            focusDist = cameraWorldPos.distanceTo(coreCenter);
+        }
+        
+        // フォーカスを更新（急激な変化を抑えるために少しだけ滑らかにしてもええけど、まずは直接代入や！）
+        this.bokehPass.uniforms.focus.value = focusDist;
     }
 
     render() {

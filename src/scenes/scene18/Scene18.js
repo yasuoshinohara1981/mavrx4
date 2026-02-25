@@ -474,27 +474,64 @@ export class Scene18 extends SceneBase {
 
             const radius = 10 + Math.random() * 80; 
 
-            // --- 根本のリング（取り付け感） ---
-            const ringGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24); // より重厚に
-            const ringMat = new THREE.MeshStandardMaterial({
-                color: cableColor,
-                metalness: 0.5, 
-                roughness: 0.6, 
+            // --- 根本の「意味ありげな」接続ユニットユニット ---
+            const unitGroup = new THREE.Group();
+            unitGroup.position.copy(startPos);
+            unitGroup.lookAt(startPos.clone().add(normal));
+            this.detailGroup.add(unitGroup);
+
+            // 1. ベースの巨大なフランジ（多角形プレート）
+            const flangeGeo = new THREE.CylinderGeometry(radius * 2.2, radius * 2.2, 15, 8);
+            const unitMat = new THREE.MeshStandardMaterial({
+                color: 0x888888,
+                metalness: 0.6,
+                roughness: 0.4,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
                 envMapIntensity: 1.0
             });
-            const baseRing = new THREE.Mesh(ringGeo, ringMat);
-            baseRing.position.copy(startPos);
-            baseRing.lookAt(startPos.clone().add(normal));
-            baseRing.castShadow = true;
-            baseRing.receiveShadow = true;
-            this.detailGroup.add(baseRing);
+            const flange = new THREE.Mesh(flangeGeo, unitMat);
+            flange.rotateX(Math.PI / 2);
+            unitGroup.add(flange);
+
+            // 2. 接続コア（少し複雑な形状のソケット）
+            const coreGeo = new THREE.CylinderGeometry(radius * 1.5, radius * 1.8, 40, 16);
+            const coreSocket = new THREE.Mesh(coreGeo, unitMat);
+            coreSocket.rotateX(Math.PI / 2);
+            coreSocket.position.z = 20;
+            unitGroup.add(coreSocket);
+
+            // 3. 周囲の固定ボルト
+            const boltGeo = new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, 20, 8);
+            for (let j = 0; j < 8; j++) {
+                const bolt = new THREE.Mesh(boltGeo, unitMat);
+                const angle = (j / 8) * Math.PI * 2;
+                bolt.position.set(Math.cos(angle) * radius * 1.8, Math.sin(angle) * radius * 1.8, 10);
+                bolt.rotateX(Math.PI / 2);
+                unitGroup.add(bolt);
+            }
+
+            // 4. ユニットから派生する細いサブワイヤー
+            const subWireCount = 2 + Math.floor(Math.random() * 3);
+            for (let j = 0; j < subWireCount; j++) {
+                const subRadius = 3 + Math.random() * 4;
+                const subPoints = [];
+                const angle = (j / subWireCount) * Math.PI * 2;
+                const wireStart = new THREE.Vector3(Math.cos(angle) * radius * 1.2, Math.sin(angle) * radius * 1.2, 10);
+                subPoints.push(wireStart.clone());
+                subPoints.push(wireStart.clone().add(new THREE.Vector3(0, 0, 100 + Math.random() * 200)));
+                subPoints.push(new THREE.Vector3(wireStart.x * 2, -498 + 400, wireStart.z * 2)); // 地面へ
+
+                const subCurve = new THREE.CatmullRomCurve3(subPoints.map(p => p.applyQuaternion(unitGroup.quaternion).add(startPos)));
+                const subGeo = new THREE.TubeGeometry(subCurve, 20, subRadius, 6, false);
+                const subMesh = new THREE.Mesh(subGeo, unitMat);
+                this.detailGroup.add(subMesh);
+            }
 
             const points = [];
             points.push(startPos.clone()); // 根本
             
-            // 中間点1：法線方向にしっかり突き出してから垂らす
-            const point1 = startPos.clone().add(normal.clone().multiplyScalar(200 + Math.random() * 300));
+            // 中間点1：ソケットからしっかり突き出してから垂らす
+            const point1 = startPos.clone().add(normal.clone().multiplyScalar(300 + Math.random() * 200));
             points.push(point1);
 
             // 中間点2：重力で急降下

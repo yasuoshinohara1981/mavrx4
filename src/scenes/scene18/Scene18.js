@@ -377,66 +377,66 @@ export class Scene18 extends SceneBase {
 
             if (clusterType === 0) {
                 // --- パネルユニット (ベースプレート + Box + スイッチ列) ---
-                const baseWidth = 150 + Math.random() * 200; 
-                const baseHeight = 150 + Math.random() * 200;
-                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 20);
+                const baseWidth = 300 + Math.random() * 400; // 150-350 -> 300-700
+                const baseHeight = 300 + Math.random() * 400;
+                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 40); // 厚みもアップ
                 baseGeo.applyMatrix4(dummy.matrix);
                 geometries.push(baseGeo);
 
                 // パネルの上のBox
-                const boxGeo = new THREE.BoxGeometry(baseWidth * 0.6, baseHeight * 0.6, 40);
-                const boxMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, 20));
+                const boxGeo = new THREE.BoxGeometry(baseWidth * 0.7, baseHeight * 0.7, 80);
+                const boxMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, 40));
                 boxGeo.applyMatrix4(boxMatrix);
                 geometries.push(boxGeo);
 
-                // スイッチの列
-                const switchCount = 4 + Math.floor(Math.random() * 4);
-                const switchGeo = new THREE.BoxGeometry(20, 20, 30);
+                // スイッチの列（スイッチも巨大化！）
+                const switchCount = 3 + Math.floor(Math.random() * 3);
+                const switchGeo = new THREE.BoxGeometry(50, 50, 60);
                 for (let j = 0; j < switchCount; j++) {
                     const sGeo = switchGeo.clone();
                     const sMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
                         (j / (switchCount - 1) - 0.5) * baseWidth * 0.8,
                         -baseHeight * 0.3,
-                        30
+                        70
                     ));
                     sGeo.applyMatrix4(sMatrix);
                     geometries.push(sGeo);
                 }
             } else if (clusterType === 1) {
                 // --- 円形コネクタユニット (大円盤 + 小円盤 + パイプ) ---
-                const baseRadius = 120 + Math.random() * 100;
-                const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, 20, 24);
+                const baseRadius = 250 + Math.random() * 200; // 120-220 -> 250-450
+                const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, 40, 24);
                 const baseMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
                 baseGeo.applyMatrix4(baseMatrix);
                 geometries.push(baseGeo);
 
                 // 重ねる小円盤
-                const subGeo = new THREE.CylinderGeometry(baseRadius * 0.6, baseRadius * 0.6, 30, 24);
-                const subMatrix = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 15, 0));
+                const subGeo = new THREE.CylinderGeometry(baseRadius * 0.6, baseRadius * 0.6, 60, 24);
+                const subMatrix = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 30, 0));
                 subGeo.applyMatrix4(subMatrix);
                 geometries.push(subGeo);
 
-                // 突き出るパイプ
-                const pipeGeo = new THREE.CylinderGeometry(20, 20, 150, 12);
-                const pipeMatrix = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 50, 0));
+                // 突き出るパイプ（太く長く！）
+                const pipeGeo = new THREE.CylinderGeometry(50, 50, 300, 12);
+                const pipeMatrix = baseMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 100, 0));
                 pipeGeo.applyMatrix4(pipeMatrix);
                 geometries.push(pipeGeo);
             } else if (clusterType === 2) {
                 // --- メンテナンスハッチユニット (プレート + ボルト風ディテール) ---
-                const size = 150 + Math.random() * 100;
-                const hatchGeo = new THREE.CylinderGeometry(size, size, 15, 6);
+                const size = 300 + Math.random() * 250; // 150-250 -> 300-550
+                const hatchGeo = new THREE.CylinderGeometry(size, size, 30, 6);
                 const hatchMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
                 hatchGeo.applyMatrix4(hatchMatrix);
                 geometries.push(hatchGeo);
 
-                // ボルト風の小さい円柱を角に配置
-                const boltGeo = new THREE.CylinderGeometry(12, 12, 25, 8);
+                // ボルト風の小さい円柱を角に配置（ボルトもデカい！）
+                const boltGeo = new THREE.CylinderGeometry(30, 30, 50, 8);
                 for (let j = 0; j < 6; j++) {
                     const bGeo = boltGeo.clone();
                     const angle = (j / 6) * Math.PI * 2;
                     const bMatrix = hatchMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(
                         Math.cos(angle) * size * 0.8,
-                        10,
+                        20,
                         Math.sin(angle) * size * 0.8
                     ));
                     bGeo.applyMatrix4(bMatrix);
@@ -444,21 +444,22 @@ export class Scene18 extends SceneBase {
                 }
             } else {
                 // --- サブケーブル・ジャンクションユニット ---
-                const baseGeo = new THREE.BoxGeometry(120, 120, 40);
+                const boxSize = 250 + Math.random() * 200;
+                const baseGeo = new THREE.BoxGeometry(boxSize, boxSize, 100);
                 baseGeo.applyMatrix4(dummy.matrix);
                 geometries.push(baseGeo);
 
-                // そこから生える細いケーブル
-                const subCableCount = 2 + Math.floor(Math.random() * 3);
+                // そこから生える細いケーブル（サブケーブルも太く！）
+                const subCableCount = 2 + Math.floor(Math.random() * 2);
                 for (let j = 0; j < subCableCount; j++) {
-                    const subRadius = 12 + Math.random() * 10;
+                    const subRadius = 25 + Math.random() * 15; // 12-22 -> 25-40
                     const subPoints = [];
-                    const startOffset = new THREE.Vector3((j - 1) * 30, 0, 25).applyQuaternion(dummy.quaternion);
+                    const startOffset = new THREE.Vector3((j - 0.5) * 100, 0, 50).applyQuaternion(dummy.quaternion);
                     const subStartPos = pos.clone().add(startOffset);
                     subPoints.push(subStartPos);
                     
-                    subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(250)).add(new THREE.Vector3(0, -400, 0)));
-                    subPoints.push(new THREE.Vector3(pos.x * 1.4, -498, pos.z * 1.4));
+                    subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(400)).add(new THREE.Vector3(0, -600, 0)));
+                    subPoints.push(new THREE.Vector3(pos.x * 1.6, -498, pos.z * 1.6));
 
                     const subCurve = new THREE.CatmullRomCurve3(subPoints);
                     const subGeo = new THREE.TubeGeometry(subCurve, 32, subRadius, 8, false);

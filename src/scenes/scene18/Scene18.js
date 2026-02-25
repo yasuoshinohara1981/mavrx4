@@ -71,14 +71,13 @@ export class Scene18 extends SceneBase {
 
     setupCameraParticleDistance(cameraParticle) {
         // 球体の半径が1300、中心高さが400
-        // 最小距離を少し詰めて迫力を出しつつ、最大距離を広げて引きの絵も作れるようにするやで！
-        cameraParticle.minDistance = 2000; 
-        cameraParticle.maxDistance = 6500; // 4800 -> 6500 (部屋の隅々まで！)
+        // 最小距離をさらに離して（2000 -> 3500）、強制的に引きの絵を作るやで！
+        cameraParticle.minDistance = 3500; 
+        cameraParticle.maxDistance = 8500; // 6500 -> 8500 (もっと遠くまで！)
         
-        // 高さのバリエーションを大幅に増やす！
-        // 地面スレスレ（100）から、コアを見下ろす高所（5000）まで！
+        // 高さのバリエーションもさらに極端に！
         cameraParticle.minY = 100; 
-        cameraParticle.maxY = 5000; 
+        cameraParticle.maxY = 6000; 
     }
 
     /**
@@ -94,7 +93,7 @@ export class Scene18 extends SceneBase {
             const distToCore = cameraPos.distanceTo(coreCenter);
             
             // 安全距離（半径1300 + 余裕分）
-            const safeDistance = 1600; 
+            const safeDistance = 2500; // 1600 -> 2500 (近すぎを物理的に排除！)
             
             if (distToCore < safeDistance) {
                 const dir = cameraPos.clone().sub(coreCenter).normalize();
@@ -102,11 +101,11 @@ export class Scene18 extends SceneBase {
             }
 
             // 部屋の境界（StudioBox）を突き抜けないようにクランプ
-            // StudioBoxのサイズは大体 10000x10000x10000 くらい
-            const roomLimit = 4800;
+            // StudioBoxのサイズに合わせて、限界まで引けるようにするで！
+            const roomLimit = 7500; // 4800 -> 7500
             cameraPos.x = THREE.MathUtils.clamp(cameraPos.x, -roomLimit, roomLimit);
             cameraPos.z = THREE.MathUtils.clamp(cameraPos.z, -roomLimit, roomLimit);
-            cameraPos.y = THREE.MathUtils.clamp(cameraPos.y, 100, 6000);
+            cameraPos.y = THREE.MathUtils.clamp(cameraPos.y, 100, 7000);
             
             this.camera.position.copy(cameraPos);
             this.camera.lookAt(coreCenter);
@@ -115,26 +114,42 @@ export class Scene18 extends SceneBase {
     }
 
     /**
-     * カメラをランダムに切り替える（SceneBaseのオーバーライド）
+     * カメラをランダムに切り替える（SceneBase de override）
      */
     switchCameraRandom() {
         super.switchCameraRandom();
         
         const cp = this.cameraParticles[this.currentCameraIndex];
         if (cp) {
-            // ランダム切り替え時に、意図的に極端な位置へ飛ばす確率を作るやで！
+            // ランダム切り替え時に、強制的に「引き」の絵を増やすやで！
             const rand = Math.random();
-            if (rand < 0.3) {
-                // 地面スレスレのローアングル
-                cp.position.y = 150 + Math.random() * 200;
-                cp.position.normalize().multiplyScalar(2500 + Math.random() * 1500);
-            } else if (rand < 0.6) {
-                // 上空からのハイアングル
-                cp.position.y = 3500 + Math.random() * 1500;
-                cp.position.normalize().multiplyScalar(3000 + Math.random() * 2000);
+            if (rand < 0.4) {
+                // 超・引きの絵（部屋の隅っこ）
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 6000 + Math.random() * 2000;
+                cp.position.set(
+                    Math.cos(angle) * dist,
+                    1500 + Math.random() * 3000,
+                    Math.sin(angle) * dist
+                );
+            } else if (rand < 0.7) {
+                // 地面スレスレのローアングル（でも少し引く）
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 4000 + Math.random() * 2000;
+                cp.position.set(
+                    Math.cos(angle) * dist,
+                    200 + Math.random() * 300,
+                    Math.sin(angle) * dist
+                );
             } else {
-                // 標準的な距離
-                cp.position.normalize().multiplyScalar(2500 + Math.random() * 2000);
+                // 上空からのダイナミック俯瞰
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 4500 + Math.random() * 2500;
+                cp.position.set(
+                    Math.cos(angle) * dist,
+                    4500 + Math.random() * 2000,
+                    Math.sin(angle) * dist
+                );
             }
         }
     }

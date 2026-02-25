@@ -130,37 +130,37 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff; 
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0xffffff, 1.5);
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x888888, 0.8); // 1.5 -> 0.8
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 1.0);
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.3); // 1.0 -> 0.3
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 5.0);
-        directionalLight.position.set(2000, 4000, 2000);
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 1.5); // 5.0 -> 1.5
+        directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -5000;
-        directionalLight.shadow.camera.right = 5000;
-        directionalLight.shadow.camera.top = 5000;
-        directionalLight.shadow.camera.bottom = -5000;
+        directionalLight.shadow.camera.left = -8000;
+        directionalLight.shadow.camera.right = 8000;
+        directionalLight.shadow.camera.top = 8000;
+        directionalLight.shadow.camera.bottom = -8000;
+        directionalLight.shadow.camera.near = 100;
+        directionalLight.shadow.camera.far = 15000;
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.bias = -0.0001;
         this.scene.add(directionalLight);
 
-        const pointLight = new THREE.PointLight(pureWhite, 4.0, 10000);
-        pointLight.position.set(0, 2000, 0);
+        const pointLight = new THREE.PointLight(pureWhite, 2.5, 5000); // 4.0 -> 2.5
+        pointLight.position.set(0, 500, 0);
+        pointLight.castShadow = true;
+        pointLight.shadow.camera.near = 10;
+        pointLight.shadow.camera.far = 10000;
+        pointLight.shadow.bias = -0.001;
         this.scene.add(pointLight);
     }
 
     createStudioBox() {
-        this.studio = new StudioBox(this.scene, {
-            size: 10000,
-            color: 0xbbbbbb,
-            roughness: 0.1, 
-            metalness: 0.9, 
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 2.5
-        });
+        this.studio = new StudioBox(this.scene); // デフォルト設定（Scene14と同じ）
     }
 
     createCore() {

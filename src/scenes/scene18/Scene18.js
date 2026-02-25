@@ -123,6 +123,7 @@ export class Scene18 extends SceneBase {
         this.createSphereDetails(); // 球体の部品追加
         this.createCables();
         this.initPostProcessing();
+        this.setParticleCount(this.cableCount); // HUDのOBJECTSにケーブル本数を表示！
         this.initialized = true;
     }
 
@@ -407,10 +408,10 @@ export class Scene18 extends SceneBase {
                 map: cableTextures.map,
                 bumpMap: cableTextures.bumpMap,
                 bumpScale: 3.0,
-                metalness: 0.3, // プラスチック感を出すために低めに
-                roughness: 0.6, // かすれた感じを出すために中程度
+                metalness: 0.9, // 0.3 -> 0.9 (ガッツリ金属光沢を！)
+                roughness: 0.1, // 0.6 -> 0.1 (ツルツルにしてテカらせる！)
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.0
+                envMapIntensity: 2.5 // 1.0 -> 2.5 (反射を強調！)
             });
 
             material.onBeforeCompile = (shader) => {

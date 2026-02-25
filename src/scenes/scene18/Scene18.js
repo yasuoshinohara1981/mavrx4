@@ -52,6 +52,15 @@ export class Scene18 extends SceneBase {
         // カラー管理（トラック8で変化）
         this.pulseColor = new THREE.Color(1.0, 0.0, 0.0); // 初期値は赤
         this.targetPulseColor = new THREE.Color(1.0, 0.0, 0.0);
+        this.colorIndex = 0; // トラック8が鳴る度に切り替えるためのインデックス
+        this.colors = [
+            new THREE.Color(1.0, 0.0, 0.0), // 赤
+            new THREE.Color(0.0, 1.0, 0.0), // 緑
+            new THREE.Color(0.0, 0.0, 1.0), // 青
+            new THREE.Color(1.0, 1.0, 1.0), // 白
+            new THREE.Color(1.0, 0.0, 1.0), // 紫
+            new THREE.Color(0.0, 1.0, 1.0)  // 水色
+        ];
 
         // 球体の発光管理（トラック5で変化）
         this.coreEmissiveIntensity = 0.1;
@@ -70,14 +79,14 @@ export class Scene18 extends SceneBase {
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        // 球体の半径が1300、中心高さが400
+        // 球体の半径が1300、中心高さ400
         // 最小距離をさらに離して（2000 -> 3500）、強制的に引きの絵を作るやで！
         cameraParticle.minDistance = 3500; 
-        cameraParticle.maxDistance = 8500; // 6500 -> 8500 (もっと遠くまで！)
+        cameraParticle.maxDistance = 6500; // 8500 -> 6500 (スタジオの外に出すぎないように調整！)
         
-        // 高さのバリエーションもさらに極端に！
-        cameraParticle.minY = 100; 
-        cameraParticle.maxY = 6000; 
+        // 高さのバリエーションも調整！
+        cameraParticle.minY = 200; 
+        cameraParticle.maxY = 4500; // 6000 -> 4500 (天井突き抜け防止)
     }
 
     /**
@@ -101,11 +110,12 @@ export class Scene18 extends SceneBase {
             }
 
             // 部屋の境界（StudioBox）を突き抜けないようにクランプ
-            // StudioBoxのサイズに合わせて、限界まで引けるようにするで！
-            const roomLimit = 7500; // 4800 -> 7500
+            // StudioBoxのデフォルトサイズは10000x10000x10000（中心0,0,0）
+            // なので、-5000〜5000の範囲に収める必要があるんや！
+            const roomLimit = 4800; // 7500 -> 4800 (壁の厚みを考慮)
             cameraPos.x = THREE.MathUtils.clamp(cameraPos.x, -roomLimit, roomLimit);
             cameraPos.z = THREE.MathUtils.clamp(cameraPos.z, -roomLimit, roomLimit);
-            cameraPos.y = THREE.MathUtils.clamp(cameraPos.y, 100, 7000);
+            cameraPos.y = THREE.MathUtils.clamp(cameraPos.y, 150, 4800); // 床下(0以下)に行かないように！
             
             this.camera.position.copy(cameraPos);
             this.camera.lookAt(coreCenter);
@@ -121,33 +131,34 @@ export class Scene18 extends SceneBase {
         
         const cp = this.cameraParticles[this.currentCameraIndex];
         if (cp) {
-            // ランダム切り替え時に、強制的に「引き」の絵を増やすやで！
+            // ランダム切り替え時に、スタジオ内に収まるように位置を調整するやで！
             const rand = Math.random();
+            const roomLimit = 4500;
             if (rand < 0.4) {
-                // 超・引きの絵（部屋の隅っこ）
+                // 引きの絵（部屋の隅っこ）
                 const angle = Math.random() * Math.PI * 2;
-                const dist = 6000 + Math.random() * 2000;
+                const dist = 3500 + Math.random() * 1000;
                 cp.position.set(
                     Math.cos(angle) * dist,
-                    1500 + Math.random() * 3000,
+                    1000 + Math.random() * 2000,
                     Math.sin(angle) * dist
                 );
             } else if (rand < 0.7) {
-                // 地面スレスレのローアングル（でも少し引く）
+                // ローアングル
                 const angle = Math.random() * Math.PI * 2;
-                const dist = 4000 + Math.random() * 2000;
+                const dist = 3000 + Math.random() * 1500;
                 cp.position.set(
                     Math.cos(angle) * dist,
-                    200 + Math.random() * 300,
+                    250 + Math.random() * 400,
                     Math.sin(angle) * dist
                 );
             } else {
-                // 上空からのダイナミック俯瞰
+                // 俯瞰
                 const angle = Math.random() * Math.PI * 2;
-                const dist = 4500 + Math.random() * 2500;
+                const dist = 3500 + Math.random() * 1000;
                 cp.position.set(
                     Math.cos(angle) * dist,
-                    4500 + Math.random() * 2000,
+                    3500 + Math.random() * 1000,
                     Math.sin(angle) * dist
                 );
             }
@@ -538,283 +549,244 @@ export class Scene18 extends SceneBase {
 
         let generatedCount = 0;
         let attempts = 0;
-        const maxAttempts = 2000; // 確実に100本生やすために試行回数を増やす
+        const maxAttempts = 5000; // 試行回数を大幅に増やして確実に生成するやで！
 
+        // --- 束感（Bundle）のロジック ---
+        const bundleCount = 25; // 束の数を固定して安定させる
+        
         while (generatedCount < this.cableCount && attempts < maxAttempts) {
             attempts++;
             
-            const phi = Math.acos(2 * Math.random() - 1);
-            const theta = Math.random() * Math.PI * 2;
+            // 束の基点となる方向を決定
+            const bundlePhi = Math.acos(2 * Math.random() - 1);
+            const bundleTheta = Math.random() * Math.PI * 2;
             
-            const normal = new THREE.Vector3(
-                Math.sin(phi) * Math.cos(theta),
-                Math.cos(phi),
-                Math.sin(phi) * Math.sin(theta)
-            );
-
-            const startPos = normal.clone().multiplyScalar(this.coreRadius);
-            startPos.y += 400; // 球体の中心高さ
-
-            // --- 生え方の調整（ノイズを使って不均一に偏らせる） ---
-            const spawnNoise = Math.sin(phi * 4.0) * Math.cos(theta * 4.0) + Math.sin(phi * 8.0) * 0.5;
-            if (spawnNoise < -0.2 && Math.random() > 0.2) continue;
-
-            const isUpper = startPos.y > 400;
-            if (isUpper && Math.random() > 0.5) continue; 
+            // 束の中のケーブル本数（2〜5本）
+            const cablesInBundle = 2 + Math.floor(Math.random() * 4);
             
-            const isEquator = Math.abs(startPos.y - 400) < 300;
-            if (!isEquator && !isUpper && Math.random() > 0.3) continue;
+            // 束ごとの終端の偏り（ノイズ）
+            const bundleEndOffsetX = (Math.random() - 0.5) * 2000;
+            const bundleEndOffsetZ = (Math.random() - 0.5) * 2000;
 
-            // 既存のパーツ位置との距離をチェック
-            let isTooClose = false;
-            for (const clusterPos of this.clusterPositions) {
-                if (startPos.distanceTo(clusterPos) < 180) {
-                    isTooClose = true;
-                    break;
+            for (let c = 0; c < cablesInBundle && generatedCount < this.cableCount; c++) {
+                // 束から外れる「はぐれケーブル」をさらに低確率にするやで！
+                const isLoneCable = Math.random() < 0.05; // 15% -> 5% に大幅ダウン！
+
+                // 束の中で少しだけ位置をずらす
+                const phi = bundlePhi + (Math.random() - 0.5) * (isLoneCable ? 0.8 : 0.15);
+                const theta = bundleTheta + (Math.random() - 0.5) * (isLoneCable ? 0.8 : 0.15);
+                
+                const normal = new THREE.Vector3(
+                    Math.sin(phi) * Math.cos(theta),
+                    Math.cos(phi),
+                    Math.sin(phi) * Math.sin(theta)
+                );
+
+                const startPos = normal.clone().multiplyScalar(this.coreRadius);
+                startPos.y += 400;
+
+                // 既存のパーツ位置との距離をチェック（少し判定を甘くして生成しやすくする）
+                let isTooClose = false;
+                for (const clusterPos of this.clusterPositions) {
+                    if (startPos.distanceTo(clusterPos) < 120) { // 150 -> 120
+                        isTooClose = true;
+                        break;
+                    }
                 }
-            }
-            if (isTooClose) continue;
+                if (isTooClose) continue;
 
-            // ここまで来たら生成確定！
-            generatedCount++;
+                generatedCount++;
 
-            // --- ケーブルの属性決定 ---
-            // 確率で白・グレー・黒を分けるやで！
-            // 合計15%（白7.5%、グレー7.5%）に調整して、黒（光る方）を85%にするやで！
-            const colorRand = Math.random();
-            let finalCableColor;
-            let isWhiteNonGlowing = false;
-            let isGreyNonGlowing = false;
+                // --- ケーブルの属性決定 ---
+                const colorRand = Math.random();
+                let finalCableColor;
+                let isWhiteNonGlowing = false;
+                let isGreyNonGlowing = false;
 
-            if (colorRand < 0.075) {
-                // 白 (7.5%)
-                finalCableColor = 0xffffff;
-                isWhiteNonGlowing = true;
-            } else if (colorRand < 0.15) {
-                // グレー (7.5%)
-                finalCableColor = 0x666666;
-                isGreyNonGlowing = true;
-            } else {
-                // 黒 (85%)
-                finalCableColor = 0x111111;
-            }
-
-            const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing;
-
-            // 太さを調整
-            let radius;
-            if (isNonGlowing) {
-                // 白とグレーは目立たせるために太め〜極太に！ (50-120)
-                radius = 50 + Math.random() * 70; 
-            } else {
-                const radiusRand = Math.random();
-                if (radiusRand < 0.4) {
-                    radius = 15 + Math.random() * 20;
-                } else if (radiusRand < 0.9) {
-                    radius = 40 + Math.random() * 40;
+                if (colorRand < 0.05) {
+                    finalCableColor = 0xffffff;
+                    isWhiteNonGlowing = true;
+                } else if (colorRand < 0.1) {
+                    finalCableColor = 0x666666;
+                    isGreyNonGlowing = true;
                 } else {
-                    radius = 90 + Math.random() * 40;
+                    finalCableColor = 0x111111;
                 }
-            }
 
-            // --- 根本の「意味ありげな」接続ユニットユニット ---
-            const unitGroup = new THREE.Group();
-            unitGroup.position.copy(startPos);
-            unitGroup.lookAt(startPos.clone().add(normal));
-            this.detailGroup.add(unitGroup);
+                const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing;
 
-            // 1. ベースの巨大なフランジ（多角形プレート）
-            const flangeGeo = new THREE.CylinderGeometry(radius * 2.2, radius * 2.2, 15, 8);
-            const unitMat = new THREE.MeshStandardMaterial({
-                color: isNonGlowing ? finalCableColor : 0x444444, 
-                metalness: isNonGlowing ? 0.0 : 0.6,
-                roughness: isNonGlowing ? 1.0 : 0.4,
-                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: isNonGlowing ? 0.1 : 1.0
-            });
-            const flange = new THREE.Mesh(flangeGeo, unitMat);
-            flange.rotateX(Math.PI / 2);
-            unitGroup.add(flange);
+                let radius;
+                if (isNonGlowing) {
+                    radius = 40 + Math.random() * 60; 
+                } else {
+                    const radiusRand = Math.random();
+                    if (radiusRand < 0.5) {
+                        radius = 15 + Math.random() * 15;
+                    } else if (radiusRand < 0.9) {
+                        radius = 35 + Math.random() * 30;
+                    } else {
+                        radius = 80 + Math.random() * 40;
+                    }
+                }
 
-            // 2. 接続コア（少し複雑な形状のソケット）
-            const coreGeo = new THREE.CylinderGeometry(radius * 1.5, radius * 1.8, 40, 16);
-            const coreSocket = new THREE.Mesh(coreGeo, unitMat);
-            coreSocket.rotateX(Math.PI / 2);
-            coreSocket.position.z = 20;
-            unitGroup.add(coreSocket);
+                // --- 接続ユニット ---
+                const unitGroup = new THREE.Group();
+                unitGroup.position.copy(startPos);
+                unitGroup.lookAt(startPos.clone().add(normal));
+                this.detailGroup.add(unitGroup);
 
-            // 3. 周囲の固定ボルト
-            const boltGeo = new THREE.CylinderGeometry(radius * 0.2, radius * 0.2, 20, 8);
-            for (let j = 0; j < 8; j++) {
-                const bolt = new THREE.Mesh(boltGeo, unitMat);
-                const angle = (j / 8) * Math.PI * 2;
-                bolt.position.set(Math.cos(angle) * radius * 1.8, Math.sin(angle) * radius * 1.8, 10);
-                bolt.rotateX(Math.PI / 2);
-                unitGroup.add(bolt);
-            }
+                const flangeGeo = new THREE.CylinderGeometry(radius * 2.0, radius * 2.0, 15, 8);
+                const unitMat = new THREE.MeshStandardMaterial({
+                    color: isNonGlowing ? finalCableColor : 0x444444, 
+                    metalness: isNonGlowing ? 0.0 : 0.6,
+                    roughness: isNonGlowing ? 1.0 : 0.4,
+                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                    envMapIntensity: isNonGlowing ? 0.1 : 1.0
+                });
+                const flange = new THREE.Mesh(flangeGeo, unitMat);
+                flange.rotateX(Math.PI / 2);
+                unitGroup.add(flange);
 
-            // 4. ユニットから派生する細いサブワイヤー（クリップみたいに見えるので削除！）
-            /*
-            const subWireCount = 2 + Math.floor(Math.random() * 3);
-            for (let j = 0; j < subWireCount; j++) {
-                const subRadius = 3 + Math.random() * 4;
-                const subPoints = [];
-                const angle = (j / subWireCount) * Math.PI * 2;
-                const wireStart = new THREE.Vector3(Math.cos(angle) * radius * 1.2, Math.sin(angle) * radius * 1.2, 10);
-                subPoints.push(wireStart.clone());
-                subPoints.push(wireStart.clone().add(new THREE.Vector3(0, 0, 100 + Math.random() * 200)));
-                subPoints.push(new THREE.Vector3(wireStart.x * 2, -498 + 400, wireStart.z * 2)); // 地面へ
+                const coreGeo = new THREE.CylinderGeometry(radius * 1.4, radius * 1.6, 30, 16);
+                const coreSocket = new THREE.Mesh(coreGeo, unitMat);
+                coreSocket.rotateX(Math.PI / 2);
+                coreSocket.position.z = 15;
+                unitGroup.add(coreSocket);
 
-                const subCurve = new THREE.CatmullRomCurve3(subPoints.map(p => p.applyQuaternion(unitGroup.quaternion).add(startPos)));
-                const subGeo = new THREE.TubeGeometry(subCurve, 20, subRadius, 6, false);
-                const subMesh = new THREE.Mesh(subGeo, unitMat);
-                this.detailGroup.add(subMesh);
-            }
-            */
+                const points = [];
+                points.push(startPos.clone());
+                
+                const isUpper = startPos.y > 400;
+                const pushDist = (isUpper ? 300 : 150) + (radius * 2.0) + (Math.random() * 100);
+                const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
+                points.push(point1);
 
-            const points = [];
-            points.push(startPos.clone()); // 根本
-            
-            // 中間点1：法線方向に突き出す（上なら上へ、下なら横へ）
-            // ここだけ修正！太さに合わせて突き出し距離を調整して、根本の折れを防止するやで！
-            const pushDistBase = isUpper ? 400 : 200;
-            const pushDist = pushDistBase + (radius * 2.5) + (Math.random() * 200);
-            const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
-            points.push(point1);
+                // --- 終端の計算（束ごとの偏りを適用、はぐれケーブルはさらにランダム） ---
+                let groundDist = isUpper ? (3500 + Math.random() * 3000) : (2000 + Math.random() * 2500);
+                const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * (isLoneCable ? 1.5 : 0.5);
+                
+                // 束のオフセットをノイズ的に加える（はぐれケーブルはオフセットを無視してランダムに飛ぶ）
+                let groundX, groundZ;
+                if (isLoneCable) {
+                    groundX = Math.cos(groundAngle) * groundDist;
+                    groundZ = Math.sin(groundAngle) * groundDist;
+                } else {
+                    groundX = Math.cos(groundAngle) * groundDist + bundleEndOffsetX * (0.8 + Math.random() * 0.4);
+                    groundZ = Math.sin(groundAngle) * groundDist + bundleEndOffsetZ * (0.8 + Math.random() * 0.4);
+                }
 
-            // 中間点2：重力の影響（ここから先は「さっきのまま」の自然な挙動に戻すで！）
-            // 【修正】着地点をより遠く（4000〜8000）に飛ばして、放射状に広げるやで！
-            let groundDist = isUpper ? (4000 + Math.random() * 4000) : (2500 + Math.random() * 3000);
-            // 角度もノイズを乗せつつ、基本は外向きに！
-            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
-            let groundX = Math.cos(groundAngle) * groundDist;
-            let groundZ = Math.sin(groundAngle) * groundDist;
+                const roomLimit = 4500;
+                if (Math.abs(groundX) > roomLimit || Math.abs(groundZ) > roomLimit) {
+                    const scale = roomLimit / Math.max(Math.abs(groundX), Math.abs(groundZ));
+                    groundX *= scale;
+                    groundZ *= scale;
+                }
+                
+                if (isUpper) {
+                    const bulgeScale = 1.4 + (radius < 40 ? 0.4 : (radius / 250)); 
+                    const midY = Math.max(point1.y * 0.5, 600); 
+                    points.push(new THREE.Vector3(
+                        point1.x * bulgeScale,
+                        midY,
+                        point1.z * bulgeScale
+                    ));
+                } else {
+                    const midDistScale = 1.6 + (radius < 40 ? 0.5 : 0.0);
+                    points.push(new THREE.Vector3(
+                        point1.x * midDistScale,
+                        floorY + 300,
+                        point1.z * midDistScale
+                    ));
+                }
 
-            // --- 部屋の境界（StudioBox）からはみ出ないように制限！ ---
-            const roomLimit = 4800; // 壁にめり込まない安全圏
-            if (Math.abs(groundX) > roomLimit || Math.abs(groundZ) > roomLimit) {
-                const scale = roomLimit / Math.max(Math.abs(groundX), Math.abs(groundZ));
-                groundX *= scale;
-                groundZ *= scale;
-            }
-            
-            if (isUpper) {
-                // 上から生える場合は、一度大きく外に回ってから地面へ
-                // 【重要】細いケーブルほど球体に刺さりやすいので、強制的に外側に押し出す！
-                const bulgeScale = 1.5 + (radius < 40 ? 0.5 : (radius / 200)); 
-                // y座標も球体の表面（radius 1300 + 400 = 1700）より確実に外へ
-                const midY = Math.max(point1.y * 0.6, 800); 
-                points.push(new THREE.Vector3(
-                    point1.x * bulgeScale,
-                    midY,
-                    point1.z * bulgeScale
-                ));
-            } else {
-                // 下から生える場合は、地面を這うように
-                // 【重要】細いケーブルでも球体の下腹部に刺さらないよう、外側にガッツリ押し出す！
-                const midDistScale = 1.8 + (radius < 40 ? 0.7 : 0.0);
-                points.push(new THREE.Vector3(
-                    point1.x * midDistScale,
-                    floorY + 400,
-                    point1.z * midDistScale
-                ));
-            }
+                const endPos = new THREE.Vector3(groundX, floorY, groundZ);
+                const approachHeight = 200 + (radius * 1.2);
+                points.push(new THREE.Vector3(groundX, floorY + approachHeight, groundZ)); 
+                points.push(endPos);
 
-            // 終点：地面に向かって垂直に突き刺さるような配置
-            const endPos = new THREE.Vector3(groundX, floorY, groundZ);
-            const approachHeight = 300 + (radius * 1.5);
-            points.push(new THREE.Vector3(groundX, floorY + approachHeight, groundZ)); 
-            points.push(endPos);
+                const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
+                const segments = radius > 60 ? 140 : 70;
+                const geometry = new THREE.TubeGeometry(curve, segments, radius, 10, false); 
+                
+                const material = new THREE.MeshStandardMaterial({
+                    color: finalCableColor,
+                    bumpScale: 2.5,
+                    emissive: isWhiteNonGlowing ? 0xffffff : (isGreyNonGlowing ? 0x666666 : 0x000000), 
+                    emissiveIntensity: isWhiteNonGlowing ? 0.15 : (isGreyNonGlowing ? 0.08 : 0.0),
+                    metalness: isNonGlowing ? 0.0 : 0.8, 
+                    roughness: isNonGlowing ? 1.0 : 0.2, 
+                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                    envMapIntensity: isNonGlowing ? 0.0 : 2.0 
+                });
+                
+                if (!isNonGlowing) {
+                    material.map = cableTextures.map;
+                    material.bumpMap = cableTextures.bumpMap;
+                }
 
-            // テンションを少しだけ調整（0.0は直線的すぎるので0.2くらいで滑らかに）
-            const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
-            
-            // セグメント数は多めを維持してカクつきを防止！
-            const segments = radius > 60 ? 160 : 80;
-            const geometry = new THREE.TubeGeometry(curve, segments, radius, 12, false); 
-            
-            const material = new THREE.MeshStandardMaterial({
-                color: finalCableColor,
-                bumpScale: 3.0,
-                emissive: isWhiteNonGlowing ? 0xffffff : (isGreyNonGlowing ? 0x666666 : 0x000000), 
-                emissiveIntensity: isWhiteNonGlowing ? 0.2 : (isGreyNonGlowing ? 0.1 : 0.0),
-                metalness: isNonGlowing ? 0.0 : 0.9, 
-                roughness: isNonGlowing ? 1.0 : 0.1, 
-                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: isNonGlowing ? 0.0 : 2.5 
-            });
-            
-            // 非発光ケーブルの時だけテクスチャを適用しない（色を維持）
-            if (!isNonGlowing) {
-                material.map = cableTextures.map;
-                material.bumpMap = cableTextures.bumpMap;
-            }
+                if (!isWhiteNonGlowing) {
+                    material.onBeforeCompile = (shader) => {
+                        shader.uniforms.uPulses = { value: new Float32Array(10).fill(-1.0) };
+                        shader.uniforms.uPulseColor = { value: this.pulseColor };
+                        
+                        shader.vertexShader = `
+                            varying vec2 vUv;
+                            ${shader.vertexShader}
+                        `.replace(
+                            `#include <begin_vertex>`,
+                            `#include <begin_vertex>
+                            vUv = uv;`
+                        );
 
-            if (!isWhiteNonGlowing) {
-                material.onBeforeCompile = (shader) => {
-                    shader.uniforms.uPulses = { value: new Float32Array(10).fill(-1.0) };
-                    shader.uniforms.uPulseColor = { value: this.pulseColor }; // トラック8で変える色！
-                    
-                    shader.vertexShader = `
-                        varying vec2 vUv;
-                        ${shader.vertexShader}
-                    `.replace(
-                        `#include <begin_vertex>`,
-                        `#include <begin_vertex>
-                        vUv = uv;`
-                    );
-
-                    shader.fragmentShader = `
-                        uniform float uPulses[10];
-                        uniform vec3 uPulseColor;
-                        varying vec2 vUv;
-                        ${shader.fragmentShader}
-                    `.replace(
-                        `#include <dithering_fragment>`,
-                        `
-                        #include <dithering_fragment>
-                        float pulseEffect = 0.0;
-                        for(int i = 0; i < 10; i++) {
-                            if(uPulses[i] >= 0.0) {
-                                float dist = abs(vUv.x - uPulses[i]);
-                                // 0.1 -> 0.03 (光の弾丸を短く鋭く！)
-                                pulseEffect += smoothstep(0.03, 0.0, dist);
+                        shader.fragmentShader = `
+                            uniform float uPulses[10];
+                            uniform vec3 uPulseColor;
+                            varying vec2 vUv;
+                            ${shader.fragmentShader}
+                        `.replace(
+                            `#include <dithering_fragment>`,
+                            `
+                            #include <dithering_fragment>
+                            float pulseEffect = 0.0;
+                            for(int i = 0; i < 10; i++) {
+                                if(uPulses[i] >= 0.0) {
+                                    float dist = abs(vUv.x - uPulses[i]);
+                                    pulseEffect += smoothstep(0.03, 0.0, dist);
+                                }
                             }
-                        }
-                        vec3 pCol = uPulseColor;
-                        float constantGlow = smoothstep(0.15, 0.0, vUv.x) * 0.3;
-                        gl_FragColor.rgb += pCol * (pulseEffect * 12.0 + constantGlow); 
-                        `
-                    );
-                    material.userData.shader = shader;
-                };
-            }
+                            vec3 pCol = uPulseColor;
+                            float constantGlow = smoothstep(0.15, 0.0, vUv.x) * 0.3;
+                            gl_FragColor.rgb += pCol * (pulseEffect * 12.0 + constantGlow); 
+                            `
+                        );
+                        material.userData.shader = shader;
+                    };
+                }
 
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            this.cableGroup.add(mesh);
-            this.cables.push({ mesh, material, isGlowing: !isWhiteNonGlowing });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                this.cableGroup.add(mesh);
+                this.cables.push({ mesh, material, isGlowing: !isWhiteNonGlowing });
 
-            // --- 先端のリング（地面への固定感） ---
-            const endRingGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24);
-            const endRingMat = new THREE.MeshStandardMaterial({
-                color: finalCableColor,
-                metalness: 0.5, 
-                roughness: 0.6, 
-                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.0 
-            });
-            const endRing = new THREE.Mesh(endRingGeo, endRingMat);
-            endRing.position.copy(endPos);
-            endRing.rotateX(Math.PI / 2); // 床に水平に置く
-            endRing.castShadow = true;
-            endRing.receiveShadow = true;
-            this.detailGroup.add(endRing);
+                const endRingGeo = new THREE.TorusGeometry(radius * 1.3, radius * 0.3, 10, 20);
+                const endRingMat = new THREE.MeshStandardMaterial({
+                    color: finalCableColor,
+                    metalness: 0.5, 
+                    roughness: 0.6, 
+                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                    envMapIntensity: 1.0 
+                });
+                const endRing = new THREE.Mesh(endRingGeo, endRingMat);
+                endRing.position.copy(endPos);
+                endRing.rotateX(Math.PI / 2);
+                endRing.castShadow = true;
+                endRing.receiveShadow = true;
+                this.detailGroup.add(endRing);
 
-            // ケーブルにリングを追加
-            if (Math.random() > 0.3) {
-                this.createCableRings(curve, radius, finalCableColor);
+                if (Math.random() > 0.4) {
+                    this.createCableRings(curve, radius, finalCableColor);
+                }
             }
         }
     }
@@ -928,13 +900,13 @@ export class Scene18 extends SceneBase {
         // トラック8で色を変化させるやで！
         if (trackNumber === 8) {
             const args = message.args || [];
-            const value = args[1] !== undefined ? args[1] : 0;
+            const velocity = args[1] !== undefined ? args[1] : 0;
             
-            // value(0-127)に応じて色を変える
-            // 0:赤, 42:緑, 84:青, 127:紫 みたいなイメージや！
-            // Hueの範囲を1.0まで使い切って、赤から紫、そして赤に戻る直前まで！
-            const hue = (value / 127.0); // 0.0〜1.0 (赤〜緑〜青〜紫〜赤)
-            this.targetPulseColor.setHSL(hue, 1.0, 0.5);
+            // トラック8が鳴る（velocity > 0）度に色を切り替えるやで！
+            if (velocity > 0) {
+                this.colorIndex = (this.colorIndex + 1) % this.colors.length;
+                this.targetPulseColor.copy(this.colors[this.colorIndex]);
+            }
         }
     }
 

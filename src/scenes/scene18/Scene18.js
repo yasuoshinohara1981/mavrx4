@@ -24,12 +24,13 @@ export class Scene18 extends SceneBase {
         
         // ケーブル関連
         this.cables = [];
-        this.cableCount = 30; // 少し本数を増やして密度を出す
+        this.cableCount = 60; // 30 -> 60 (倍増！)
         this.cableGroup = new THREE.Group();
 
         // 中央の球体
         this.centralSphere = null;
-        this.coreRadius = 350; // 巨大な核
+        this.coreRadius = 500; // 350 -> 500 (もっと巨大に！)
+        this.detailGroup = new THREE.Group(); // 球体やケーブルの部品用
 
         // 光の弾丸（ファイバーエフェクト）管理
         this.pulses = [];
@@ -84,6 +85,7 @@ export class Scene18 extends SceneBase {
         this.setupLights();
         this.createStudioBox();
         this.createCore();
+        this.createSphereDetails(); // 球体の部品追加
         this.createCables();
         this.initPostProcessing();
         this.initialized = true;
@@ -140,6 +142,81 @@ export class Scene18 extends SceneBase {
         this.centralSphere.castShadow = true;
         this.centralSphere.receiveShadow = true;
         this.scene.add(this.centralSphere);
+        this.scene.add(this.detailGroup);
+    }
+
+    createSphereDetails() {
+        const detailCount = 80; // 40 -> 80 (増量！)
+        const metallicMat = new THREE.MeshStandardMaterial({
+            color: 0x888888, // 少し明るく
+            metalness: 0.9,
+            roughness: 0.2,
+            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+            envMapIntensity: 1.5
+        });
+
+        for (let i = 0; i < detailCount; i++) {
+            const phi = Math.random() * Math.PI * 2;
+            const theta = Math.random() * Math.PI;
+            
+            const x = this.coreRadius * Math.sin(theta) * Math.cos(phi);
+            const y = this.coreRadius * Math.cos(theta) + 400;
+            const z = this.coreRadius * Math.sin(theta) * Math.sin(phi);
+
+            const type = Math.floor(Math.random() * 3);
+            let geometry;
+            let mesh;
+
+            if (type === 0) {
+                // シリンダー/パイプ
+                geometry = new THREE.CylinderGeometry(10 + Math.random() * 20, 10 + Math.random() * 20, 40 + Math.random() * 60, 12);
+            } else if (type === 1) {
+                // ボックス/パネル
+                geometry = new THREE.BoxGeometry(20 + Math.random() * 40, 20 + Math.random() * 40, 10 + Math.random() * 30);
+            } else {
+                // 円盤/ハッチ
+                geometry = new THREE.CylinderGeometry(30 + Math.random() * 50, 30 + Math.random() * 50, 5 + Math.random() * 10, 24);
+            }
+
+            mesh = new THREE.Mesh(geometry, metallicMat);
+            mesh.position.set(x, y, z);
+            
+            // 球体の中心を向くように回転
+            const center = new THREE.Vector3(0, 400, 0);
+            mesh.lookAt(center);
+            if (type !== 1) mesh.rotateX(Math.PI / 2); // Cylinderは軸が違うので調整
+
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            this.detailGroup.add(mesh);
+        }
+    }
+
+    createCableRings(curve, cableRadius) {
+        const ringCount = 1 + Math.floor(Math.random() * 3);
+        const ringMat = new THREE.MeshStandardMaterial({
+            color: 0x888888,
+            metalness: 1.0,
+            roughness: 0.1,
+            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+            envMapIntensity: 2.0
+        });
+
+        for (let i = 0; i < ringCount; i++) {
+            const t = 0.1 + Math.random() * 0.8; // 根本と先端を避ける
+            const pos = curve.getPointAt(t);
+            const tangent = curve.getTangentAt(t);
+
+            const ringGeo = new THREE.TorusGeometry(cableRadius * 1.2, cableRadius * 0.2, 12, 24);
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            
+            ring.position.copy(pos);
+            ring.lookAt(pos.clone().add(tangent));
+            
+            ring.castShadow = true;
+            ring.receiveShadow = true;
+            this.detailGroup.add(ring);
+        }
     }
 
     createCables() {
@@ -151,36 +228,54 @@ export class Scene18 extends SceneBase {
             const phi = Math.acos(2 * Math.random() - 1);
             const theta = Math.random() * Math.PI * 2;
             
-            const startX = this.coreRadius * Math.sin(phi) * Math.cos(theta);
-            const startY = this.coreRadius * Math.cos(phi) + 400; // 球体の中心高さ 400 を加算
-            const startZ = this.coreRadius * Math.sin(phi) * Math.sin(theta);
+            // 法線ベクトル
+            const normal = new THREE.Vector3(
+                Math.sin(phi) * Math.cos(theta),
+                Math.cos(phi),
+                Math.sin(phi) * Math.sin(theta)
+            );
+
+            const startPos = normal.clone().multiplyScalar(this.coreRadius);
+            startPos.y += 400; // 球体の中心高さ
 
             // 球体の下半分から生える確率を高くする（画像イメージ）
-            if (startY > 600 && Math.random() > 0.3) continue;
+            if (startPos.y > 600 && Math.random() > 0.2) continue;
 
-            const radius = 10 + Math.random() * 50; // ランダムな太さ (10〜60)
+            const radius = 15 + Math.random() * 65; // 10〜60 -> 15〜80 (もっと太く！)
+
+            // --- 根本のリング（取り付け感） ---
+            const ringGeo = new THREE.TorusGeometry(radius * 1.3, radius * 0.3, 12, 24);
+            const ringMat = new THREE.MeshStandardMaterial({
+                color: 0x666666,
+                metalness: 0.9,
+                roughness: 0.2,
+                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                envMapIntensity: 1.5
+            });
+            const baseRing = new THREE.Mesh(ringGeo, ringMat);
+            baseRing.position.copy(startPos);
+            baseRing.lookAt(startPos.clone().add(normal));
+            baseRing.castShadow = true;
+            baseRing.receiveShadow = true;
+            this.detailGroup.add(baseRing);
 
             const points = [];
-            points.push(new THREE.Vector3(startX, startY, startZ)); // 根本
+            points.push(startPos.clone()); // 根本
             
-            // 中間点1：球体から少し外側に、かつ重力で下がる
-            const dir = new THREE.Vector3(startX, 0, startZ).normalize();
-            points.push(new THREE.Vector3(
-                startX + dir.x * 200,
-                startY - 200,
-                startZ + dir.z * 200
-            ));
+            // 中間点1：法線方向にしっかり突き出してから垂らす
+            const point1 = startPos.clone().add(normal.clone().multiplyScalar(200 + Math.random() * 300));
+            points.push(point1);
 
-            // 中間点2：地面に触れる手前で大きく広がる
-            const groundDist = 1500 + Math.random() * 3500;
-            const groundAngle = Math.atan2(startZ, startX) + (Math.random() - 0.5) * 0.8;
+            // 中間点2：重力で急降下
+            const groundDist = 2000 + Math.random() * 4000;
+            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
             const groundX = Math.cos(groundAngle) * groundDist;
             const groundZ = Math.sin(groundAngle) * groundDist;
             
             points.push(new THREE.Vector3(
-                groundX * 0.5,
-                floorY + 400,
-                groundZ * 0.5
+                groundX * 0.4,
+                floorY + 500,
+                groundZ * 0.4
             ));
 
             // 終点：地面に這う
@@ -237,6 +332,11 @@ export class Scene18 extends SceneBase {
             mesh.receiveShadow = true;
             this.cableGroup.add(mesh);
             this.cables.push({ mesh, material });
+
+            // ケーブルにリングを追加
+            if (Math.random() > 0.3) {
+                this.createCableRings(curve, radius);
+            }
         }
     }
 
@@ -333,6 +433,13 @@ export class Scene18 extends SceneBase {
             this.scene.remove(this.centralSphere);
             this.centralSphere.geometry.dispose();
             this.centralSphere.material.dispose();
+        }
+        if (this.detailGroup) {
+            this.detailGroup.children.forEach(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+            });
+            this.scene.remove(this.detailGroup);
         }
         this.cables.forEach(c => {
             this.cableGroup.remove(c.mesh);

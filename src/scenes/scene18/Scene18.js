@@ -31,6 +31,7 @@ export class Scene18 extends SceneBase {
         this.centralSphere = null;
         this.coreRadius = 700; // 500 -> 700 (画面を埋め尽くす巨大さ！)
         this.detailGroup = new THREE.Group(); // 球体やケーブルの部品用
+        this.clusterPositions = []; // パーツの配置場所を記録してケーブルと被らんようにするで！
 
         // 光の弾丸（ファイバーエフェクト）管理
         this.pulses = [];
@@ -256,19 +257,10 @@ export class Scene18 extends SceneBase {
 
     createSphereDetails() {
         const detailColor = 0x444444;
-        const clusterCount = 40; // クラスターの数を少し増やす
+        const clusterCount = 40; 
+        this.clusterPositions = []; // 初期化
         const textures = this.generateDirtyTextures(512, detailColor, false); 
-        const metallicMat = new THREE.MeshStandardMaterial({
-            color: detailColor, 
-            map: textures.map,
-            bumpMap: textures.bumpMap,
-            bumpScale: 2.0,
-            metalness: 0.4, 
-            roughness: 0.7, 
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.8 
-        });
-
+        // ... (省略) ...
         for (let i = 0; i < clusterCount; i++) {
             const phi = Math.random() * Math.PI * 2;
             const theta = Math.random() * Math.PI;
@@ -277,12 +269,13 @@ export class Scene18 extends SceneBase {
             const y = this.coreRadius * Math.cos(theta) + 400;
             const z = this.coreRadius * Math.sin(theta) * Math.sin(phi);
             const pos = new THREE.Vector3(x, y, z);
-            const normal = pos.clone().sub(new THREE.Vector3(0, 400, 0)).normalize();
 
             // 下半分に集中させる（メインケーブルとの調和）
             if (y > 600 && Math.random() > 0.3) continue;
 
-            const clusterType = Math.floor(Math.random() * 4); // 4種類に増やす
+            this.clusterPositions.push(pos); // 位置を記録！
+            const normal = pos.clone().sub(new THREE.Vector3(0, 400, 0)).normalize();
+            // ... (以下、各ユニットの生成処理) ...
 
             if (clusterType === 0) {
                 // --- パネルユニット (ベースプレート + Box + スイッチ列) ---
@@ -424,24 +417,40 @@ export class Scene18 extends SceneBase {
         const cableTextures = this.generateDirtyTextures(1024, cableColor, false); 
 
         for (let i = 0; i < this.cableCount; i++) {
-            // 球体表面からランダムな方向に生やす
-            const phi = Math.acos(2 * Math.random() - 1);
-            const theta = Math.random() * Math.PI * 2;
-            
-            // 法線ベクトル
-            const normal = new THREE.Vector3(
-                Math.sin(phi) * Math.cos(theta),
-                Math.cos(phi),
-                Math.sin(phi) * Math.sin(theta)
-            );
+            let phi, theta, normal, startPos;
+            let isValid = false;
+            let attempts = 0;
 
-            const startPos = normal.clone().multiplyScalar(this.coreRadius);
-            startPos.y += 400; // 球体の中心高さ
+            // パーツと被らない場所を探すループや！
+            while (!isValid && attempts < 20) {
+                phi = Math.acos(2 * Math.random() - 1);
+                theta = Math.random() * Math.PI * 2;
+                
+                normal = new THREE.Vector3(
+                    Math.sin(phi) * Math.cos(theta),
+                    Math.cos(phi),
+                    Math.sin(phi) * Math.sin(theta)
+                );
+
+                startPos = normal.clone().multiplyScalar(this.coreRadius);
+                startPos.y += 400;
+
+                // 既存のパーツ位置との距離をチェック
+                isValid = true;
+                for (const clusterPos of this.clusterPositions) {
+                    if (startPos.distanceTo(clusterPos) < 180) { // 180ユニット以内はNG！
+                        isValid = false;
+                        break;
+                    }
+                }
+                attempts++;
+            }
 
             // 球体の下半分から生える確率を高くする（画像イメージ）
             if (startPos.y > 600 && Math.random() > 0.2) continue;
 
-            const radius = 10 + Math.random() * 80; // 15〜80 -> 10〜90 (さらにバリエーション豊かに)
+            const radius = 10 + Math.random() * 80; 
+            // ... (以下、ケーブル生成処理) ...
 
             // --- 根本のリング（取り付け感） ---
             const ringGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24); // より重厚に

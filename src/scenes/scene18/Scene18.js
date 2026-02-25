@@ -53,6 +53,10 @@ export class Scene18 extends SceneBase {
         this.pulseColor = new THREE.Color(1.0, 0.0, 0.0); // 初期値は赤
         this.targetPulseColor = new THREE.Color(1.0, 0.0, 0.0);
 
+        // 球体の発光管理（トラック5で変化）
+        this.coreEmissiveIntensity = 0.1;
+        this.targetCoreEmissiveIntensity = 0.1;
+
         this.trackEffects = {
             1: true, 2: false, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
         };
@@ -749,6 +753,16 @@ export class Scene18 extends SceneBase {
         // カラーの補間（トラック8で変化）
         this.pulseColor.lerp(this.targetPulseColor, 0.1);
 
+        // 球体の発光強度の補間（トラック5で変化）
+        this.coreEmissiveIntensity += (this.targetCoreEmissiveIntensity - this.coreEmissiveIntensity) * 0.1;
+        if (this.centralSphere && this.centralSphere.material) {
+            this.centralSphere.material.emissiveIntensity = this.coreEmissiveIntensity;
+            // 発光色もパルス色に合わせるやで！
+            this.centralSphere.material.emissive.copy(this.pulseColor);
+        }
+        // ターゲット強度は常にベースの0.1に戻ろうとするようにするで
+        this.targetCoreEmissiveIntensity += (0.1 - this.targetCoreEmissiveIntensity) * 0.05;
+
         for (let i = this.pulses.length - 1; i >= 0; i--) {
             const p = this.pulses[i];
             p.progress += deltaTime * p.speed;
@@ -782,6 +796,9 @@ export class Scene18 extends SceneBase {
             progress: 0.0,
             speed: speed
         });
+
+        // 球体を光らせる（トラック5の時だけとかの判別はhandleTrackNumber側でやるやで）
+        this.targetCoreEmissiveIntensity = 0.1 + (velocity / 127.0) * 0.8; // 最大0.9まで光る！
     }
 
     initPostProcessing() {

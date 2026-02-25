@@ -574,48 +574,38 @@ export class Scene18 extends SceneBase {
             const points = [];
             points.push(startPos.clone()); // 根本
             
-            // 中間点1：法線方向に突き出す（上なら上へ、下なら横へ）
-            // 太いケーブルほど、折れないように遠くまで突き出させて緩やかに曲げるやで！
-            const pushDistBase = isUpper ? 400 : 200;
-            const pushDist = pushDistBase + (radius * 3.0) + (Math.random() * 200);
+            // 中間点1：法線方向に真っ直ぐ突き出す
+            // 距離をさらに伸ばして、根本の急カーブを物理的に不可能にするやで！
+            const pushDist = 600 + (radius * 4.0); 
             const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
             points.push(point1);
 
-            // 中間点2：重力の影響
-            const groundDist = isUpper ? (2500 + Math.random() * 3000) : (1500 + Math.random() * 2000);
-            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.5;
+            // 中間点2：重力で下に落ちる前の「溜め」
+            // point1から少しだけ外側にずらして、さらにゆったりさせる
+            const point2 = point1.clone().add(new THREE.Vector3(normal.x * 200, -200, normal.z * 200));
+            points.push(point2);
+
+            // 中間点3：地面に向かう途中の点
+            const groundDist = isUpper ? (3000 + Math.random() * 2000) : (1800 + Math.random() * 1500);
+            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
             const groundX = Math.cos(groundAngle) * groundDist;
             const groundZ = Math.sin(groundAngle) * groundDist;
             
-            if (isUpper) {
-                // 上から生える場合は、一度大きく外に回ってから地面へ
-                // ここも太さに合わせて膨らみを調整するで！
-                const bulgeScale = 1.2 + (radius / 200); 
-                points.push(new THREE.Vector3(
-                    point1.x * bulgeScale,
-                    point1.y * 0.5,
-                    point1.z * bulgeScale
-                ));
-            } else {
-                // 下から生える場合は、地面を這うように
-                points.push(new THREE.Vector3(
-                    groundX * 0.5,
-                    floorY + 300,
-                    groundZ * 0.5
-                ));
-            }
+            const midY = isUpper ? (floorY + 1500) : (floorY + 800);
+            points.push(new THREE.Vector3(groundX * 0.7, midY, groundZ * 0.7));
 
-            // 終点：地面に向かって垂直に突き刺さるような配置
+            // 終点：地面
             const endPos = new THREE.Vector3(groundX, floorY, groundZ);
-            // 地面に刺さる直前の点も、太さに合わせて高さを変えて滑らかにするやで！
-            const approachHeight = 300 + (radius * 2.0);
-            points.push(new THREE.Vector3(groundX, floorY + approachHeight, groundZ)); 
+            // 地面に刺さる直前の点（垂直に着地させるために少し高く）
+            points.push(new THREE.Vector3(groundX, floorY + 500 + (radius * 2.0), groundZ)); 
             points.push(endPos);
 
-            const curve = new THREE.CatmullRomCurve3(points);
-            // 太いケーブルほどセグメントを増やして滑らかに見せるやで！
-            const segments = radius > 80 ? 128 : 64;
-            const geometry = new THREE.TubeGeometry(curve, segments, radius, 8, false); 
+            // CatmullRomCurve3のテンションを下げて、より「紐」らしい滑らかさに！
+            const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
+            
+            // 太いケーブルほどセグメントをさらに増やして、カクつきを撲滅！
+            const segments = radius > 60 ? 160 : 80;
+            const geometry = new THREE.TubeGeometry(curve, segments, radius, 12, false); 
             
             const material = new THREE.MeshStandardMaterial({
                 color: finalCableColor,

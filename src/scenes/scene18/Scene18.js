@@ -301,30 +301,30 @@ export class Scene18 extends SceneBase {
 
             if (clusterType === 0) {
                 // --- パネルユニット (ベースプレート + Box + スイッチ列) ---
-                const baseWidth = 80 + Math.random() * 120; // 60-160 -> 80-200
-                const baseHeight = 80 + Math.random() * 120;
-                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 10);
+                const baseWidth = 150 + Math.random() * 200; // 80-200 -> 150-350 (さらに巨大化！)
+                const baseHeight = 150 + Math.random() * 200;
+                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 20); // 厚みもアップ
                 const baseMesh = new THREE.Mesh(baseGeo, metallicMat);
                 baseMesh.position.copy(pos);
                 baseMesh.lookAt(pos.clone().add(normal));
                 this.detailGroup.add(baseMesh);
 
                 // パネルの上のBox
-                const boxGeo = new THREE.BoxGeometry(baseWidth * 0.6, baseHeight * 0.6, 25); // 20 -> 25
+                const boxGeo = new THREE.BoxGeometry(baseWidth * 0.6, baseHeight * 0.6, 40); // 25 -> 40
                 const boxMesh = new THREE.Mesh(boxGeo, metallicMat);
-                boxMesh.position.copy(pos).add(normal.clone().multiplyScalar(15));
+                boxMesh.position.copy(pos).add(normal.clone().multiplyScalar(20));
                 boxMesh.quaternion.copy(baseMesh.quaternion);
                 this.detailGroup.add(boxMesh);
 
                 // スイッチの列
                 const switchCount = 4 + Math.floor(Math.random() * 4);
-                const switchGeo = new THREE.BoxGeometry(12, 12, 18); // 10 -> 12
+                const switchGeo = new THREE.BoxGeometry(20, 20, 30); // 12 -> 20
                 for (let j = 0; j < switchCount; j++) {
                     const sMesh = new THREE.Mesh(switchGeo, metallicMat);
                     const offset = new THREE.Vector3(
                         (j / (switchCount - 1) - 0.5) * baseWidth * 0.8,
                         -baseHeight * 0.3,
-                        20
+                        30
                     );
                     sMesh.position.copy(pos).add(offset.applyQuaternion(baseMesh.quaternion));
                     sMesh.quaternion.copy(baseMesh.quaternion);
@@ -332,8 +332,8 @@ export class Scene18 extends SceneBase {
                 }
             } else if (clusterType === 1) {
                 // --- 円形コネクタユニット (大円盤 + 小円盤 + パイプ) ---
-                const baseRadius = 70 + Math.random() * 60; // 50-100 -> 70-130
-                const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, 12, 24); // 10 -> 12
+                const baseRadius = 120 + Math.random() * 100; // 70-130 -> 120-220
+                const baseGeo = new THREE.CylinderGeometry(baseRadius, baseRadius, 20, 24); // 12 -> 20
                 const baseMesh = new THREE.Mesh(baseGeo, metallicMat);
                 baseMesh.position.copy(pos);
                 baseMesh.lookAt(pos.clone().add(normal));
@@ -341,22 +341,22 @@ export class Scene18 extends SceneBase {
                 this.detailGroup.add(baseMesh);
 
                 // 重ねる小円盤
-                const subGeo = new THREE.CylinderGeometry(baseRadius * 0.6, baseRadius * 0.6, 18, 24); // 15 -> 18
+                const subGeo = new THREE.CylinderGeometry(baseRadius * 0.6, baseRadius * 0.6, 30, 24); // 18 -> 30
                 const subMesh = new THREE.Mesh(subGeo, metallicMat);
-                subMesh.position.copy(pos).add(normal.clone().multiplyScalar(10));
+                subMesh.position.copy(pos).add(normal.clone().multiplyScalar(15));
                 subMesh.quaternion.copy(baseMesh.quaternion);
                 this.detailGroup.add(subMesh);
 
                 // 突き出るパイプ
-                const pipeGeo = new THREE.CylinderGeometry(12, 12, 80, 12); // 10, 60 -> 12, 80
+                const pipeGeo = new THREE.CylinderGeometry(20, 20, 150, 12); // 12, 80 -> 20, 150
                 const pipeMesh = new THREE.Mesh(pipeGeo, metallicMat);
-                pipeMesh.position.copy(pos).add(normal.clone().multiplyScalar(30));
+                pipeMesh.position.copy(pos).add(normal.clone().multiplyScalar(50));
                 pipeMesh.quaternion.copy(baseMesh.quaternion);
                 this.detailGroup.add(pipeMesh);
             } else if (clusterType === 2) {
                 // --- メンテナンスハッチユニット (プレート + ボルト風ディテール) ---
-                const size = 100 + Math.random() * 50; // 80-120 -> 100-150
-                const hatchGeo = new THREE.CylinderGeometry(size, size, 7, 6); // 5 -> 7
+                const size = 150 + Math.random() * 100; // 100-150 -> 150-250
+                const hatchGeo = new THREE.CylinderGeometry(size, size, 15, 6); // 7 -> 15
                 const hatchMesh = new THREE.Mesh(hatchGeo, metallicMat);
                 hatchMesh.position.copy(pos);
                 hatchMesh.lookAt(pos.clone().add(normal));
@@ -364,18 +364,18 @@ export class Scene18 extends SceneBase {
                 this.detailGroup.add(hatchMesh);
 
                 // ボルト風の小さい円柱を角に配置
-                const boltGeo = new THREE.CylinderGeometry(7, 7, 12, 8); // 5, 10 -> 7, 12
+                const boltGeo = new THREE.CylinderGeometry(12, 12, 25, 8); // 7, 12 -> 12, 25
                 for (let j = 0; j < 6; j++) {
                     const bMesh = new THREE.Mesh(boltGeo, metallicMat);
                     const angle = (j / 6) * Math.PI * 2;
-                    const offset = new THREE.Vector3(Math.cos(angle) * size * 0.8, Math.sin(angle) * size * 0.8, 5);
+                    const offset = new THREE.Vector3(Math.cos(angle) * size * 0.8, Math.sin(angle) * size * 0.8, 15);
                     bMesh.position.copy(pos).add(offset.applyQuaternion(hatchMesh.quaternion));
                     bMesh.quaternion.copy(hatchMesh.quaternion);
                     this.detailGroup.add(bMesh);
                 }
             } else {
                 // --- サブケーブル・ジャンクションユニット ---
-                const baseGeo = new THREE.BoxGeometry(80, 80, 25); // 60, 20 -> 80, 25
+                const baseGeo = new THREE.BoxGeometry(120, 120, 40); // 80, 25 -> 120, 40
                 const baseMesh = new THREE.Mesh(baseGeo, metallicMat);
                 baseMesh.position.copy(pos);
                 baseMesh.lookAt(pos.clone().add(normal));
@@ -384,15 +384,14 @@ export class Scene18 extends SceneBase {
                 // そこから生える細いケーブル
                 const subCableCount = 2 + Math.floor(Math.random() * 3);
                 for (let j = 0; j < subCableCount; j++) {
-                    const subRadius = 7 + Math.random() * 7; // 5-10 -> 7-14
+                    const subRadius = 12 + Math.random() * 10; // 7-14 -> 12-22
                     const subPoints = [];
-                    const startOffset = new THREE.Vector3((j - 1) * 20, 0, 15).applyQuaternion(baseMesh.quaternion);
+                    const startOffset = new THREE.Vector3((j - 1) * 30, 0, 25).applyQuaternion(baseMesh.quaternion);
                     const subStartPos = pos.clone().add(startOffset);
                     subPoints.push(subStartPos);
                     
-                    // 適当に地面に向かって垂らす
-                    subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(150)).add(new THREE.Vector3(0, -250, 0)));
-                    subPoints.push(new THREE.Vector3(pos.x * 1.3, -498, pos.z * 1.3));
+                    subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(250)).add(new THREE.Vector3(0, -400, 0)));
+                    subPoints.push(new THREE.Vector3(pos.x * 1.4, -498, pos.z * 1.4));
 
                     const subCurve = new THREE.CatmullRomCurve3(subPoints);
                     const subGeo = new THREE.TubeGeometry(subCurve, 32, subRadius, 8, false);

@@ -57,9 +57,9 @@ export class Scene18 extends SceneBase {
 
     setupCameraParticleDistance(cameraParticle) {
         // 球体の半径が1300、中心高さが400
-        cameraParticle.minDistance = 3000; // 2500 -> 3000 (巨大化したから離す)
+        cameraParticle.minDistance = 2500; 
         cameraParticle.maxDistance = 4800; 
-        cameraParticle.minY = 400; // 300 -> 400 (少し上げる)
+        cameraParticle.minY = 300; 
     }
 
     /**
@@ -75,7 +75,7 @@ export class Scene18 extends SceneBase {
             const distToCore = cameraPos.distanceTo(coreCenter);
             
             // 安全距離（半径1300 + 余裕分）
-            const safeDistance = 1800; // 1600 -> 1800 (ガード範囲も拡大！)
+            const safeDistance = 1800; 
             
             if (distToCore < safeDistance) {
                 const dir = cameraPos.clone().sub(coreCenter).normalize();
@@ -114,7 +114,7 @@ export class Scene18 extends SceneBase {
         this.renderer.toneMappingExposure = 1.3;
 
         // 初期位置も十分に離す
-        this.camera.position.set(0, 5000, 10000); // 4000, 9000 -> 5000, 10000
+        this.camera.position.set(0, 5000, 10000); 
         this.camera.lookAt(0, 400, 0);
         if (this.camera.fov !== 60) {
             this.camera.fov = 60;
@@ -469,10 +469,22 @@ export class Scene18 extends SceneBase {
                 attempts++;
             }
 
-            // 球体の下半分から生える確率を高くする（画像イメージ）
-            if (startPos.y > 600 && Math.random() > 0.2) continue;
+            // --- 生え方の調整（上下に分散） ---
+            const isUpper = startPos.y > 400;
+            
+            // 中間の赤道付近は少し減らして、上下のメリハリを出す
+            if (Math.abs(startPos.y - 400) < 200 && Math.random() > 0.3) continue;
 
-            const radius = 10 + Math.random() * 80; 
+            // 太さを極端にランダム化 (5〜120)
+            const radiusRand = Math.random();
+            let radius;
+            if (radiusRand < 0.6) {
+                radius = 5 + Math.random() * 15; // 60%は細い
+            } else if (radiusRand < 0.9) {
+                radius = 30 + Math.random() * 40; // 30%は中くらい
+            } else {
+                radius = 80 + Math.random() * 40; // 10%は超極太！
+            }
 
             // --- 根本の「意味ありげな」接続ユニットユニット ---
             const unitGroup = new THREE.Group();
@@ -530,25 +542,36 @@ export class Scene18 extends SceneBase {
             const points = [];
             points.push(startPos.clone()); // 根本
             
-            // 中間点1：ソケットからしっかり突き出してから垂らす
-            const point1 = startPos.clone().add(normal.clone().multiplyScalar(300 + Math.random() * 200));
+            // 中間点1：法線方向に突き出す（上なら上へ、下なら横へ）
+            const pushDist = isUpper ? (200 + Math.random() * 400) : (100 + Math.random() * 200);
+            const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
             points.push(point1);
 
-            // 中間点2：重力で急降下
-            const groundDist = 2000 + Math.random() * 4000;
-            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.0;
+            // 中間点2：重力の影響
+            const groundDist = isUpper ? (2500 + Math.random() * 3000) : (1500 + Math.random() * 2000);
+            const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 1.5;
             const groundX = Math.cos(groundAngle) * groundDist;
             const groundZ = Math.sin(groundAngle) * groundDist;
             
-            points.push(new THREE.Vector3(
-                groundX * 0.4,
-                floorY + 500,
-                groundZ * 0.4
-            ));
+            if (isUpper) {
+                // 上から生える場合は、一度大きく外に回ってから地面へ
+                points.push(new THREE.Vector3(
+                    point1.x * 1.2,
+                    point1.y * 0.5,
+                    point1.z * 1.2
+                ));
+            } else {
+                // 下から生える場合は、地面を這うように
+                points.push(new THREE.Vector3(
+                    groundX * 0.5,
+                    floorY + 300,
+                    groundZ * 0.5
+                ));
+            }
 
             // 終点：地面に向かって垂直に突き刺さるような配置
             const endPos = new THREE.Vector3(groundX, floorY, groundZ);
-            points.push(new THREE.Vector3(groundX, floorY + 300, groundZ)); // 垂直に降りるための補助点
+            points.push(new THREE.Vector3(groundX, floorY + 300, groundZ)); 
             points.push(endPos);
 
             const curve = new THREE.CatmullRomCurve3(points);

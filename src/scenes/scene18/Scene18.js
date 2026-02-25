@@ -468,11 +468,20 @@ export class Scene18 extends SceneBase {
                 attempts++;
             }
 
-            // --- 生え方の調整（上下に分散） ---
-            const isUpper = startPos.y > 400;
+            // --- 生え方の調整（ノイズを使って不均一に偏らせる） ---
+            // phiとthetaを使った擬似ノイズで、生える場所を「塊（クラスター）」にするやで
+            const spawnNoise = Math.sin(phi * 4.0) * Math.cos(theta * 4.0) + Math.sin(phi * 8.0) * 0.5;
             
-            // 中間の赤道付近は少し減らして、上下のメリハリを出す
-            if (Math.abs(startPos.y - 400) < 200 && Math.random() > 0.5) continue;
+            // 基本的な出現判定（ノイズが低い場所は間引く）
+            if (spawnNoise < -0.2 && Math.random() > 0.2) continue;
+
+            // 上下の配分調整（上部を少し控えめにして、下半分〜横にボリュームを出す）
+            const isUpper = startPos.y > 400;
+            if (isUpper && Math.random() > 0.5) continue; // 上から生える確率をさらに半分に！
+            
+            // 赤道付近（横方向）に太いのが集まるとカッコええから、そこは残す
+            const isEquator = Math.abs(startPos.y - 400) < 300;
+            if (!isEquator && !isUpper && Math.random() > 0.3) continue; // 真下すぎるのも少し間引く
 
             // 太さを調整 (極太を絞って、バランスを整える)
             const radiusRand = Math.random();

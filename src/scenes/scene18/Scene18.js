@@ -196,7 +196,8 @@ export class Scene18 extends SceneBase {
         this.createStudioBox();
         this.createCore();
         this.createSphereDetails(); // 球体の部品追加
-        this.createCables();
+        this.createEntranceUnit(); // 先に入口ユニットを作って位置を確定させる！
+        this.createCables(); // ケーブルは後から作って入口を避ける！
         this.initPostProcessing();
         this.setParticleCount(this.cableCount); // HUDのOBJECTSにケーブル本数を表示！
         this.initialized = true;
@@ -245,11 +246,11 @@ export class Scene18 extends SceneBase {
             color: coreColor,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 2.0, 
-            emissive: 0x444444, // 自己発光も少し明るく
+            bumpScale: 8.0, // 2.0 -> 8.0 (バンプをガッツリ効かせる！)
+            emissive: 0x444444, 
             emissiveIntensity: 0.1, 
-            metalness: 0.1,
-            roughness: 0.9,
+            metalness: 0.3, // 少し金属感をアップ
+            roughness: 0.7, // ざらつきを出す
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
             envMapIntensity: 0.5
         });
@@ -277,37 +278,48 @@ export class Scene18 extends SceneBase {
         bCtx.fillStyle = '#808080'; // 中間グレー
         bCtx.fillRect(0, 0, size, size);
         
-        // 汚れ・かすれの描画（密度を大幅に下げて、粗さを抑えるやで！）
-        const dirtCount = isMatte ? 500 : 300; // 4000 -> 500 (かなり減らしたで！)
-        for (let i = 0; i < dirtCount; i++) {
+        // --- 「古びた金属」感を出すためのノイズ強化 ---
+        // 1. 全体的なザラつき（微細なノイズ）
+        for (let i = 0; i < (isMatte ? 10000 : 5000); i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = Math.random() * (isMatte ? 4 : 2); // サイズも少し小さめに
-            const alpha = Math.random() * 0.15; // 透明度も下げて馴染ませる
-            
-            // カラーキャンバスに暗い汚れ
-            cCtx.fillStyle = `rgba(40, 40, 40, ${alpha})`;
-            cCtx.beginPath();
-            cCtx.arc(x, y, r, 0, Math.PI * 2);
-            cCtx.fill();
-            
-            // バンプキャンバスに凹凸（コントラストを抑えて滑らかに）
-            const val = 128 + (Math.random() - 0.5) * 40;
+            const r = Math.random() * 1.5;
+            const val = 128 + (Math.random() - 0.5) * 60; // バンプの凹凸を激しく
             bCtx.fillStyle = `rgb(${val}, ${val}, ${val})`;
             bCtx.beginPath();
             bCtx.arc(x, y, r, 0, Math.PI * 2);
             bCtx.fill();
         }
 
-        // ひっかき傷も控えめに
-        for (let i = 0; i < 50; i++) { // 200 -> 50
+        // 2. 汚れ・腐食（大きめのシミ）
+        const dirtCount = isMatte ? 1000 : 600; 
+        for (let i = 0; i < dirtCount; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const len = 5 + Math.random() * 30;
+            const r = Math.random() * (isMatte ? 15 : 8); // シミを大きく
+            const alpha = Math.random() * 0.3; 
+            
+            cCtx.fillStyle = `rgba(30, 30, 30, ${alpha})`;
+            cCtx.beginPath();
+            cCtx.arc(x, y, r, 0, Math.PI * 2);
+            cCtx.fill();
+            
+            const val = 128 + (Math.random() - 0.5) * 100; // 凹凸を深く
+            bCtx.fillStyle = `rgb(${val}, ${val}, ${val})`;
+            bCtx.beginPath();
+            bCtx.arc(x, y, r, 0, Math.PI * 2);
+            bCtx.fill();
+        }
+
+        // 3. ひっかき傷（金属の劣化感）
+        for (let i = 0; i < 150; i++) { 
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const len = 10 + Math.random() * 60;
             const angle = Math.random() * Math.PI * 2;
             
-            bCtx.strokeStyle = Math.random() > 0.5 ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.2)';
-            bCtx.lineWidth = 0.5;
+            bCtx.strokeStyle = Math.random() > 0.5 ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.4)';
+            bCtx.lineWidth = 1.0;
             bCtx.beginPath();
             bCtx.moveTo(x, y);
             bCtx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
@@ -495,11 +507,11 @@ export class Scene18 extends SceneBase {
                     color: color,
                     map: textures.map,
                     bumpMap: textures.bumpMap,
-                    bumpScale: 1.5,
+                    bumpScale: 6.0, // 1.5 -> 6.0 (パーツもバンプ強化！)
                     emissive: 0x222222,
                     emissiveIntensity: 0.1,
-                    metalness: 0.2,
-                    roughness: 0.8,
+                    metalness: 0.4, // 金属感を出す
+                    roughness: 0.6,
                     envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
                     envMapIntensity: 0.5
                 });
@@ -539,6 +551,41 @@ export class Scene18 extends SceneBase {
             ring.receiveShadow = true;
             this.detailGroup.add(ring);
         }
+
+        // --- たまに「継ぎ目（シリンダー）」を追加するやで！ ---
+        if (Math.random() > 0.7) { // 30%の確率で継ぎ目出現
+            const t = 0.3 + Math.random() * 0.4; // 中間あたり
+            const pos = curve.getPointAt(t);
+            const tangent = curve.getTangentAt(t);
+
+            const jointGroup = new THREE.Group();
+            jointGroup.position.copy(pos);
+            jointGroup.lookAt(pos.clone().add(tangent));
+            this.detailGroup.add(jointGroup);
+
+            // メインのシリンダー
+            const jointGeo = new THREE.CylinderGeometry(cableRadius * 1.8, cableRadius * 1.8, cableRadius * 4, 16);
+            const jointMat = new THREE.MeshStandardMaterial({
+                color: 0x444444,
+                metalness: 0.8,
+                roughness: 0.3,
+                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                envMapIntensity: 1.0
+            });
+            const joint = new THREE.Mesh(jointGeo, jointMat);
+            joint.rotateX(Math.PI / 2);
+            jointGroup.add(joint);
+
+            // 両端のボルトリング
+            const boltRingGeo = new THREE.TorusGeometry(cableRadius * 2.0, cableRadius * 0.3, 8, 16);
+            const boltRing1 = new THREE.Mesh(boltRingGeo, jointMat);
+            boltRing1.position.z = cableRadius * 1.5;
+            jointGroup.add(boltRing1);
+
+            const boltRing2 = new THREE.Mesh(boltRingGeo, jointMat);
+            boltRing2.position.z = -cableRadius * 1.5;
+            jointGroup.add(boltRing2);
+        }
     }
 
     createCables() {
@@ -569,12 +616,9 @@ export class Scene18 extends SceneBase {
             const bundleEndOffsetZ = (Math.random() - 0.5) * 2000;
 
             for (let c = 0; c < cablesInBundle && generatedCount < this.cableCount; c++) {
-                // 束から外れる「はぐれケーブル」をさらに低確率にするやで！
-                const isLoneCable = Math.random() < 0.05; // 15% -> 5% に大幅ダウン！
-
                 // 束の中で少しだけ位置をずらす
-                const phi = bundlePhi + (Math.random() - 0.5) * (isLoneCable ? 0.8 : 0.15);
-                const theta = bundleTheta + (Math.random() - 0.5) * (isLoneCable ? 0.8 : 0.15);
+                const phi = bundlePhi + (Math.random() - 0.5) * 0.15;
+                const theta = bundleTheta + (Math.random() - 0.5) * 0.15;
                 
                 const normal = new THREE.Vector3(
                     Math.sin(phi) * Math.cos(theta),
@@ -593,6 +637,12 @@ export class Scene18 extends SceneBase {
                         break;
                     }
                 }
+                
+                // 入口ユニット（ランプとテキスト）の周辺にも生えないようにするやで！
+                if (this.entrancePos && startPos.distanceTo(this.entrancePos) < 500) {
+                    isTooClose = true;
+                }
+
                 if (isTooClose) continue;
 
                 generatedCount++;
@@ -661,19 +711,13 @@ export class Scene18 extends SceneBase {
                 const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
                 points.push(point1);
 
-                // --- 終端の計算（束ごとの偏りを適用、はぐれケーブルはさらにランダム） ---
+                // --- 終端の計算（束ごとの偏りを適用） ---
                 let groundDist = isUpper ? (3500 + Math.random() * 3000) : (2000 + Math.random() * 2500);
-                const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * (isLoneCable ? 1.5 : 0.5);
+                const groundAngle = Math.atan2(normal.z, normal.x) + (Math.random() - 0.5) * 0.5;
                 
-                // 束のオフセットをノイズ的に加える（はぐれケーブルはオフセットを無視してランダムに飛ぶ）
-                let groundX, groundZ;
-                if (isLoneCable) {
-                    groundX = Math.cos(groundAngle) * groundDist;
-                    groundZ = Math.sin(groundAngle) * groundDist;
-                } else {
-                    groundX = Math.cos(groundAngle) * groundDist + bundleEndOffsetX * (0.8 + Math.random() * 0.4);
-                    groundZ = Math.sin(groundAngle) * groundDist + bundleEndOffsetZ * (0.8 + Math.random() * 0.4);
-                }
+                // 束のオフセットをノイズ的に加える
+                let groundX = Math.cos(groundAngle) * groundDist + bundleEndOffsetX * (0.8 + Math.random() * 0.4);
+                let groundZ = Math.sin(groundAngle) * groundDist + bundleEndOffsetZ * (0.8 + Math.random() * 0.4);
 
                 const roomLimit = 4500;
                 if (Math.abs(groundX) > roomLimit || Math.abs(groundZ) > roomLimit) {
@@ -789,6 +833,61 @@ export class Scene18 extends SceneBase {
                 }
             }
         }
+    }
+
+    createEntranceUnit() {
+        // 球体の正面（Z軸方向）に入口っぽいパーツを配置するやで！
+        const entranceGroup = new THREE.Group();
+        const radius = this.coreRadius + 5; // 表面に密着させる
+        
+        // --- 位置の調整（真ん中よりちょい上！） ---
+        const yOffset = 500; 
+        const zPos = Math.sqrt(radius * radius - yOffset * yOffset);
+        const finalPos = new THREE.Vector3(0, 400 + yOffset, zPos);
+        
+        entranceGroup.position.copy(finalPos);
+        const lookTarget = finalPos.clone().add(new THREE.Vector3(0, yOffset, zPos).normalize());
+        entranceGroup.lookAt(lookTarget);
+        this.scene.add(entranceGroup);
+
+        // 1. 赤いランプ（中央に1つだけ）
+        const lampGeo = new THREE.SphereGeometry(10, 16, 16); // 20 -> 10 (もっと小さく！)
+        const lampMat = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 10.0 // 小さくなった分、輝きを鋭く！
+        });
+        
+        const lamp = new THREE.Mesh(lampGeo, lampMat);
+        lamp.position.set(0, 60, 5);
+        entranceGroup.add(lamp);
+
+        // 2. 「MAVRX4」テキストラベル
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        // 背景なし（透明）
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // テキスト描画（さらに濃いグレー、ほぼ黒）
+        ctx.fillStyle = '#111111'; // #222222 -> #111111 (さらに濃く！)
+        ctx.font = 'bold 90px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('MAVRX4', canvas.width / 2, canvas.height / 2);
+        
+        const textTex = new THREE.CanvasTexture(canvas);
+        const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true });
+        const textGeo = new THREE.PlaneGeometry(400, 100);
+        const textMesh = new THREE.Mesh(textGeo, textMat);
+        textMesh.position.set(0, -20, 2); // 表面ギリギリに配置
+        entranceGroup.add(textMesh);
+
+        // 入口ユニットの位置を記録して、ケーブルが被らんようにするで！
+        this.entrancePos = finalPos.clone();
+        this.entranceUnit = entranceGroup;
     }
 
     onUpdate(deltaTime) {
@@ -968,6 +1067,23 @@ export class Scene18 extends SceneBase {
         });
         this.cables = [];
         this.scene.remove(this.cableGroup);
+        if (this.entranceUnit) {
+            this.scene.remove(this.entranceUnit);
+            this.entranceUnit.children.forEach(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => {
+                            if (m.map) m.map.dispose();
+                            m.dispose();
+                        });
+                    } else {
+                        if (child.material.map) child.material.map.dispose();
+                        child.material.dispose();
+                    }
+                }
+            });
+        }
         super.dispose();
     }
 }

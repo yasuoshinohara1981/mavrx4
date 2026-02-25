@@ -55,8 +55,8 @@ export class Scene18 extends SceneBase {
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        cameraParticle.minDistance = 2500;
-        cameraParticle.maxDistance = 8000;
+        cameraParticle.minDistance = 3500; // 2500 -> 3500 (巨大化したから離す)
+        cameraParticle.maxDistance = 12000; // 8000 -> 12000 (より広大に)
         cameraParticle.minY = -450; 
     }
 
@@ -67,7 +67,7 @@ export class Scene18 extends SceneBase {
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.3;
 
-        this.camera.position.set(0, 1500, 4500);
+        this.camera.position.set(0, 2000, 6000); // 1500, 4500 -> 2000, 6000
         this.camera.lookAt(0, 200, 0);
 
         this.renderer.shadowMap.enabled = true;
@@ -278,8 +278,10 @@ export class Scene18 extends SceneBase {
                 groundZ * 0.4
             ));
 
-            // 終点：地面に這う
-            points.push(new THREE.Vector3(groundX, floorY + radius, groundZ));
+            // 終点：地面に向かって垂直に突き刺さるような配置
+            const endPos = new THREE.Vector3(groundX, floorY, groundZ);
+            points.push(new THREE.Vector3(groundX, floorY + 300, groundZ)); // 垂直に降りるための補助点
+            points.push(endPos);
 
             const curve = new THREE.CatmullRomCurve3(points);
             const geometry = new THREE.TubeGeometry(curve, 128, radius, 12, false);
@@ -332,6 +334,22 @@ export class Scene18 extends SceneBase {
             mesh.receiveShadow = true;
             this.cableGroup.add(mesh);
             this.cables.push({ mesh, material });
+
+            // --- 先端のリング（地面への固定感） ---
+            const endRingGeo = new THREE.TorusGeometry(radius * 1.4, radius * 0.4, 12, 24);
+            const endRingMat = new THREE.MeshStandardMaterial({
+                color: 0x777777,
+                metalness: 0.9,
+                roughness: 0.2,
+                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                envMapIntensity: 1.5
+            });
+            const endRing = new THREE.Mesh(endRingGeo, endRingMat);
+            endRing.position.copy(endPos);
+            endRing.rotateX(Math.PI / 2); // 床に水平に置く
+            endRing.castShadow = true;
+            endRing.receiveShadow = true;
+            this.detailGroup.add(endRing);
 
             // ケーブルにリングを追加
             if (Math.random() > 0.3) {

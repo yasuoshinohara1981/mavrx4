@@ -1025,7 +1025,7 @@ export class Scene18 extends SceneBase {
                 points.push(startPos.clone());
                 
                 const isUpper = startPos.y > this.coreCenterY;
-                const pushDist = (isUpper ? 200 : 100) + (radius * 1.0) + (Math.random() * 30); // 100/50 -> 200/100 (少し勢いを戻す)
+                const pushDist = (isUpper ? 300 : 150) + (radius * 2.0) + (Math.random() * 50); 
                 const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
                 points.push(point1);
 
@@ -1045,8 +1045,8 @@ export class Scene18 extends SceneBase {
                 }
                 
                 if (isUpper) {
-                    const bulgeScale = 1.4 + (radius < 40 ? 0.3 : (radius / 300)); // 1.2 -> 1.4 (少し外側に膨らませる)
-                    const midY = Math.max(point1.y * 0.3, this.coreCenterY); // 0.2 -> 0.3, -200 -> 0 (球体の中央付近で踏みとどまる)
+                    const bulgeScale = 1.5 + (radius < 40 ? 0.3 : (radius / 250)); // 1.6 -> 1.5 (少しだけ絞る)
+                    const midY = Math.max(point1.y * 0.5, this.coreCenterY + 100); // 0.6 -> 0.5, +400 -> +100 (マイルドに下げる)
                     
                     // 球体の中心から外側へ向かうベクトルを計算して、中間地点を球体の外側に押し出す
                     const midPos = new THREE.Vector3(
@@ -1058,7 +1058,7 @@ export class Scene18 extends SceneBase {
                     // 球体中心（0, coreCenterY, 0）からの距離をチェック
                     const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
                     const distToCenter = midPos.distanceTo(coreCenter);
-                    const safeRadius = this.coreRadius + 200; // 150 -> 200 (少し余裕を持たせる)
+                    const safeRadius = this.coreRadius + 250; // 300 -> 250 (少し球体に寄せる)
                     
                     if (distToCenter < safeRadius) {
                         const pushDir = midPos.clone().sub(coreCenter).normalize();
@@ -1067,17 +1067,17 @@ export class Scene18 extends SceneBase {
                     
                     points.push(midPos);
                 } else {
-                    const midDistScale = 1.5 + (radius < 40 ? 0.3 : 0.0); // 1.3 -> 1.5
+                    const midDistScale = 1.6 + (radius < 40 ? 0.4 : 0.0); // 1.8 -> 1.6
                     const midPos = new THREE.Vector3(
                         point1.x * midDistScale,
-                        floorY + 150, // 100 -> 150
+                        floorY + 300, // 400 -> 300 (少し床に近づける)
                         point1.z * midDistScale
                     );
                     
                     // 下側も同様に球体を避ける
                     const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
                     const distToCenter = midPos.distanceTo(coreCenter);
-                    const safeRadius = this.coreRadius + 150; // 100 -> 150
+                    const safeRadius = this.coreRadius + 180; // 200 -> 180
                     
                     if (distToCenter < safeRadius) {
                         const pushDir = midPos.clone().sub(coreCenter).normalize();
@@ -1089,18 +1089,18 @@ export class Scene18 extends SceneBase {
 
                 const endPos = new THREE.Vector3(groundX, floorY, groundZ);
                 
-                // --- 床と平行にするための制御点追加 ---
-                // 1. 床に降りる直前のポイント（少し手前で床の高さに近づける）
-                const approachDist = 0.85; // 終点までの85%の位置
+                // --- 床付近で「やや平行かも」ぐらいに曲げる ---
+                const approachDist = 0.8; // 終点までの80%の位置
                 const preEndX = groundX * approachDist;
                 const preEndZ = groundZ * approachDist;
-                const preEndPos = new THREE.Vector3(preEndX, floorY + 50 + (radius * 0.5), preEndZ);
+                // 床から少しだけ浮かせた位置（radius + 100 くらい）を通らせる
+                const preEndPos = new THREE.Vector3(preEndX, floorY + 100 + (radius * 0.5), preEndZ);
                 points.push(preEndPos);
 
-                // 2. 終点（床にピタッと沿わせる）
                 points.push(endPos);
 
-                const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5); // テンションを少し上げて「ダラン」とさせる 0.2 -> 0.5                
+                const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
+                
                 // --- バグ修正：TubeGeometryの生成に失敗する場合の安全策 ---
                 let geometry;
                 try {

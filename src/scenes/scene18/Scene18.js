@@ -238,7 +238,8 @@ export class Scene18 extends SceneBase {
     }
 
     createCore() {
-        const coreColor = 0xaaaaaa; 
+        // --- 明るめの古い金属（経年劣化したアルミやスチール）風のカラー設定 ---
+        const coreColor = 0x888078; // 暗すぎず、少し温かみのあるグレーベージュ
         const textures = this.generateDirtyTextures(1024, coreColor, true); 
         
         // --- 球体の工業化：分割パーツによる再構築や！ ---
@@ -250,13 +251,13 @@ export class Scene18 extends SceneBase {
             color: coreColor,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 8.0, 
-            emissive: 0x444444, 
+            bumpScale: 10.0, // 12.0 -> 10.0 (少し抑えて清潔感を出す)
+            emissive: 0x332211, // ほんのり温かみのある照り返し
             emissiveIntensity: 0.1, 
-            metalness: 0.3, 
-            roughness: 0.7, 
+            metalness: 0.6, // 0.5 -> 0.6 (金属の輝きを少し戻す)
+            roughness: 0.6, // 0.8 -> 0.6 (少し滑らかに)
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.5,
+            envMapIntensity: 0.6, // 0.4 -> 0.6 (反射を少し強めて明るく見せる)
             side: THREE.FrontSide 
         });
 
@@ -296,15 +297,28 @@ export class Scene18 extends SceneBase {
         // 下部ドア
         this.createHeavyDoor(0.85 * Math.PI, 2.5, "Lower Access");
 
-        // --- 継ぎ目の「凹み」を表現するためのインナー球体 ---
-        const innerGeo = new THREE.SphereGeometry(this.coreRadius - 15, 64, 64);
+        // --- 継ぎ目の「凹み」を表現するためのインナー球体（光る核にするで！） ---
+        const innerGeo = new THREE.SphereGeometry(this.coreRadius - 5, 64, 64); // -15 -> -5 (外殻にギリギリまで近づける)
         const innerMat = new THREE.MeshStandardMaterial({
-            color: 0x111111, 
-            roughness: 0.9,
-            metalness: 0.1
+            color: 0x000000, 
+            roughness: 0.1, 
+            metalness: 0.9, 
+            emissive: this.pulseColor, 
+            emissiveIntensity: 0.0 
         });
-        const innerSphere = new THREE.Mesh(innerGeo, innerMat);
-        this.centralSphere.add(innerSphere);
+        this.innerSphere = new THREE.Mesh(innerGeo, innerMat);
+        this.centralSphere.add(this.innerSphere);
+
+        // さらに内側に、より強い光を放つコアを追加（ブルーム効果を狙う）
+        const coreGlowGeo = new THREE.SphereGeometry(this.coreRadius - 10, 32, 32); // -30 -> -10 (さらに外側に広げる)
+        const coreGlowMat = new THREE.MeshBasicMaterial({
+            color: this.pulseColor,
+            transparent: true,
+            opacity: 0.0, 
+            blending: THREE.AdditiveBlending 
+        });
+        this.coreGlow = new THREE.Mesh(coreGlowGeo, coreGlowMat);
+        this.centralSphere.add(this.coreGlow);
 
         this.scene.add(this.detailGroup);
     }
@@ -429,9 +443,8 @@ export class Scene18 extends SceneBase {
         });
 
         if (isVertical) {
-            // 縦の継ぎ目に沿った補強リブと配管
+            // 縦の継ぎ目に沿った補強リブ（配管は削除して隙間を強調！）
             const steps = 12;
-            const pipeRadius = 10;
             const points = [];
 
             for (let i = 0; i <= steps; i++) {
@@ -449,59 +462,46 @@ export class Scene18 extends SceneBase {
                 if (i % 2 === 0) {
                     const clampGeo = new THREE.BoxGeometry(60, 30, 60);
                     const clamp = new THREE.Mesh(clampGeo, detailMat);
-                    clamp.position.copy(pos.clone().add(normal.multiplyScalar(10)));
+                    // 少し沈めて、隙間から光が漏れるのを邪魔しないようにする
+                    clamp.position.copy(pos.clone().add(normal.multiplyScalar(5)));
                     clamp.lookAt(pos.clone().add(normal));
                     this.centralSphere.add(clamp);
                 }
             }
-
-            // 継ぎ目に沿って走る縦の配管
-            const curve = new THREE.CatmullRomCurve3(points);
-            const pipeGeo = new THREE.TubeGeometry(curve, 32, pipeRadius, 8, false);
-            const pipe = new THREE.Mesh(pipeGeo, detailMat);
-            this.centralSphere.add(pipe);
+            // 配管（TubeGeometry）の生成を削除！
 
         } else {
-            // 横の継ぎ目に沿った巨大なリングフレームと細い配管束
-            // 1. メインの太いリング
-            const ringGeo = new THREE.TorusGeometry(this.coreRadius * Math.sin(phi), 20, 16, 100);
+            // 横の継ぎ目に沿ったリングフレーム（配管束は削除！）
+            // 1. メインのリング（少し細くして隙間を見せる）
+            const ringGeo = new THREE.TorusGeometry(this.coreRadius * Math.sin(phi), 12, 16, 100);
             const ring = new THREE.Mesh(ringGeo, detailMat);
             ring.rotation.x = Math.PI / 2;
             ring.position.y = this.coreRadius * Math.cos(phi);
             this.centralSphere.add(ring);
             
-            // 2. その周囲を走る細い配管束（2本）
-            const subPipeOffsets = [-35, 35];
-            subPipeOffsets.forEach(offset => {
-                const subRingGeo = new THREE.TorusGeometry(this.coreRadius * Math.sin(phi) + offset, 8, 8, 100);
-                const subRing = new THREE.Mesh(subRingGeo, detailMat);
-                subRing.rotation.x = Math.PI / 2;
-                subRing.position.y = this.coreRadius * Math.cos(phi);
-                this.centralSphere.add(subRing);
-            });
+            // 2. 周囲を走る細い配管束を削除！
 
             // リング上の固定ユニット
             for (let i = 0; i < 16; i++) {
                 const angle = (i / 16) * Math.PI * 2;
                 const boltPos = new THREE.Vector3(
-                    (this.coreRadius + 15) * Math.sin(phi) * Math.cos(angle),
+                    (this.coreRadius + 10) * Math.sin(phi) * Math.cos(angle),
                     this.coreRadius * Math.cos(phi),
-                    (this.coreRadius + 15) * Math.sin(phi) * Math.sin(angle)
+                    (this.coreRadius + 10) * Math.sin(phi) * Math.sin(angle)
                 );
                 
-                // より複雑な固定ユニット（Box + Cylinder）
                 const unitGroup = new THREE.Group();
                 unitGroup.position.copy(boltPos);
                 unitGroup.lookAt(new THREE.Vector3(0, boltPos.y, 0));
                 unitGroup.rotateX(Math.PI / 2);
                 
-                const baseGeo = new THREE.BoxGeometry(40, 40, 20);
+                const baseGeo = new THREE.BoxGeometry(30, 30, 15);
                 const base = new THREE.Mesh(baseGeo, detailMat);
                 unitGroup.add(base);
                 
-                const boltGeo = new THREE.CylinderGeometry(15, 15, 40, 8);
+                const boltGeo = new THREE.CylinderGeometry(10, 10, 30, 8);
                 const bolt = new THREE.Mesh(boltGeo, detailMat);
-                bolt.position.z = 10;
+                bolt.position.set(0, 0, 10);
                 unitGroup.add(bolt);
                 
                 this.centralSphere.add(unitGroup);
@@ -513,11 +513,11 @@ export class Scene18 extends SceneBase {
      * 球体の一部（パーツ）を生成して centralSphere に追加するやで！
      */
     createSpherePart(phiStart, phiLength, thetaStart, thetaLength, material) {
-        // 隙間（継ぎ目）をさらに細く！ (0.02 -> 0.005)
-        const gap = 0.005; 
+        // 隙間（継ぎ目）を少し広げて、光が漏れやすくする！ (0.005 -> 0.015)
+        const gap = 0.015; 
         const geo = new THREE.SphereGeometry(
             this.coreRadius, 
-            64, 64, // 分割数をさらに上げて精度をアップ！ (48 -> 64)
+            64, 64, 
             thetaStart + gap, thetaLength - gap * 2, 
             phiStart + gap, phiLength - gap * 2
         );
@@ -526,16 +526,13 @@ export class Scene18 extends SceneBase {
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         
-        // --- 下半分のチラつき（Z-fighting）対策 ---
-        // パーツごとに極わずかに（1ユニット）外側に浮かせることで、
-        // インナー球体や隣り合うパーツとの重なりによるチラつきを物理的に回避するんや！
-        // これで継ぎ目の「凹み」もよりハッキリ見えるようになるで。
         const normal = new THREE.Vector3(
             Math.sin(phiStart + phiLength/2) * Math.cos(thetaStart + thetaLength/2),
             Math.cos(phiStart + phiLength/2),
             Math.sin(phiStart + phiLength/2) * Math.sin(thetaStart + thetaLength/2)
         );
-        mesh.position.add(normal.multiplyScalar(1.0)); 
+        // パーツを少し浮かせて隙間をハッキリさせる (1.0 -> 2.0)
+        mesh.position.add(normal.multiplyScalar(2.0)); 
 
         this.centralSphere.add(mesh);
     }
@@ -806,9 +803,9 @@ export class Scene18 extends SceneBase {
 
         // 色ごとのマテリアル作成とメッシュ生成
         const colors = {
-            dark: 0x666666,
-            mid: 0x999999,
-            light: 0xdddddd
+            dark: 0x665544,  // 0x443322 -> 0x665544 (少し明るいブロンズ)
+            mid: 0x887766,   // 0x665544 -> 0x887766 (経年劣化したスチール)
+            light: 0xaa9988  // 0x887766 -> 0xaa9988 (明るめの真鍮)
         };
 
         this.detailMaterials = []; 
@@ -1387,6 +1384,18 @@ export class Scene18 extends SceneBase {
         // カラーの補間（トラック8で変化）
         this.pulseColor.lerp(this.targetPulseColor, 0.1);
 
+        // --- インナーグロウ（球体内部の発光）の更新 ---
+        if (this.innerSphere && this.innerSphere.material) {
+            // 徐々に減衰させる
+            this.innerSphere.material.emissiveIntensity *= 0.92;
+            this.innerSphere.material.emissive.copy(this.pulseColor);
+        }
+        if (this.coreGlow && this.coreGlow.material) {
+            // 徐々に減衰させる
+            this.coreGlow.material.opacity *= 0.9;
+            this.coreGlow.material.color.copy(this.pulseColor);
+        }
+
         // 球体の発光強度の補間（トラック5連動は解除！）
         this.coreEmissiveIntensity = 0.1; // 元の明るさに戻す
         if (this.centralSphere && this.centralSphere.material) {
@@ -1445,7 +1454,14 @@ export class Scene18 extends SceneBase {
             speed: speed
         });
 
-        // 球体は光らせない（ロジック削除）
+        // --- インナーグロウをトリガー！ ---
+        const intensity = (velocity / 127.0) * 12.0; // 5.0 -> 12.0 (さらにビカビカに！)
+        if (this.innerSphere && this.innerSphere.material) {
+            this.innerSphere.material.emissiveIntensity = intensity;
+        }
+        if (this.coreGlow && this.coreGlow.material) {
+            this.coreGlow.material.opacity = Math.min(intensity * 0.1, 1.0); // 0.2 -> 0.1, max 0.8 -> 1.0
+        }
 
         // ライトを光らせる！
         this.targetLightIntensity = (velocity / 127.0) * 10.0; // 瞬間的に強く照らす！

@@ -921,7 +921,12 @@ export class Scene18 extends SceneBase {
                 const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing;
 
                 let radius;
-                if (isNonGlowing) {
+                // 極太ケーブルの判定（全体の約2.5% = 80本中2本程度）
+                const isSuperThick = Math.random() < 0.025;
+
+                if (isSuperThick) {
+                    radius = 150 + Math.random() * 50; // 極太！(150〜200)
+                } else if (isNonGlowing) {
                     radius = 40 + Math.random() * 60; 
                 } else {
                     const radiusRand = Math.random();

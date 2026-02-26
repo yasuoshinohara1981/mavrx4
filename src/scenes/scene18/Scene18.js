@@ -1576,7 +1576,9 @@ export class Scene18 extends SceneBase {
         if (trackNumber === 5) {
             const args = message.args || [];
             const velocity = args[1] !== undefined ? args[1] : 127;
-            console.log(`[Scene18] Callout triggered by track 5, velocity: ${velocity}`);
+            const durationMs = args[2] !== undefined ? args[2] : 2000; // デュレーションを取得（デフォルト2秒）
+            
+            console.log(`[Scene18] Callout triggered by track 5, velocity: ${velocity}, duration: ${durationMs}ms`);
             
             if (this.calloutSystem) {
                 const phi = Math.random() * Math.PI * 2;
@@ -1587,11 +1589,12 @@ export class Scene18 extends SceneBase {
                     this.coreRadius * Math.sin(theta) * Math.sin(phi)
                 );
 
-                const duration = 2.0 + (velocity / 127.0) * 3.0;
+                // ミリ秒を秒に変換して渡す（最低でも1.2秒は保証して、アニメーションを完結させる！）
+                const durationSec = Math.max(1.2, durationMs / 1000.0);
                 this.calloutSystem.createCallout({
                     worldPos: worldPos,
                     time: this.time,
-                    duration: duration
+                    duration: durationSec
                 });
             }
         }

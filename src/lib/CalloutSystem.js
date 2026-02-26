@@ -107,16 +107,19 @@ export class CalloutSystem {
                 callout.textCharCount = callout.labelText.length;
             }
 
-            // フェードアウト
-            if (callout.life < 0.3) {
-                callout.opacity = Math.min(callout.opacity, callout.life / 0.3);
+            // フェードアウト（寿命の最後の30%を使って滑らかに消える）
+            const fadeOutThreshold = callout.maxLife * 0.3;
+            if (callout.life < fadeOutThreshold) {
+                callout.opacity = Math.max(0, callout.life / fadeOutThreshold);
             } else if (elapsed > 0.05 && isVisible) {
                 callout.opacity = 1.0;
             } else if (!isVisible) {
                 callout.opacity = 0;
             }
 
+            // 強制的に透明度を0にする（寿命が尽きた場合）
             if (callout.life <= 0) {
+                callout.opacity = 0;
                 this.callouts.splice(i, 1);
             }
         }

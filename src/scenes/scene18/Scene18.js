@@ -855,7 +855,10 @@ export class Scene18 extends SceneBase {
 
         let generatedCount = 0;
         let attempts = 0;
-        const maxAttempts = 5000; // 試行回数を大幅に増やして確実に生成するやで！
+        const maxAttempts = 15000; // 衝突判定を入れるので試行回数をさらに増やす
+
+        // ケーブルの根本位置と半径を記録して、衝突判定に使うやで！
+        const cableRootPositions = [];
 
         // --- 束感（Bundle）のロジック ---
         const bundleCount = 25; // 束の数を固定して安定させる
@@ -889,20 +892,10 @@ export class Scene18 extends SceneBase {
                 const startPos = normal.clone().multiplyScalar(this.coreRadius);
                 startPos.y += this.coreCenterY;
 
-                // 既存のパーツ位置との距離をチェック（パーツから生えるのはアリなので、判定を元の緩さに戻す！）
-                let isTooClose = false;
-                
-                // 入口ユニット（ランプとテキスト）の周辺にも生えないようにするやで！
-                if (this.entrancePos && startPos.distanceTo(this.entrancePos) < 600) {
-                    isTooClose = true;
-                }
+                // 1. 入口ユニットとの距離チェック
+                if (this.entrancePos && startPos.distanceTo(this.entrancePos) < 600) continue;
 
-                if (isTooClose) continue;
-
-                generatedCount++;
-                // ケーブルの根本位置は記録しない（パーツや他のケーブルと被ってもOK！）
-
-                // --- ケーブルの属性決定 ---
+                // 2. 属性決定（太さを先に決める）
                 const colorRand = Math.random();
                 let finalCableColor;
                 let isWhiteNonGlowing = false;
@@ -921,23 +914,33 @@ export class Scene18 extends SceneBase {
                 const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing;
 
                 let radius;
-                // 極太ケーブルの判定（全体の約2.5% = 80本中2本程度）
                 const isSuperThick = Math.random() < 0.025;
-
                 if (isSuperThick) {
-                    radius = 150 + Math.random() * 50; // 極太！(150〜200)
+                    radius = 150 + Math.random() * 50; 
                 } else if (isNonGlowing) {
                     radius = 40 + Math.random() * 60; 
                 } else {
                     const radiusRand = Math.random();
-                    if (radiusRand < 0.5) {
-                        radius = 15 + Math.random() * 15;
-                    } else if (radiusRand < 0.9) {
-                        radius = 35 + Math.random() * 30;
-                    } else {
-                        radius = 80 + Math.random() * 40;
+                    if (radiusRand < 0.5) radius = 15 + Math.random() * 15;
+                    else if (radiusRand < 0.9) radius = 35 + Math.random() * 30;
+                    else radius = 80 + Math.random() * 40;
+                }
+
+                // 3. ケーブル同士の衝突判定（ここが追加ポイント！）
+                let isOverlapping = false;
+                for (const other of cableRootPositions) {
+                    // 半径の合計の80%（少しのめり込みを許容して密度を出す）を最小距離にするやで！
+                    const minDist = (radius + other.radius) * 0.8; 
+                    if (startPos.distanceTo(other.pos) < minDist) {
+                        isOverlapping = true;
+                        break;
                     }
                 }
+                if (isOverlapping) continue;
+
+                // 生成成功！
+                generatedCount++;
+                cableRootPositions.push({ pos: startPos.clone(), radius: radius });
 
                 // --- 接続ユニット ---
                 const unitGroup = new THREE.Group();

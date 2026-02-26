@@ -77,6 +77,15 @@ export class Scene18 extends SceneBase {
         };
 
         this.setScreenshotText(this.title);
+
+        // --- 2Dコールアウト管理（SceneBaseの共通システムを使用） ---
+        if (this.calloutSystem) {
+            this.calloutSystem.setLabels([
+                "CORE_TEMP: NORMAL", "VOLTAGE: 1.2MV", "PRESSURE: 450kPa", 
+                "SYNC_RATE: 98.2%", "FLOW_CTRL: ACTIVE", "CELL_STAT: STABLE",
+                "NUCLEUS_ID: 0x18", "XENO_LINK: ESTABLISHED"
+            ]);
+        }
     }
 
     setupCameraParticleDistance(cameraParticle) {
@@ -632,6 +641,33 @@ export class Scene18 extends SceneBase {
         return { map, bumpMap };
     }
 
+    /**
+     * 球体表面に「もっともらしいテキストラベル」を貼り付けるやで！
+     */
+    createSmallLabel(parent, labelText, width, height, pos, rotX = 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // 背景を少し暗くして文字を浮かせる
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 36px Courier New'; // 工業製品っぽいフォント
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labelText, canvas.width / 2, canvas.height / 2);
+        
+        const textTex = new THREE.CanvasTexture(canvas);
+        const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true, side: THREE.DoubleSide });
+        const textGeo = new THREE.PlaneGeometry(width, height);
+        const textMesh = new THREE.Mesh(textGeo, textMat);
+        textMesh.position.copy(pos);
+        if (rotX !== 0) textMesh.rotateX(rotX);
+        parent.add(textMesh);
+    }
+
     createSphereDetails() {
         const clusterCount = 150; // 100 -> 150 (パーツをさらに増量！)
         this.clusterPositions = []; // 初期化
@@ -714,6 +750,12 @@ export class Scene18 extends SceneBase {
                 baseGeo.applyMatrix4(dummy.matrix);
                 targetList.push(baseGeo);
 
+                // ラベルを追加（もっともらしいテキスト！）
+                const labels = ["PWR-CTRL", "SYS-LINK", "CORE-VLT", "AUTH-01", "DANGER"];
+                const labelText = labels[Math.floor(Math.random() * labels.length)];
+                this.createSmallLabel(this.centralSphere, labelText, baseWidth * 0.6, baseHeight * 0.2, 
+                    pos.clone().add(normal.clone().multiplyScalar(baseDepth / 2 + 2)), 0);
+
                 // パネルの四隅にリベット
                 const rivetGeo = new THREE.SphereGeometry(10 * sizeScale, 8, 8);
                 const corners = [
@@ -787,6 +829,12 @@ export class Scene18 extends SceneBase {
                 const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
                 baseGeo.applyMatrix4(dummy.matrix);
                 targetList.push(baseGeo);
+
+                // ラベルを追加
+                const labels = ["PROC-UNT", "DATA-BUS", "COOL-SYS", "MEM-BKUP"];
+                const labelText = labels[Math.floor(Math.random() * labels.length)];
+                this.createSmallLabel(this.centralSphere, labelText, baseWidth * 0.5, baseHeight * 0.15, 
+                    pos.clone().add(normal.clone().multiplyScalar(baseDepth / 2 + 2)), 0);
 
                 // 冷却フィンっぽい薄い板を並べる
                 const finGeo = new THREE.BoxGeometry(baseWidth * 0.8, 10 * sizeScale, 30 * heightScale);
@@ -953,10 +1001,10 @@ export class Scene18 extends SceneBase {
                 let isWhiteNonGlowing = false;
                 let isGreyNonGlowing = false;
 
-                if (colorRand < 0.05) {
+                if (colorRand < 0.1) { // 0.05 -> 0.1 (白ケーブル2倍！)
                     finalCableColor = 0xffffff;
                     isWhiteNonGlowing = true;
-                } else if (colorRand < 0.1) {
+                } else if (colorRand < 0.25) { // 0.1 -> 0.25 (グレーケーブル増量！)
                     finalCableColor = 0x666666;
                     isGreyNonGlowing = true;
                 } else {
@@ -994,13 +1042,13 @@ export class Scene18 extends SceneBase {
                 generatedCount++;
                 cableRootPositions.push({ pos: startPos.clone(), radius: radius });
 
-                // --- 接続ユニット ---
+                // --- 接続ユニット（大型化！） ---
                 const unitGroup = new THREE.Group();
                 unitGroup.position.copy(startPos);
                 unitGroup.lookAt(startPos.clone().add(normal));
                 this.detailGroup.add(unitGroup);
 
-                const flangeGeo = new THREE.CylinderGeometry(radius * 2.0, radius * 2.0, 15, 8);
+                const flangeGeo = new THREE.CylinderGeometry(radius * 3.5, radius * 3.5, 30, 8); // 2.0 -> 3.5, 15 -> 30
                 const unitMat = new THREE.MeshStandardMaterial({
                     color: isNonGlowing ? finalCableColor : 0x444444, 
                     metalness: isNonGlowing ? 0.0 : 0.6,
@@ -1012,11 +1060,21 @@ export class Scene18 extends SceneBase {
                 flange.rotateX(Math.PI / 2);
                 unitGroup.add(flange);
 
-                const coreGeo = new THREE.CylinderGeometry(radius * 1.4, radius * 1.6, 30, 16);
+                const coreGeo = new THREE.CylinderGeometry(radius * 2.0, radius * 2.5, 60, 16); // 1.4/1.6 -> 2.0/2.5, 30 -> 60
                 const coreSocket = new THREE.Mesh(coreGeo, unitMat);
                 coreSocket.rotateX(Math.PI / 2);
-                coreSocket.position.z = 15;
+                coreSocket.position.z = 30; // 15 -> 30
                 unitGroup.add(coreSocket);
+
+                // ボルトを追加してメカ感をアップ！
+                const boltGeo = new THREE.CylinderGeometry(radius * 0.3, radius * 0.3, 20, 8);
+                for (let j = 0; j < 6; j++) {
+                    const angle = (j / 6) * Math.PI * 2;
+                    const bolt = new THREE.Mesh(boltGeo, unitMat);
+                    bolt.position.set(Math.cos(angle) * radius * 2.8, Math.sin(angle) * radius * 2.8, 15);
+                    bolt.rotateX(Math.PI / 2);
+                    unitGroup.add(bolt);
+                }
 
                 const points = [];
                 points.push(startPos.clone());
@@ -1246,17 +1304,17 @@ export class Scene18 extends SceneBase {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         // テキスト描画（濃いめのグレー）
-        ctx.fillStyle = '#111111'; 
+        ctx.fillStyle = '#ffffff'; // #111111 -> #ffffff (真っ白にして視認性アップ！)
         ctx.font = 'bold 90px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('MAVRX4', canvas.width / 2, canvas.height / 2);
         
         const textTex = new THREE.CanvasTexture(canvas);
-        const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true });
+        const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true, side: THREE.DoubleSide });
         const textGeo = new THREE.PlaneGeometry(400, 100);
         const textMesh = new THREE.Mesh(textGeo, textMat);
-        textMesh.position.set(0, -10, 10); // プレートの表面に配置
+        textMesh.position.set(0, -10, 11); // 10 -> 11 (チラつき防止)
         entranceGroup.add(textMesh);
 
         // 入口ユニットの位置を記録して、ケーブルが被らんようにするで！
@@ -1377,23 +1435,23 @@ export class Scene18 extends SceneBase {
         connectorGroup.lookAt(pos.clone().add(dir));
         group.add(connectorGroup);
 
-        // ベースフランジ
-        const baseGeo = new THREE.CylinderGeometry(pipeRadius * 3, pipeRadius * 3.5, 20, 16);
+        // ベースフランジ（大型化！ pipeRadius * 3 -> * 5）
+        const baseGeo = new THREE.CylinderGeometry(pipeRadius * 5, pipeRadius * 5.5, 40, 16); // 3/3.5 -> 5/5.5, 20 -> 40
         const base = new THREE.Mesh(baseGeo, material);
         base.rotateX(Math.PI / 2);
         connectorGroup.add(base);
 
-        // 補強リング
-        const ringGeo = new THREE.TorusGeometry(pipeRadius * 2, pipeRadius * 0.5, 12, 24);
+        // 補強リング（大型化！）
+        const ringGeo = new THREE.TorusGeometry(pipeRadius * 3.5, pipeRadius * 0.8, 12, 24); // 2 -> 3.5, 0.5 -> 0.8
         const ring = new THREE.Mesh(ringGeo, material);
         connectorGroup.add(ring);
 
-        // 固定ボルト
-        const boltGeo = new THREE.CylinderGeometry(8, 8, 30, 8);
-        for (let i = 0; i < 6; i++) {
-            const angle = (i / 6) * Math.PI * 2;
+        // 固定ボルト（大型化！）
+        const boltGeo = new THREE.CylinderGeometry(15, 15, 60, 8); // 8 -> 15, 30 -> 60
+        for (let i = 0; i < 8; i++) { // 6 -> 8本に増量！
+            const angle = (i / 8) * Math.PI * 2;
             const bolt = new THREE.Mesh(boltGeo, material);
-            bolt.position.set(Math.cos(angle) * pipeRadius * 2.8, Math.sin(angle) * pipeRadius * 2.8, 0);
+            bolt.position.set(Math.cos(angle) * pipeRadius * 4.5, Math.sin(angle) * pipeRadius * 4.5, 0);
             bolt.rotateX(Math.PI / 2);
             connectorGroup.add(bolt);
         }
@@ -1470,6 +1528,15 @@ export class Scene18 extends SceneBase {
         }
         
         this.updateAutoFocus();
+
+        // --- 2Dコールアウトの更新（共通システムを使用） ---
+        if (this.calloutSystem) {
+            this.calloutSystem.update(deltaTime, this.time, {
+                interval: 1.0,
+                maxCount: 8,
+                margin: 200
+            });
+        }
     }
 
     triggerPulse(velocity = 127) {

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { CameraParticle } from '../lib/CameraParticle.js';
 import { HUD } from '../lib/HUD.js';
+import { CalloutSystem } from '../lib/CalloutSystem.js';
 import { ColorInversion } from '../lib/ColorInversion.js';
 import { GridRuler3D } from '../lib/GridRuler3D.js';
 import { debugLog } from '../lib/DebugLogger.js';
@@ -34,6 +35,7 @@ export class SceneBase {
         // HUD
         this.hud = null;
         this.showHUD = true;
+        this.calloutSystem = new CalloutSystem(); // 共通コールアウトシステム
         this.lastFrameTime = null;  // FPS計算用
         this.oscStatus = 'Unknown';  // OSC接続状態
         this.phase = 0;  // OSCの/phase/メッセージで受け取る値
@@ -702,6 +704,9 @@ export class SceneBase {
                 // 色反転エフェクトが有効な場合は、HUDの色も反転する
                 const isInverted = this.colorInversion && this.colorInversion.isEnabled();
                 
+                // サブクラスからのコールアウトデータを取得（存在する場合）
+                const callouts = this.calloutSystem ? this.calloutSystem.getCallouts() : [];
+
                 this.hud.display(
                     frameRate,
                     this.currentCameraIndex,
@@ -723,7 +728,8 @@ export class SceneBase {
                     '',  // debugText（サブクラスで設定可能）
                     this.actualTick,  // actualTick（OSCから受け取る値）
                     null,  // cameraModeName（サブクラスで設定可能）
-                    this.sceneNumber  // sceneNumber（各シーンで設定）
+                    this.sceneNumber,  // sceneNumber（各シーンで設定）
+                    callouts // 2Dコールアウトデータを渡す
                 );
             } else {
                 // HUDが非表示の時はCanvasをクリア

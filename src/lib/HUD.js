@@ -78,7 +78,7 @@ export class HUD {
     /**
      * HUDを描画
      */
-    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null) {
+    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = []) {
         // HUDが非表示の場合は何もしない
         if (!this.showHUD) {
             return;
@@ -121,6 +121,7 @@ export class HUD {
         this.drawTopIndicatorBar(time, currentBar, rotationY, debugText, actualTick);
 
         // ===== 追加HUD: 下部のモードバー（軍事UIっぽい）=====
+        // drawBottomModeBar(time, phase, currentBar, trackEffects, actualTick)
         this.drawBottomModeBar(time, phase, currentBar, trackEffects, actualTick);
 
         this.drawCornerMarkers();
@@ -134,6 +135,83 @@ export class HUD {
         this.drawAltitudeTape(cameraPosition);
         this.drawFlightParameters(frameRate, distance, rotationX, rotationY);
         
+        // 2Dコールアウトを描画
+        if (callouts && callouts.length > 0) {
+            this.drawCallouts(callouts);
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 2Dコールアウトを描画するやで！
+     */
+    drawCallouts(callouts) {
+        this.ctx.save();
+        
+        // squareX, squareY のオフセットを打ち消す（画面全体座標で描画するため）
+        this.ctx.translate(-this.squareX, -this.squareY);
+
+        callouts.forEach(callout => {
+            const { x, y, opacity, radius, lineLen, horizLen, dirX, dirY, labelText, circleScale, circleFillOpacity, lineProgress, horizProgress, textCharCount } = callout;
+            
+            this.ctx.globalAlpha = opacity;
+            const currentRadius = radius * circleScale;
+
+            // 1. 丸◯ (線のみ + 赤い塗り)
+            // 赤い塗り
+            if (circleFillOpacity > 0) {
+                this.ctx.fillStyle = `rgba(255, 0, 0, ${circleFillOpacity})`;
+                this.ctx.beginPath();
+                this.ctx.arc(x, y, radius, 0, Math.PI * 2);
+                this.ctx.fill();
+            }
+
+            // 白い線
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, currentRadius, 0, Math.PI * 2);
+            this.ctx.stroke();
+
+            // 2. 斜め45°の線 (ニュニュニュ)
+            if (lineProgress > 0) {
+                const angle = Math.PI / 4;
+                const startX1 = x + dirX * radius * Math.cos(angle);
+                const startY1 = y + dirY * radius * Math.sin(angle);
+                const endX2 = x + dirX * (radius + lineLen * lineProgress) * Math.cos(angle);
+                const endY2 = y + dirY * (radius + lineLen * lineProgress) * Math.sin(angle);
+
+                this.ctx.beginPath();
+                this.ctx.moveTo(startX1, startY1);
+                this.ctx.lineTo(endX2, endY2);
+                this.ctx.stroke();
+
+                // 3. X軸と平行な線 (ニュニュニュ)
+                if (horizProgress > 0) {
+                    const tipX = x + dirX * (radius + lineLen) * Math.cos(angle);
+                    const tipY = y + dirY * (radius + lineLen) * Math.sin(angle);
+                    const endX3 = tipX + dirX * (horizLen * horizProgress);
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(tipX, tipY);
+                    this.ctx.lineTo(endX3, tipY);
+                    this.ctx.stroke();
+
+                    // 4. テキスト (1文字ずつ)
+                    if (textCharCount > 0) {
+                        const displayPadding = 5;
+                        const displayText = labelText.substring(0, textCharCount);
+                        this.ctx.fillStyle = '#ffffff';
+                        this.ctx.font = 'bold 14px Courier New';
+                        this.ctx.textAlign = dirX > 0 ? 'left' : 'right';
+                        this.ctx.textBaseline = 'bottom';
+                        this.ctx.fillText(displayText, dirX > 0 ? tipX + displayPadding : tipX - displayPadding, tipY - displayPadding);
+                    }
+                }
+            }
+        });
+
         this.ctx.restore();
     }
 

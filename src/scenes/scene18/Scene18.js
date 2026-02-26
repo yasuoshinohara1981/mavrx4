@@ -636,19 +636,19 @@ export class Scene18 extends SceneBase {
     }
 
     createSphereDetails() {
-        const clusterCount = 100; // 40 -> 100 (パーツをガッツリ増やすで！)
+        const clusterCount = 150; // 100 -> 150 (パーツをさらに増量！)
         this.clusterPositions = []; // 初期化
         
-        // ジオメトリをマージするための準備（色ごとに分けるやで！）
+        // ジオメトリをマージするための準備
         const geometriesByColor = {
             dark: [],
             mid: [],
             light: []
         };
 
-        let junctionUnitCount = 0; // ジャンクションユニットの数をカウント
-        let switchPanelCount = 0; // スイッチパネルの数をカウント
-        const maxSwitchPanels = 1 + Math.floor(Math.random() * 2); // 1〜2個に制限！
+        let junctionUnitCount = 0;
+        let switchPanelCount = 0;
+        const maxSwitchPanels = 4 + Math.floor(Math.random() * 4); // 1〜2 -> 4〜8個に増加！
 
         for (let i = 0; i < clusterCount; i++) {
             const phi = Math.random() * Math.PI * 2;
@@ -660,31 +660,40 @@ export class Scene18 extends SceneBase {
             const pos = new THREE.Vector3(x, y, z);
             const normal = pos.clone().sub(new THREE.Vector3(0, this.coreCenterY, 0)).normalize();
 
-            // 下半分に集中させる（メインケーブルとの調和）
-            if (y > (this.coreCenterY + 200) && Math.random() > 0.4) continue; 
+            // 球体全体に散らす（下半分への集中を少し緩和）
+            if (y > (this.coreCenterY + 400) && Math.random() > 0.6) continue; 
 
             // --- パーツ同士の衝突判定 ---
             let isTooClose = false;
             for (const clusterPos of this.clusterPositions) {
-                if (pos.distanceTo(clusterPos) < 450) { 
+                if (pos.distanceTo(clusterPos) < 350) { // 450 -> 350 (少し密集を許容)
                     isTooClose = true;
                     break;
                 }
             }
             if (isTooClose) continue;
 
-            // --- パーツの選別ロジック（激レア化！） ---
-            let clusterType = -1; // デフォルトは何もしない
+            // --- パーツの選別ロジック ---
+            let clusterType = -1;
+            const rand = Math.random();
             
-            if (junctionUnitCount < 1 && Math.random() < 0.1) {
-                clusterType = 3; // ジャンクションユニット
-                junctionUnitCount++;
-            } else if (switchPanelCount < maxSwitchPanels && Math.random() < 0.1) {
+            // 低確率で「高層パーツ」化フラグを立てる（約15%）
+            const isTall = Math.random() < 0.15;
+            // 面積（幅・高さ）は控えめに（1.0〜1.2倍）、厚み（高さ）を大幅に（3.0〜8.0倍）ブースト
+            const sizeScale = isTall ? (1.0 + Math.random() * 0.2) : 1.0;
+            const heightScale = isTall ? (3.0 + Math.random() * 5.0) : 1.0;
+
+            if (rand < 0.15) {
                 clusterType = 0; // スイッチパネル
-                switchPanelCount++;
+            } else if (rand < 0.25) {
+                clusterType = 3; // ジャンクション/サブケーブル
+            } else if (rand < 0.45) {
+                clusterType = 4; // 平べったいBox + 追加パーツ
+            } else if (rand < 0.65) {
+                clusterType = 5; // 電子機器っぽい形状
             }
 
-            if (clusterType === -1) continue; // 何も生成しない場合はスキップ
+            if (clusterType === -1) continue; 
 
             this.clusterPositions.push(pos); 
 
@@ -700,63 +709,109 @@ export class Scene18 extends SceneBase {
             else targetList = geometriesByColor.light;
 
             if (clusterType === 0) {
-                // --- 復活！スイッチパネルユニット ---
-                const baseWidth = 300 + Math.random() * 400;
-                const baseHeight = 300 + Math.random() * 400;
-                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, 40);
+                // --- スイッチパネルユニット（リベット付き） ---
+                const baseWidth = (200 + Math.random() * 200) * sizeScale;
+                const baseHeight = (200 + Math.random() * 200) * sizeScale;
+                const baseDepth = 30 * heightScale;
+                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
                 baseGeo.applyMatrix4(dummy.matrix);
                 targetList.push(baseGeo);
 
-                const boxGeo = new THREE.BoxGeometry(baseWidth * 0.7, baseHeight * 0.7, 80);
-                const boxMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0, 40));
-                boxGeo.applyMatrix4(boxMatrix);
-                targetList.push(boxGeo);
+                // パネルの四隅にリベット
+                const rivetGeo = new THREE.SphereGeometry(10 * sizeScale, 8, 8);
+                const corners = [
+                    {x: 0.4, y: 0.4}, {x: -0.4, y: 0.4},
+                    {x: 0.4, y: -0.4}, {x: -0.4, y: -0.4}
+                ];
+                corners.forEach(c => {
+                    const rGeo = rivetGeo.clone();
+                    const rMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
+                        c.x * baseWidth, c.y * baseHeight, baseDepth / 2
+                    ));
+                    rGeo.applyMatrix4(rMatrix);
+                    targetList.push(rGeo);
+                });
 
-                const switchCount = 3 + Math.floor(Math.random() * 3);
-                const switchGeo = new THREE.BoxGeometry(50, 50, 60);
+                // スイッチ
+                const switchCount = 2 + Math.floor(Math.random() * 3);
+                const switchGeo = new THREE.CylinderGeometry(15 * sizeScale, 15 * sizeScale, 40 * heightScale, 16);
                 for (let j = 0; j < switchCount; j++) {
                     const sGeo = switchGeo.clone();
                     const sMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
-                        (j / (switchCount - 1) - 0.5) * baseWidth * 0.8,
-                        -baseHeight * 0.3,
-                        70
+                        (j / (switchCount - 1) - 0.5) * baseWidth * 0.6,
+                        0,
+                        baseDepth / 2 + 10
                     ));
+                    sMatrix.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
                     sGeo.applyMatrix4(sMatrix);
                     targetList.push(sGeo);
                 }
             } else if (clusterType === 3) {
-                // --- サブケーブル・ジャンクションユニット (1つ限定) ---
-                const boxSize = 250 + Math.random() * 200;
-                const baseGeo = new THREE.BoxGeometry(boxSize, boxSize, 100);
+                // --- ジャンクションユニット ---
+                const boxSize = (150 + Math.random() * 150) * sizeScale;
+                const baseDepth = 60 * heightScale;
+                const baseGeo = new THREE.BoxGeometry(boxSize, boxSize, baseDepth);
                 baseGeo.applyMatrix4(dummy.matrix);
                 targetList.push(baseGeo);
 
-                const subCableCount = 3; 
-                for (let j = 0; j < subCableCount; j++) {
-                    const subRadius = 25 + Math.random() * 15; 
-                    const subPoints = [];
-                    const startOffset = new THREE.Vector3((j - 1.0) * 100, 0, 50).applyQuaternion(dummy.quaternion);
-                    const subStartPos = pos.clone().add(startOffset);
-                    subPoints.push(subStartPos);
-                    
-                    subPoints.push(subStartPos.clone().add(normal.clone().multiplyScalar(400)).add(new THREE.Vector3(0, -600, 0)));
-                    subPoints.push(new THREE.Vector3(pos.x * 1.6, -498, pos.z * 1.6));
+                const subRadius = (15 + Math.random() * 10) * sizeScale;
+                const subPoints = [
+                    new THREE.Vector3(0, 0, baseDepth / 2).applyMatrix4(dummy.matrix),
+                    new THREE.Vector3(0, 0, 150 * heightScale).applyMatrix4(dummy.matrix).add(normal.clone().multiplyScalar(100))
+                ];
+                const subCurve = new THREE.CatmullRomCurve3(subPoints);
+                const subGeo = new THREE.TubeGeometry(subCurve, 8, subRadius, 8, false);
+                targetList.push(subGeo);
+            } else if (clusterType === 4) {
+                // --- 平べったいBox + 追加パーツ ---
+                const baseSize = (250 + Math.random() * 200) * sizeScale;
+                const baseDepth = 20 * heightScale;
+                const baseGeo = new THREE.BoxGeometry(baseSize, baseSize, baseDepth);
+                baseGeo.applyMatrix4(dummy.matrix);
+                targetList.push(baseGeo);
 
-                    const subCurve = new THREE.CatmullRomCurve3(subPoints);
-                    const subGeo = new THREE.TubeGeometry(subCurve, 32, subRadius, 8, false);
-                    targetList.push(subGeo);
+                // その上に乗る小さなBoxやシリンダー
+                const topGeo = Math.random() > 0.5 ? 
+                    new THREE.BoxGeometry(baseSize * 0.4, baseSize * 0.4, 40 * heightScale) :
+                    new THREE.CylinderGeometry(baseSize * 0.2, baseSize * 0.2, 40 * heightScale, 16);
+                const topMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
+                    (Math.random() - 0.5) * baseSize * 0.4,
+                    (Math.random() - 0.5) * baseSize * 0.4,
+                    baseDepth / 2 + 10
+                ));
+                if (!(topGeo instanceof THREE.BoxGeometry)) topMatrix.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+                topGeo.applyMatrix4(topMatrix);
+                targetList.push(topGeo);
+            } else if (clusterType === 5) {
+                // --- 電子機器っぽいパーツ（フィンやコネクタ） ---
+                const baseWidth = (150 + Math.random() * 150) * sizeScale;
+                const baseHeight = (200 + Math.random() * 200) * sizeScale;
+                const baseDepth = 40 * heightScale;
+                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
+                baseGeo.applyMatrix4(dummy.matrix);
+                targetList.push(baseGeo);
+
+                // 冷却フィンっぽい薄い板を並べる
+                const finGeo = new THREE.BoxGeometry(baseWidth * 0.8, 10 * sizeScale, 30 * heightScale);
+                for (let j = 0; j < 5; j++) {
+                    const fGeo = finGeo.clone();
+                    const fMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
+                        0, (j / 4 - 0.5) * baseHeight * 0.7, baseDepth / 2 + 10
+                    ));
+                    fGeo.applyMatrix4(fMatrix);
+                    targetList.push(fGeo);
                 }
             }
         }
 
         // 色ごとのマテリアル作成とメッシュ生成
         const colors = {
-            dark: 0x666666,  // 0x444444 -> 0x666666 (全体的に一段階アップ！)
-            mid: 0x999999,   // 0x888888 -> 0x999999
-            light: 0xdddddd  // 0xcccccc -> 0xdddddd
+            dark: 0x666666,
+            mid: 0x999999,
+            light: 0xdddddd
         };
 
-        this.detailMaterials = []; // 管理用
+        this.detailMaterials = []; 
 
         for (const [key, geoList] of Object.entries(geometriesByColor)) {
             if (geoList.length > 0) {
@@ -766,10 +821,10 @@ export class Scene18 extends SceneBase {
                     color: color,
                     map: textures.map,
                     bumpMap: textures.bumpMap,
-                    bumpScale: 6.0, // 1.5 -> 6.0 (パーツもバンプ強化！)
+                    bumpScale: 6.0,
                     emissive: 0x222222,
                     emissiveIntensity: 0.1,
-                    metalness: 0.4, // 金属感を出す
+                    metalness: 0.4,
                     roughness: 0.6,
                     envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
                     envMapIntensity: 0.5

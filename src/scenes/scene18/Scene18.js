@@ -1025,7 +1025,7 @@ export class Scene18 extends SceneBase {
                 points.push(startPos.clone());
                 
                 const isUpper = startPos.y > this.coreCenterY;
-                const pushDist = (isUpper ? 300 : 150) + (radius * 2.0) + (Math.random() * 50); 
+                const pushDist = (isUpper ? 200 : 100) + (radius * 1.0) + (Math.random() * 30); // 100/50 -> 200/100 (少し勢いを戻す)
                 const point1 = startPos.clone().add(normal.clone().multiplyScalar(pushDist));
                 points.push(point1);
 
@@ -1045,8 +1045,8 @@ export class Scene18 extends SceneBase {
                 }
                 
                 if (isUpper) {
-                    const bulgeScale = 1.6 + (radius < 40 ? 0.4 : (radius / 200)); 
-                    const midY = Math.max(point1.y * 0.6, this.coreCenterY + 400); 
+                    const bulgeScale = 1.4 + (radius < 40 ? 0.3 : (radius / 300)); // 1.2 -> 1.4 (少し外側に膨らませる)
+                    const midY = Math.max(point1.y * 0.3, this.coreCenterY); // 0.2 -> 0.3, -200 -> 0 (球体の中央付近で踏みとどまる)
                     
                     // 球体の中心から外側へ向かうベクトルを計算して、中間地点を球体の外側に押し出す
                     const midPos = new THREE.Vector3(
@@ -1058,7 +1058,7 @@ export class Scene18 extends SceneBase {
                     // 球体中心（0, coreCenterY, 0）からの距離をチェック
                     const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
                     const distToCenter = midPos.distanceTo(coreCenter);
-                    const safeRadius = this.coreRadius + 300; // 半径 + 余裕分
+                    const safeRadius = this.coreRadius + 200; // 150 -> 200 (少し余裕を持たせる)
                     
                     if (distToCenter < safeRadius) {
                         const pushDir = midPos.clone().sub(coreCenter).normalize();
@@ -1067,17 +1067,17 @@ export class Scene18 extends SceneBase {
                     
                     points.push(midPos);
                 } else {
-                    const midDistScale = 1.8 + (radius < 40 ? 0.5 : 0.0);
+                    const midDistScale = 1.5 + (radius < 40 ? 0.3 : 0.0); // 1.3 -> 1.5
                     const midPos = new THREE.Vector3(
                         point1.x * midDistScale,
-                        floorY + 400,
+                        floorY + 150, // 100 -> 150
                         point1.z * midDistScale
                     );
                     
                     // 下側も同様に球体を避ける
                     const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
                     const distToCenter = midPos.distanceTo(coreCenter);
-                    const safeRadius = this.coreRadius + 200;
+                    const safeRadius = this.coreRadius + 150; // 100 -> 150
                     
                     if (distToCenter < safeRadius) {
                         const pushDir = midPos.clone().sub(coreCenter).normalize();
@@ -1088,12 +1088,19 @@ export class Scene18 extends SceneBase {
                 }
 
                 const endPos = new THREE.Vector3(groundX, floorY, groundZ);
-                const approachHeight = 200 + (radius * 1.2);
-                points.push(new THREE.Vector3(groundX, floorY + approachHeight, groundZ)); 
+                
+                // --- 床と平行にするための制御点追加 ---
+                // 1. 床に降りる直前のポイント（少し手前で床の高さに近づける）
+                const approachDist = 0.85; // 終点までの85%の位置
+                const preEndX = groundX * approachDist;
+                const preEndZ = groundZ * approachDist;
+                const preEndPos = new THREE.Vector3(preEndX, floorY + 50 + (radius * 0.5), preEndZ);
+                points.push(preEndPos);
+
+                // 2. 終点（床にピタッと沿わせる）
                 points.push(endPos);
 
-                const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.2); 
-                
+                const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5); // テンションを少し上げて「ダラン」とさせる 0.2 -> 0.5                
                 // --- バグ修正：TubeGeometryの生成に失敗する場合の安全策 ---
                 let geometry;
                 try {

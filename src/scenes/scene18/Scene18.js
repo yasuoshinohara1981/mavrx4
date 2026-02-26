@@ -641,33 +641,6 @@ export class Scene18 extends SceneBase {
         return { map, bumpMap };
     }
 
-    /**
-     * 球体表面に「もっともらしいテキストラベル」を貼り付けるやで！
-     */
-    createSmallLabel(parent, labelText, width, height, pos, rotX = 0) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256; canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        
-        // 背景を少し暗くして文字を浮かせる
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 36px Courier New'; // 工業製品っぽいフォント
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, canvas.width / 2, canvas.height / 2);
-        
-        const textTex = new THREE.CanvasTexture(canvas);
-        const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true, side: THREE.DoubleSide });
-        const textGeo = new THREE.PlaneGeometry(width, height);
-        const textMesh = new THREE.Mesh(textGeo, textMat);
-        textMesh.position.copy(pos);
-        if (rotX !== 0) textMesh.rotateX(rotX);
-        parent.add(textMesh);
-    }
-
     createSphereDetails() {
         const clusterCount = 150; // 100 -> 150 (パーツをさらに増量！)
         this.clusterPositions = []; // 初期化
@@ -750,12 +723,6 @@ export class Scene18 extends SceneBase {
                 baseGeo.applyMatrix4(dummy.matrix);
                 targetList.push(baseGeo);
 
-                // ラベルを追加（もっともらしいテキスト！）
-                const labels = ["PWR-CTRL", "SYS-LINK", "CORE-VLT", "AUTH-01", "DANGER"];
-                const labelText = labels[Math.floor(Math.random() * labels.length)];
-                this.createSmallLabel(this.centralSphere, labelText, baseWidth * 0.6, baseHeight * 0.2, 
-                    pos.clone().add(normal.clone().multiplyScalar(baseDepth / 2 + 2)), 0);
-
                 // パネルの四隅にリベット
                 const rivetGeo = new THREE.SphereGeometry(10 * sizeScale, 8, 8);
                 const corners = [
@@ -829,12 +796,6 @@ export class Scene18 extends SceneBase {
                 const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
                 baseGeo.applyMatrix4(dummy.matrix);
                 targetList.push(baseGeo);
-
-                // ラベルを追加
-                const labels = ["PROC-UNT", "DATA-BUS", "COOL-SYS", "MEM-BKUP"];
-                const labelText = labels[Math.floor(Math.random() * labels.length)];
-                this.createSmallLabel(this.centralSphere, labelText, baseWidth * 0.5, baseHeight * 0.15, 
-                    pos.clone().add(normal.clone().multiplyScalar(baseDepth / 2 + 2)), 0);
 
                 // 冷却フィンっぽい薄い板を並べる
                 const finGeo = new THREE.BoxGeometry(baseWidth * 0.8, 10 * sizeScale, 30 * heightScale);
@@ -1472,24 +1433,26 @@ export class Scene18 extends SceneBase {
             // 徐々に減衰させる
             this.innerSphere.material.emissiveIntensity *= 0.92;
             this.innerSphere.material.emissive.copy(this.pulseColor);
+            this.innerSphere.material.needsUpdate = true;
         }
         if (this.coreGlow && this.coreGlow.material) {
             // 徐々に減衰させる
             this.coreGlow.material.opacity *= 0.9;
             this.coreGlow.material.color.copy(this.pulseColor);
+            this.coreGlow.material.needsUpdate = true;
         }
 
-        // 球体の発光強度の補間（トラック5連動は解除！）
-        this.coreEmissiveIntensity = 0.1; // 元の明るさに戻す
-        if (this.centralSphere && this.centralSphere.material) {
-            this.centralSphere.material.emissiveIntensity = this.coreEmissiveIntensity;
-            this.centralSphere.material.emissive.setHex(0x222222); // 元の色に戻す
-        }
-        // パーツのマテリアルも元に戻す！
-        if (this.detailMaterials) {
-            this.detailMaterials.forEach(mat => {
-                mat.emissiveIntensity = this.coreEmissiveIntensity;
-                mat.emissive.setHex(0x111111);
+        // 球体の外殻・パーツの発光強度の補間（基本値 0.1 へ収束させる）
+        if (this.centralSphere) {
+            this.centralSphere.traverse(child => {
+                // インナー球体とコアは除外して、個別の減衰ロジックを優先する
+                if (child === this.innerSphere || child === this.coreGlow) return;
+
+                if (child.isMesh && child.material && child.material.emissive) {
+                    const current = child.material.emissiveIntensity;
+                    child.material.emissiveIntensity = current + (0.1 - current) * 0.1;
+                    child.material.needsUpdate = true;
+                }
             });
         }
 
@@ -1531,9 +1494,9 @@ export class Scene18 extends SceneBase {
 
         // --- 2Dコールアウトの更新（共通システムを使用） ---
         if (this.calloutSystem) {
-            this.calloutSystem.update(deltaTime, this.time, {
-                interval: 1.0,
-                maxCount: 8,
+            this.calloutSystem.update(deltaTime, this.time, this.camera, {
+                autoGenerate: false, // トラック5で手動生成するため自動生成はオフ
+                maxCount: 15,
                 margin: 200
             });
         }
@@ -1546,17 +1509,40 @@ export class Scene18 extends SceneBase {
             speed: speed
         });
 
-        // --- インナーグロウをトリガー！ ---
-        const intensity = (velocity / 127.0) * 12.0; // 5.0 -> 12.0 (さらにビカビカに！)
+        // --- インナーグロウを極限まで弱める（継ぎ目から漏れる程度！） ---
+        const intensity = (velocity / 127.0) * 1.5; // 3.0 -> 1.5 (さらに半分)
         if (this.innerSphere && this.innerSphere.material) {
             this.innerSphere.material.emissiveIntensity = intensity;
+            this.innerSphere.material.needsUpdate = true;
         }
         if (this.coreGlow && this.coreGlow.material) {
-            this.coreGlow.material.opacity = Math.min(intensity * 0.1, 1.0); // 0.2 -> 0.1, max 0.8 -> 1.0
+            this.coreGlow.material.opacity = Math.min(intensity * 0.1, 0.15); // 0.3 -> 0.15
+            this.coreGlow.material.needsUpdate = true;
         }
 
-        // ライトを光らせる！
-        this.targetLightIntensity = (velocity / 127.0) * 10.0; // 瞬間的に強く照らす！
+        // 外殻やパーツの発光連動は完全に削除（不自然な光りを防ぐ）
+        if (this.centralSphere) {
+            this.centralSphere.traverse(child => {
+                // インナー球体とコアは除外！
+                if (child === this.innerSphere || child === this.coreGlow) return;
+
+                if (child.isMesh && child.material && child.material.emissive) {
+                    // 基本の明るさ（0.1）を維持し、パルスでのブーストは行わない
+                    child.material.emissiveIntensity = 0.1;
+                    child.material.needsUpdate = true;
+                }
+            });
+        }
+
+        // 点光源も最小限（球体の周辺がほんのり明るくなる程度）
+        const flashIntensity = (velocity / 127.0) * 1.5; // 4.0 -> 1.5
+        if (this.pointLight) {
+            this.pointLight.intensity = flashIntensity;
+            this.pointLight.color.copy(this.pulseColor);
+        }
+
+        // ライトを光らせる（ターゲット強度を設定して補間させる）
+        this.targetLightIntensity = flashIntensity; 
     }
 
     initPostProcessing() {
@@ -1578,16 +1564,43 @@ export class Scene18 extends SceneBase {
     }
 
     handleTrackNumber(trackNumber, message) {
+        console.log(`[Scene18] handleTrackNumber: ${trackNumber}`);
         if (trackNumber === 2) {
             const args = message.args || [];
             const durationMs = (args.length >= 3) ? args[2] : 500;
             this.strobeActive = true; 
             this.strobeEndTime = Date.now() + durationMs;
         }
-        // トラック5と6の両方でパルスをトリガーできるようにするやで！
-        if (trackNumber === 5 || trackNumber === 6) {
+        
+        // --- トラック5：コールアウト専用 ---
+        if (trackNumber === 5) {
             const args = message.args || [];
             const velocity = args[1] !== undefined ? args[1] : 127;
+            console.log(`[Scene18] Callout triggered by track 5, velocity: ${velocity}`);
+            
+            if (this.calloutSystem) {
+                const phi = Math.random() * Math.PI * 2;
+                const theta = Math.random() * Math.PI;
+                const worldPos = new THREE.Vector3(
+                    this.coreRadius * Math.sin(theta) * Math.cos(phi),
+                    this.coreRadius * Math.cos(theta) + this.coreCenterY,
+                    this.coreRadius * Math.sin(theta) * Math.sin(phi)
+                );
+
+                const duration = 2.0 + (velocity / 127.0) * 3.0;
+                this.calloutSystem.createCallout({
+                    worldPos: worldPos,
+                    time: this.time,
+                    duration: duration
+                });
+            }
+        }
+
+        // --- トラック6：球体発光・ケーブルパルス専用 ---
+        if (trackNumber === 6) {
+            const args = message.args || [];
+            const velocity = args[1] !== undefined ? args[1] : 127;
+            console.log(`[Scene18] Main pulse triggered by track 6, velocity: ${velocity}`);
             this.triggerPulse(velocity);
         }
 

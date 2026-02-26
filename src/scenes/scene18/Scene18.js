@@ -238,8 +238,8 @@ export class Scene18 extends SceneBase {
     }
 
     createCore() {
-        // --- 明るめの古い金属（経年劣化したアルミやスチール）風のカラー設定 ---
-        const coreColor = 0x888078; // 暗すぎず、少し温かみのあるグレーベージュ
+        // --- 明るめのブルーグレー（インダストリアル・スチール）風のカラー設定 ---
+        const coreColor = 0x808a90; // 0x505860 -> 0x808a90 (一段階明るく！)
         const textures = this.generateDirtyTextures(1024, coreColor, true); 
         
         // --- 球体の工業化：分割パーツによる再構築や！ ---
@@ -251,13 +251,13 @@ export class Scene18 extends SceneBase {
             color: coreColor,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 10.0, // 12.0 -> 10.0 (少し抑えて清潔感を出す)
-            emissive: 0x332211, // ほんのり温かみのある照り返し
+            bumpScale: 10.0, 
+            emissive: 0x222a33, // 自己発光も少し明るくして影を飛ばす
             emissiveIntensity: 0.1, 
-            metalness: 0.6, // 0.5 -> 0.6 (金属の輝きを少し戻す)
-            roughness: 0.6, // 0.8 -> 0.6 (少し滑らかに)
+            metalness: 0.5, 
+            roughness: 0.6, // 0.7 -> 0.6 (少しツヤを出して光を拾いやすく)
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.6, // 0.4 -> 0.6 (反射を少し強めて明るく見せる)
+            envMapIntensity: 0.7, // 0.5 -> 0.7 (反射を強めて明るさを確保)
             side: THREE.FrontSide 
         });
 
@@ -803,9 +803,9 @@ export class Scene18 extends SceneBase {
 
         // 色ごとのマテリアル作成とメッシュ生成
         const colors = {
-            dark: 0x665544,  // 0x443322 -> 0x665544 (少し明るいブロンズ)
-            mid: 0x887766,   // 0x665544 -> 0x887766 (経年劣化したスチール)
-            light: 0xaa9988  // 0x887766 -> 0xaa9988 (明るめの真鍮)
+            dark: 0x606870,  // 0x303840 -> 0x606870 (全体的に明るく)
+            mid: 0x808a90,   // 0x505860 -> 0x808a90
+            light: 0xa0acb5  // 0x707880 -> 0xa0acb5
         };
 
         this.detailMaterials = []; 
@@ -1272,22 +1272,37 @@ export class Scene18 extends SceneBase {
         this.stabilizerPipes = pipeGroup; // 管理用に追加
         this.scene.add(pipeGroup);
 
-        // パイプ用の硬質な黒色金属マテリアル
-        const pipeMat = new THREE.MeshStandardMaterial({
-            color: 0x050505,
-            metalness: 0.9,
-            roughness: 0.1,
+        // --- 明るめの「ブルーグレーの古い鉄」風のテクスチャとマテリアル ---
+        const beamBaseColor = 0xa0b0c0; // 明るいブルーグレー（スチール風）
+        const beamTextures = this.generateDirtyTextures(512, beamBaseColor, true); 
+        
+        const beamMat = new THREE.MeshStandardMaterial({
+            color: beamBaseColor,
+            map: beamTextures.map,
+            bumpMap: beamTextures.bumpMap,
+            bumpScale: 10.0, // 8.0 -> 10.0 (マットな分、凹凸を少し強調)
+            metalness: 0.3, // 0.5 -> 0.3 (金属の反射を抑えてマットに)
+            roughness: 0.9, // 0.4 -> 0.9 (ガッツリ艶消し！)
+            emissive: 0x223344, 
+            emissiveIntensity: 0.2,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.5
+            envMapIntensity: 0.3 // 1.5 -> 0.3 (映り込みを最小限にしてマット感を出す)
         });
 
-        // 設置パーツ用のマテリアル
+        // 設置パーツ用のマテリアル（こちらもマットに！）
+        const connectorColor = 0x8090a0;
+        const connectorTextures = this.generateDirtyTextures(256, connectorColor, true);
         const connectorMat = new THREE.MeshStandardMaterial({
-            color: 0x222222,
-            metalness: 0.8,
-            roughness: 0.3,
+            color: connectorColor,
+            map: connectorTextures.map,
+            bumpMap: connectorTextures.bumpMap,
+            bumpScale: 6.0,
+            metalness: 0.4,
+            roughness: 0.8, // ツヤを消す
+            emissive: 0x112233,
+            emissiveIntensity: 0.1,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.0
+            envMapIntensity: 0.4
         });
 
         const roomLimit = 4800; // 壁の位置
@@ -1298,47 +1313,57 @@ export class Scene18 extends SceneBase {
             { x: -roomLimit, z: -roomLimit }
         ];
         
-        // 天井ギリギリと地面ギリギリの「壁」の高さ
         const heights = [4500, -4500]; 
-
-        const pipeRadius = 30; 
+        const beamSize = 80; // 鉄骨の太さ
         const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
 
         corners.forEach(corner => {
             heights.forEach(y => {
-                // 四隅の壁（天井付近4箇所、床付近4箇所）からスタート
                 const startPos = new THREE.Vector3(corner.x, y, corner.z);
-                
-                // --- 修正：球体表面への到達点を正しく計算 ---
-                // startPos から coreCenter へのベクトル
                 const toCore = coreCenter.clone().sub(startPos);
                 const distToCenter = toCore.length();
                 const dir = toCore.normalize();
-                
-                // 球体表面までの距離 = 中心までの距離 - 半径
                 const distToSurface = distToCenter - this.coreRadius;
-                
-                // 到達点
                 const endPos = startPos.clone().add(dir.clone().multiplyScalar(distToSurface));
 
-                // 1. パイプ（直線）
-                const pipeLength = distToSurface;
-                const pipeGeo = new THREE.CylinderGeometry(pipeRadius, pipeRadius, pipeLength, 16);
-                const pipe = new THREE.Mesh(pipeGeo, pipeMat);
-                
-                // パイプの中点を配置位置にする
+                // --- 鉄骨（H鋼）ユニットの生成 ---
+                const beamGroup = new THREE.Group();
                 const midPoint = startPos.clone().add(endPos).multiplyScalar(0.5);
-                pipe.position.copy(midPoint);
-                
-                // パイプを方向に向ける (CylinderはデフォルトでY軸方向)
-                pipe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-                pipeGroup.add(pipe);
+                beamGroup.position.copy(midPoint);
+                beamGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+                pipeGroup.add(beamGroup);
 
-                // 2. 壁側の設置パーツ
-                this.createPipeConnector(startPos, dir, pipeRadius, connectorMat, pipeGroup);
+                // H鋼のメインプレート（中央）
+                const webGeo = new THREE.BoxGeometry(beamSize * 0.1, distToSurface, beamSize * 0.8);
+                const web = new THREE.Mesh(webGeo, beamMat);
+                beamGroup.add(web);
 
-                // 3. 球体側の設置パーツ
-                this.createPipeConnector(endPos, dir.clone().negate(), pipeRadius, connectorMat, pipeGroup);
+                // H鋼のフランジ（両端）
+                const flangeGeo = new THREE.BoxGeometry(beamSize, distToSurface, beamSize * 0.1);
+                const flange1 = new THREE.Mesh(flangeGeo, beamMat);
+                flange1.position.z = beamSize * 0.4;
+                beamGroup.add(flange1);
+
+                const flange2 = new THREE.Mesh(flangeGeo, beamMat);
+                flange2.position.z = -beamSize * 0.4;
+                beamGroup.add(flange2);
+
+                // 補強用のトラス（斜めの梁）をいくつか追加
+                const trussCount = 4;
+                const trussGeo = new THREE.BoxGeometry(beamSize * 0.05, beamSize * 1.2, beamSize * 0.05);
+                for (let i = 0; i < trussCount; i++) {
+                    const t = (i / (trussCount - 1) - 0.5) * distToSurface * 0.8;
+                    const truss = new THREE.Mesh(trussGeo, beamMat);
+                    truss.position.y = t;
+                    truss.rotation.z = Math.PI / 4 * (i % 2 === 0 ? 1 : -1);
+                    beamGroup.add(truss);
+                }
+
+                // 壁側の設置パーツ
+                this.createPipeConnector(startPos, dir, beamSize * 0.5, connectorMat, pipeGroup);
+
+                // 球体側の設置パーツ
+                this.createPipeConnector(endPos, dir.clone().negate(), beamSize * 0.5, connectorMat, pipeGroup);
             });
         });
     }

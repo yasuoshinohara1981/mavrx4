@@ -306,11 +306,11 @@ export class SceneBase {
         // シェーダーの読み込みが完了するまで待つ（最大2秒）
         // ただし、待機中もフレームをブロックしないようにする
         let waitCount = 0;
-        while (!this.colorInversion.initialized && waitCount < 100) {
+        while (this.colorInversion && !this.colorInversion.initialized && waitCount < 100) {
             await new Promise(resolve => setTimeout(resolve, 20));
             waitCount++;
         }
-        if (this.colorInversion.initialized) {
+        if (this.colorInversion && this.colorInversion.initialized) {
             debugLog('colorInversion', 'SceneBase.setup: 初期化完了');
         }
         

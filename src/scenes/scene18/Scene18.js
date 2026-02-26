@@ -982,20 +982,46 @@ export class Scene18 extends SceneBase {
                 }
                 
                 if (isUpper) {
-                    const bulgeScale = 1.4 + (radius < 40 ? 0.4 : (radius / 250)); 
-                    const midY = Math.max(point1.y * 0.5, this.coreCenterY + 200); 
-                    points.push(new THREE.Vector3(
+                    const bulgeScale = 1.6 + (radius < 40 ? 0.4 : (radius / 200)); 
+                    const midY = Math.max(point1.y * 0.6, this.coreCenterY + 400); 
+                    
+                    // 球体の中心から外側へ向かうベクトルを計算して、中間地点を球体の外側に押し出す
+                    const midPos = new THREE.Vector3(
                         point1.x * bulgeScale,
                         midY,
                         point1.z * bulgeScale
-                    ));
+                    );
+                    
+                    // 球体中心（0, coreCenterY, 0）からの距離をチェック
+                    const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
+                    const distToCenter = midPos.distanceTo(coreCenter);
+                    const safeRadius = this.coreRadius + 300; // 半径 + 余裕分
+                    
+                    if (distToCenter < safeRadius) {
+                        const pushDir = midPos.clone().sub(coreCenter).normalize();
+                        midPos.copy(coreCenter.clone().add(pushDir.multiplyScalar(safeRadius)));
+                    }
+                    
+                    points.push(midPos);
                 } else {
-                    const midDistScale = 1.6 + (radius < 40 ? 0.5 : 0.0);
-                    points.push(new THREE.Vector3(
+                    const midDistScale = 1.8 + (radius < 40 ? 0.5 : 0.0);
+                    const midPos = new THREE.Vector3(
                         point1.x * midDistScale,
-                        floorY + 300,
+                        floorY + 400,
                         point1.z * midDistScale
-                    ));
+                    );
+                    
+                    // 下側も同様に球体を避ける
+                    const coreCenter = new THREE.Vector3(0, this.coreCenterY, 0);
+                    const distToCenter = midPos.distanceTo(coreCenter);
+                    const safeRadius = this.coreRadius + 200;
+                    
+                    if (distToCenter < safeRadius) {
+                        const pushDir = midPos.clone().sub(coreCenter).normalize();
+                        midPos.copy(coreCenter.clone().add(pushDir.multiplyScalar(safeRadius)));
+                    }
+                    
+                    points.push(midPos);
                 }
 
                 const endPos = new THREE.Vector3(groundX, floorY, groundZ);

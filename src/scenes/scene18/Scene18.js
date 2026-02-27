@@ -251,10 +251,9 @@ export class Scene18 extends SceneBase {
 
     createCore() {
         // --- 明るめのブルーグレー（インダストリアル・スチール）風のカラー設定 ---
-        const coreColor = 0x808a90; // 0x505860 -> 0x808a90 (一段階明るく！)
+        const coreColor = 0x808a90;
         const textures = this.generateDirtyTextures(1024, coreColor, true); 
         
-        // --- 球体の工業化：分割パーツによる再構築や！ ---
         this.centralSphere = new THREE.Group();
         this.centralSphere.position.y = this.coreCenterY;
         this.scene.add(this.centralSphere);
@@ -264,12 +263,12 @@ export class Scene18 extends SceneBase {
             map: textures.map,
             bumpMap: textures.bumpMap,
             bumpScale: 10.0, 
-            emissive: 0x222a33, // 自己発光も少し明るくして影を飛ばす
+            emissive: 0x222a33,
             emissiveIntensity: 0.1, 
             metalness: 0.5, 
-            roughness: 0.6, // 0.7 -> 0.6 (少しツヤを出して光を拾いやすく)
+            roughness: 0.6, 
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.7, // 0.5 -> 0.7 (反射を強めて明るさを確保)
+            envMapIntensity: 0.7,
             side: THREE.FrontSide 
         });
 
@@ -815,9 +814,9 @@ export class Scene18 extends SceneBase {
 
         // 色ごとのマテリアル作成とメッシュ生成
         const colors = {
-            dark: 0x606870,  // 0x303840 -> 0x606870 (全体的に明るく)
-            mid: 0x808a90,   // 0x505860 -> 0x808a90
-            light: 0xa0acb5  // 0x707880 -> 0xa0acb5
+            dark: 0x606870,
+            mid: 0x808a90,
+            light: 0xa0acb5
         };
 
         this.detailMaterials = []; 

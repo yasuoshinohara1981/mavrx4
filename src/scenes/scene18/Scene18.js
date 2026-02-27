@@ -30,7 +30,7 @@ export class Scene18 extends SceneBase {
 
         // ケーブル関連
         this.cables = [];
-        this.cableCount = 70;
+        this.cableCount = 60;
         this.cableGroup = new THREE.Group();
 
         // 中央の球体
@@ -264,8 +264,8 @@ export class Scene18 extends SceneBase {
             // 陶器風の白（フラグON時）
             sphereMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
-                emissive: 0x111111,
-                emissiveIntensity: 0.02,
+                emissive: 0x333333, // 0x111111 -> 明るく
+                emissiveIntensity: 0.08, // 0.02 -> 0.08
                 metalness: 0.0,
                 roughness: 0.12,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
@@ -273,16 +273,16 @@ export class Scene18 extends SceneBase {
                 side: THREE.FrontSide 
             });
         } else {
-            // Git版：ブルーグレー（インダストリアル・スチール）
-            const coreColor = 0x808a90;
+            // Git版：ブルーグレー（インダストリアル・スチール）※明るめに調整
+            const coreColor = 0xa8b2bc; // 0x808a90 -> 明るく
             const textures = this.generateDirtyTextures(1024, coreColor, true);
             sphereMat = new THREE.MeshStandardMaterial({
                 color: coreColor,
                 map: textures.map,
                 bumpMap: textures.bumpMap,
                 bumpScale: 10.0,
-                emissive: 0x222a33,
-                emissiveIntensity: 0.1,
+                emissive: 0x404850, // 0x222a33 -> 明るく
+                emissiveIntensity: 0.25, // 0.1 -> 0.25
                 metalness: 0.5,
                 roughness: 0.6,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,

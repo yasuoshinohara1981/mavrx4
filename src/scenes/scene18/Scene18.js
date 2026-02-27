@@ -251,7 +251,9 @@ export class Scene18 extends SceneBase {
     }
 
     createStudioBox() {
-        this.studio = new StudioBox(this.scene); // デフォルト設定（Scene14と同じ）
+        this.studio = new StudioBox(this.scene, {
+            color: 0xa8b0b8  // 壁・床（かなり明るく）
+        });
     }
 
     createCore() {

@@ -25,7 +25,7 @@ export class Scene18 extends SceneBase {
         
         // ケーブル関連
         this.cables = [];
-        this.cableCount = 80; // 70 -> 80 (安定してるから増量！さらに密度を上げるやで！)
+        this.cableCount = 70;
         this.cableGroup = new THREE.Group();
 
         // 中央の球体
@@ -78,8 +78,9 @@ export class Scene18 extends SceneBase {
 
         this.setScreenshotText(this.title);
 
-        // --- 2Dコールアウト管理（SceneBaseの共通システムを使用） ---
+        // --- コールアウト管理（2Dコードは残しつつ3D化対応） ---
         if (this.calloutSystem) {
+            this.calloutSystem.setUse3DCallouts(true); // 3Dコールアウトを有効化
             this.calloutSystem.setLabels([
                 "CORE_TEMP: NORMAL", "VOLTAGE: 1.2MV", "PRESSURE: 450kPa", 
                 "SYNC_RATE: 98.2%", "FLOW_CTRL: ACTIVE", "CELL_STAT: STABLE",
@@ -177,7 +178,7 @@ export class Scene18 extends SceneBase {
         await super.setup();
 
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.3;
+        this.renderer.toneMappingExposure = 1.0; // 少し明るく
 
         // 初期位置も十分に離す
         this.camera.position.set(0, 5000, 10000); 
@@ -200,6 +201,10 @@ export class Scene18 extends SceneBase {
         this.scene.add(this.cubeCamera);
 
         this.setupLights();
+        // 3Dコールアウト用にシーンを渡す（Z位置はCalloutSystem内でランダマイズ）
+        if (this.calloutSystem) {
+            this.calloutSystem.setScene(this.scene);
+        }
         this.createStudioBox();
         this.createCore();
         this.createSphereDetails(); // 球体の部品追加
@@ -213,15 +218,13 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff; 
-        // 環境光を元の明るさに戻す（0.6）
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x444444, 0.6); 
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x333355, 0.35); 
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.4); // 元の0.4に戻す
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.22);
         this.scene.add(ambientLight);
 
-        // 指向性ライトも元の強度に戻す（1.2）
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 1.2); 
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.7); 
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -8000;
@@ -961,18 +964,22 @@ export class Scene18 extends SceneBase {
                 let finalCableColor;
                 let isWhiteNonGlowing = false;
                 let isGreyNonGlowing = false;
+                let isBlackNonGlowing = false;
 
-                if (colorRand < 0.1) { // 0.05 -> 0.1 (白ケーブル2倍！)
+                if (colorRand < 0.15) {
                     finalCableColor = 0xffffff;
                     isWhiteNonGlowing = true;
-                } else if (colorRand < 0.25) { // 0.1 -> 0.25 (グレーケーブル増量！)
+                } else if (colorRand < 0.35) {
                     finalCableColor = 0x666666;
                     isGreyNonGlowing = true;
+                } else if (colorRand < 0.45) {
+                    finalCableColor = 0x222222;
+                    isBlackNonGlowing = true;
                 } else {
                     finalCableColor = 0x111111;
                 }
 
-                const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing;
+                const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing || isBlackNonGlowing;
 
                 let radius;
                 const isSuperThick = Math.random() < 0.025;
@@ -1130,8 +1137,8 @@ export class Scene18 extends SceneBase {
                 const material = new THREE.MeshStandardMaterial({
                     color: finalCableColor,
                     bumpScale: 2.5,
-                    emissive: isWhiteNonGlowing ? 0xffffff : (isGreyNonGlowing ? 0x666666 : 0x000000), 
-                    emissiveIntensity: isWhiteNonGlowing ? 0.15 : (isGreyNonGlowing ? 0.08 : 0.0),
+                    emissive: isWhiteNonGlowing ? 0xffffff : (isGreyNonGlowing ? 0x666666 : (isBlackNonGlowing ? 0x111111 : 0x000000)), 
+                    emissiveIntensity: isWhiteNonGlowing ? 0.15 : (isGreyNonGlowing ? 0.08 : (isBlackNonGlowing ? 0.02 : 0.0)),
                     metalness: isNonGlowing ? 0.0 : 0.8, 
                     roughness: isNonGlowing ? 1.0 : 0.2, 
                     envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
@@ -1143,7 +1150,7 @@ export class Scene18 extends SceneBase {
                     material.bumpMap = cableTextures.bumpMap;
                 }
 
-                if (!isWhiteNonGlowing) {
+                if (!isNonGlowing) {
                     material.onBeforeCompile = (shader) => {
                         shader.uniforms.uPulses = { value: new Float32Array(10).fill(-1.0) };
                         shader.uniforms.uPulseColor = { value: this.pulseColor };
@@ -1186,7 +1193,7 @@ export class Scene18 extends SceneBase {
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 this.cableGroup.add(mesh);
-                this.cables.push({ mesh, material, isGlowing: !isWhiteNonGlowing });
+                this.cables.push({ mesh, material, isGlowing: !isNonGlowing });
 
                 const endRingGeo = new THREE.TorusGeometry(radius * 1.3, radius * 0.3, 10, 20);
                 const endRingMat = new THREE.MeshStandardMaterial({
@@ -1266,14 +1273,14 @@ export class Scene18 extends SceneBase {
         
         // テキスト描画（濃いめのグレー）
         ctx.fillStyle = '#ffffff'; // #111111 -> #ffffff (真っ白にして視認性アップ！)
-        ctx.font = 'bold 90px Arial';
+        ctx.font = 'bold 60px Arial'; // 90px -> 60px (小さくしたで！)
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('MAVRX4', canvas.width / 2, canvas.height / 2);
         
         const textTex = new THREE.CanvasTexture(canvas);
         const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true, side: THREE.DoubleSide });
-        const textGeo = new THREE.PlaneGeometry(400, 100);
+        const textGeo = new THREE.PlaneGeometry(280, 70); // 400x100 -> 280x70 (小さくしたで！)
         const textMesh = new THREE.Mesh(textGeo, textMat);
         textMesh.position.set(0, -10, 11); // 10 -> 11 (チラつき防止)
         entranceGroup.add(textMesh);
@@ -1696,6 +1703,9 @@ export class Scene18 extends SceneBase {
                     }
                 }
             });
+        }
+        if (this.calloutSystem) {
+            this.calloutSystem.setScene(null);
         }
         if (this.stabilizerPipes) {
             this.scene.remove(this.stabilizerPipes);

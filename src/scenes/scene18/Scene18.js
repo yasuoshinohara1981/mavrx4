@@ -22,7 +22,12 @@ export class Scene18 extends SceneBase {
         this.kitNo = 18;
         
         this.sharedResourceManager = sharedResourceManager;
-        
+
+        // 球体の質感フラグ
+        // false = Git版ブルーグレー（インダストリアル）
+        // true  = 陶器風の白（つるつる反射）
+        this.useCeramicSphere = false;
+
         // ケーブル関連
         this.cables = [];
         this.cableCount = 70;
@@ -250,27 +255,41 @@ export class Scene18 extends SceneBase {
     }
 
     createCore() {
-        // --- 明るめのブルーグレー（インダストリアル・スチール）風のカラー設定 ---
-        const coreColor = 0x808a90;
-        const textures = this.generateDirtyTextures(1024, coreColor, true); 
-        
         this.centralSphere = new THREE.Group();
         this.centralSphere.position.y = this.coreCenterY;
         this.scene.add(this.centralSphere);
 
-        const sphereMat = new THREE.MeshStandardMaterial({
-            color: coreColor,
-            map: textures.map,
-            bumpMap: textures.bumpMap,
-            bumpScale: 10.0, 
-            emissive: 0x222a33,
-            emissiveIntensity: 0.1, 
-            metalness: 0.5, 
-            roughness: 0.6, 
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.7,
-            side: THREE.FrontSide 
-        });
+        let sphereMat;
+        if (this.useCeramicSphere) {
+            // 陶器風の白（フラグON時）
+            sphereMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                emissive: 0x111111,
+                emissiveIntensity: 0.02,
+                metalness: 0.0,
+                roughness: 0.12,
+                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                envMapIntensity: 0.8,
+                side: THREE.FrontSide 
+            });
+        } else {
+            // Git版：ブルーグレー（インダストリアル・スチール）
+            const coreColor = 0x808a90;
+            const textures = this.generateDirtyTextures(1024, coreColor, true);
+            sphereMat = new THREE.MeshStandardMaterial({
+                color: coreColor,
+                map: textures.map,
+                bumpMap: textures.bumpMap,
+                bumpScale: 10.0,
+                emissive: 0x222a33,
+                emissiveIntensity: 0.1,
+                metalness: 0.5,
+                roughness: 0.6,
+                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
+                envMapIntensity: 0.7,
+                side: THREE.FrontSide
+            });
+        }
 
         // 緯度（Vertical）と経度（Horizontal）で分割して、工業パーツを作るで！
         const offsetTheta = 0.2; 
@@ -1448,15 +1467,14 @@ export class Scene18 extends SceneBase {
             this.coreGlow.material.needsUpdate = true;
         }
 
-        // 球体の外殻・パーツの発光強度の補間（基本値 0.1 へ収束させる）
+        // 球体の外殻・パーツの発光強度の補間（陶器=0.02, ブルーグレー=0.1）
+        const sphereEmissiveTarget = this.useCeramicSphere ? 0.02 : 0.1;
         if (this.centralSphere) {
             this.centralSphere.traverse(child => {
-                // インナー球体とコアは除外して、個別の減衰ロジックを優先する
                 if (child === this.innerSphere || child === this.coreGlow) return;
-
                 if (child.isMesh && child.material && child.material.emissive) {
                     const current = child.material.emissiveIntensity;
-                    child.material.emissiveIntensity = current + (0.1 - current) * 0.1;
+                    child.material.emissiveIntensity = current + (sphereEmissiveTarget - current) * 0.1;
                     child.material.needsUpdate = true;
                 }
             });
@@ -1527,14 +1545,12 @@ export class Scene18 extends SceneBase {
         }
 
         // 外殻やパーツの発光連動は完全に削除（不自然な光りを防ぐ）
+        const sphereEmissiveTarget = this.useCeramicSphere ? 0.02 : 0.1;
         if (this.centralSphere) {
             this.centralSphere.traverse(child => {
-                // インナー球体とコアは除外！
                 if (child === this.innerSphere || child === this.coreGlow) return;
-
                 if (child.isMesh && child.material && child.material.emissive) {
-                    // 基本の明るさ（0.1）を維持し、パルスでのブーストは行わない
-                    child.material.emissiveIntensity = 0.1;
+                    child.material.emissiveIntensity = sphereEmissiveTarget;
                     child.material.needsUpdate = true;
                 }
             });
@@ -1647,8 +1663,9 @@ export class Scene18 extends SceneBase {
         // 万が一カメラが球体の中に入ったり近すぎたりした時のための安全策
         if (focusDist < 10) focusDist = 10;
         
-        // フォーカスを更新
-        this.bokehPass.uniforms.focus.value = focusDist;
+        // フォーカスを滑らかに補間（0.08で程よい速さ）
+        const currentFocus = this.bokehPass.uniforms.focus.value;
+        this.bokehPass.uniforms.focus.value = currentFocus + (focusDist - currentFocus) * 0.08;
     }
 
     render() {

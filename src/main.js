@@ -48,7 +48,8 @@ function initRenderer() {
         preserveDrawingBuffer: true  // Canvas 2D で drawImage するために必要
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    // Retina 3x を 2x にキャップして軽量化（パフォーマンス優先）
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000);
     document.body.appendChild(renderer.domElement);
     

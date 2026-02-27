@@ -1510,7 +1510,8 @@ export class Scene18 extends SceneBase {
             }
         });
 
-        if (this.cubeCamera && Math.floor(this.time * 60) % 4 === 0) {
+        // CubeCamera 更新頻度を下げて軽量化（4fに1回 → 8fに1回）
+        if (this.cubeCamera && Math.floor(this.time * 60) % 8 === 0) {
             this.cubeCamera.update(this.renderer, this.scene);
         }
         
@@ -1689,11 +1690,16 @@ export class Scene18 extends SceneBase {
                 if (child.material) child.material.dispose();
             });
         }
+        // detailGroup の子を確実に削除・破棄（シーン復帰時に古いリングが浮くのを防ぐ）
         if (this.detailGroup) {
-            this.detailGroup.children.forEach(child => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
-            });
+            while (this.detailGroup.children.length > 0) {
+                const child = this.detailGroup.children[0];
+                this.detailGroup.remove(child);
+                child.traverse((obj) => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) obj.material.dispose();
+                });
+            }
             this.scene.remove(this.detailGroup);
         }
         this.cables.forEach(c => {

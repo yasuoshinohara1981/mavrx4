@@ -24,7 +24,7 @@ export class Scene16 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
         
         // 触手（Tentacles）の設定
-        this.tentacleCount = 175; 
+        this.tentacleCount = 100; 
         this.tentacles = [];
         this.tentacleGroup = new THREE.Group();
         this.coreMesh = null; // 真ん中の球体
@@ -175,15 +175,6 @@ export class Scene16 extends SceneBase {
         
         this.setupLights();
 
-        // シーン16用の動的環境マップ（256解像度）
-        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { 
-            generateMipmaps: true, 
-            minFilter: THREE.LinearMipmapLinearFilter 
-        });
-        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget);
-        this.cubeCamera.position.set(0, 500, 0);
-        this.scene.add(this.cubeCamera);
-
         this.createStudioBox();
         this.createTentacles();
         this.initPostProcessing();
@@ -191,28 +182,20 @@ export class Scene16 extends SceneBase {
     }
 
     createStudioBox() {
-        this.studio = new StudioBox(this.scene, {
-            size: 10000,
-            color: 0xbbbbbb,
-            roughness: 0.2,
-            metalness: 0.8,
-            envMap: this.cubeRenderTarget.texture,
-            envMapIntensity: 1.3
-        });
-        
+        this.studio = new StudioBox(this.scene); // Scene18と同じデフォルト設定
         if (this.studio.studioFloor) {
             this.studio.studioFloor.material.side = THREE.DoubleSide;
         }
     }
 
     setupLights() {
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 0.6); // 0.8 -> 0.6
+        // 白ベース：空も地面も白寄りにしてグレー tint を抑える
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xffffff, 0.6);
         this.scene.add(hemiLight);
-        // 環境光を下げて、陰影を深くする
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4); // 1.0 -> 0.4
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // 1.2 -> 1.0
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
         directionalLight.position.set(2000, 5000, 2000);
         directionalLight.castShadow = true;
         
@@ -232,7 +215,7 @@ export class Scene16 extends SceneBase {
         
         this.scene.add(directionalLight);
 
-        const pointLight = new THREE.PointLight(0xffffff, 0.8, 5000); 
+        const pointLight = new THREE.PointLight(0xffffff, 1.0, 5000); 
         pointLight.position.set(0, 1000, 0); 
         pointLight.castShadow = false; 
         this.scene.add(pointLight);
@@ -251,7 +234,7 @@ export class Scene16 extends SceneBase {
         
         // 頂点カラー属性を初期化
         const coreColors = new Float32Array(coreGeo.attributes.position.count * 3);
-        const skinColor = new THREE.Color('#000011');
+        const skinColor = new THREE.Color('#ffffff');
         for(let i=0; i<coreColors.length/3; i++){
             coreColors[i*3] = skinColor.r;
             coreColors[i*3+1] = skinColor.g;
@@ -260,14 +243,12 @@ export class Scene16 extends SceneBase {
         coreGeo.setAttribute('color', new THREE.BufferAttribute(coreColors, 3));
 
         const coreMat = new THREE.MeshStandardMaterial({
-            color: 0xcccccc, // 0x888888 -> 0xcccccc 少し明るく
+            color: 0xffffff,
             map: textures.map, 
             bumpMap: textures.bumpMap,
             bumpScale: 15.0, 
             metalness: 0.1, 
             roughness: 0.5, 
-            envMap: this.cubeRenderTarget.texture, 
-            envMapIntensity: 0.7, // 0.6 -> 0.7 反射も少しだけ戻す
             vertexColors: true,
             emissive: 0x000000,
             transparent: false
@@ -280,13 +261,15 @@ export class Scene16 extends SceneBase {
         for (let i = 0; i < tentacleCount; i++) {
             const points = [];
             
-            // 生える場所を極端に偏らせる
+            // 生える場所：クラスターの影響を弱め、よりバラついた配置に
             const clusterSeed = Math.floor(i / 20); 
             const clusterPhi = (Math.sin(clusterSeed * 1.8) * 0.5 + 0.5) * Math.PI * 2;
             const clusterTheta = (Math.cos(clusterSeed * 2.5) * 0.5 + 0.5) * Math.PI;
-            
-            const phi = clusterPhi + (Math.random() - 0.5) * 1.2;
-            const theta = clusterTheta + (Math.random() - 0.5) * 1.2;
+            // クラスター中心への寄り度合いを50%にし、残りはランダムで球面に分散
+            const clusterWeight = 0.5;
+            const randomSpread = 2.8;
+            const phi = clusterPhi * clusterWeight + (Math.random() - 0.5) * randomSpread + (i / tentacleCount) * Math.PI * 0.3;
+            const theta = clusterTheta * clusterWeight + (Math.random() - 0.5) * randomSpread + (i / tentacleCount) * Math.PI * 0.2;
 
             const baseThickness = 12 + Math.pow(Math.random(), 2.0) * 60;
             const r = baseRadius + 400; 
@@ -360,13 +343,11 @@ export class Scene16 extends SceneBase {
 
     createTentacleMesh(geometry, textures) {
         const material = new THREE.MeshStandardMaterial({
-            color: 0xcccccc, // 0x888888 -> 0xcccccc 少し明るく
+            color: 0xffffff,
             map: textures.map, bumpMap: textures.bumpMap,
             bumpScale: 30.0, 
             metalness: 0.1, 
             roughness: 0.5, 
-            envMap: this.cubeRenderTarget.texture,
-            envMapIntensity: 0.7, // 0.6 -> 0.7
             vertexColors: true,
             emissive: 0x000000, transparent: false
         });
@@ -381,8 +362,8 @@ export class Scene16 extends SceneBase {
         colorCanvas.width = size; colorCanvas.height = size;
         const cCtx = colorCanvas.getContext('2d');
         
-        // ベースは明るい肉色
-        cCtx.fillStyle = '#f0f0f0'; 
+        // ベースを白にして、頂点カラーがそのまま映るように
+        cCtx.fillStyle = '#ffffff'; 
         cCtx.fillRect(0, 0, size, size);
         
         const bumpCanvas = document.createElement('canvas');
@@ -454,11 +435,6 @@ export class Scene16 extends SceneBase {
         if (!this.initialized) return;
         this.time += deltaTime;
         this.stateTimer += deltaTime;
-
-        // 環境マップの更新
-        if (this.cubeCamera) {
-            this.cubeCamera.update(this.renderer, this.scene);
-        }
 
         // RandomLFO 群の更新
         this.speedLFO.update(deltaTime);
@@ -1009,7 +985,6 @@ export class Scene16 extends SceneBase {
     dispose() {
         this.initialized = false;
         if (this.studio) this.studio.dispose();
-        if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         
         // 触手のメッシュを確実に破棄
         this.tentacles.forEach(t => { 

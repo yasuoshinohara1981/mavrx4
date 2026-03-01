@@ -10,7 +10,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene14Particle } from '../scene14/Scene14Particle.js';
-import hdriUrl from '../../assets/kloofendal_48d_partly_cloudy_puresky_8k.hdr';
+import hdriUrl from '../../assets/the_sky_is_on_fire_8k.hdr';
 
 export class Scene19 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -26,8 +26,8 @@ export class Scene19 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
 
         this.partTypes = 1;
-        this.instancesPerType = 2000;
-        this.sphereCount = 2000;
+        this.instancesPerType = 10000;
+        this.sphereCount = 10000;
         this.spawnRadius = 1200;
         this.instancedMeshManagers = [];
         this.particles = [];
@@ -141,7 +141,11 @@ export class Scene19 extends SceneBase {
         });
 
         try {
-            const envMap = await this.addSkyDomeIfEnabled(hdriUrl);
+            const envMap = await this.addSkyDomeIfEnabled(hdriUrl, {
+                environmentIntensity: 1.8,
+                fogColor: 0xffaa88,
+                fogDensity: 0.0001
+            });
             this.createSpheres(envMap);
             this.setupShadowLight();
         } catch (e) {
@@ -153,8 +157,8 @@ export class Scene19 extends SceneBase {
     }
 
     setupShadowLight() {
-        const sunLight = new THREE.DirectionalLight(0xfff5e6, 0.4);
-        sunLight.position.set(3000, 8000, 5000);
+        const sunLight = new THREE.DirectionalLight(0xff6633, 1.2);
+        sunLight.position.set(5000, 1500, 8000);
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.width = 2048;
         sunLight.shadow.mapSize.height = 2048;
@@ -289,7 +293,7 @@ export class Scene19 extends SceneBase {
             });
         }
         this.addFilmGrainIfEnabled(0.35, false);
-        this.addLensFlareIfEnabled({ position: new THREE.Vector3(3000, 8000, 5000), intensity: 0.2 });
+        this.addLensFlareIfEnabled({ position: new THREE.Vector3(5000, 1500, 8000), intensity: 0.25 });
     }
 
     onUpdate(deltaTime) {

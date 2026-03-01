@@ -1,6 +1,6 @@
 /**
  * Scene19: HDRI Sky Dome + 反射球体群
- * kloofendal_48d_partly_cloudy_puresky 8K HDRI + 外の世界を反射する球体
+ * kloofendal_48d_partly_cloudy_puresky 8K HDRI + Scene14風の幾何学モード
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -8,9 +8,8 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { loadHdrCached } from '../../lib/hdrCache.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { Scene12Particle } from '../scene12/Scene12Particle.js';
+import { Scene14Particle } from '../scene14/Scene14Particle.js';
 import hdriUrl from '../../assets/kloofendal_48d_partly_cloudy_puresky_8k.hdr';
 
 export class Scene19 extends SceneBase {
@@ -26,15 +25,19 @@ export class Scene19 extends SceneBase {
 
         this.raycaster = new THREE.Raycaster();
 
-        this.sphereCount = 300;
-        this.spawnRadius = 500;
-        this.instancedMeshManager = null;
+        this.partTypes = 1;
+        this.instancesPerType = 2000;
+        this.sphereCount = 2000;
+        this.spawnRadius = 1200;
+        this.instancedMeshManagers = [];
         this.particles = [];
 
         this.useDOF = true;
         this.useBloom = true;
         this.useWallCollision = true;
-        this.useFilmGrain = true;     // フィルムグレインON
+        this.useFilmGrain = true;
+        this.useLensFlare = true;
+        this.useSkyDome = true;     // HDRIスカイドームON（有効なのは19のみ）
         this.bloomPass = null;
 
         this.trackEffects[3] = false;
@@ -42,23 +45,55 @@ export class Scene19 extends SceneBase {
 
         this.expandSpheres = [];
         this.useGravity = false;
-        this.gravityForce = new THREE.Vector3(0, -0.8, 0);
-        this.gravityTimer = 0;
-        this.gravityInterval = 10.0;
+        this.gravityForce = new THREE.Vector3(0, -10.0, 0);
 
-        this.currentMode = 0;
+        // Scene14風のモード管理
+        this.MODE_DEFAULT = 0;
+        this.MODE_GEOM_SPHERE = 1;
+        this.MODE_GEOM_CUBE_FRAME = 2;
+        this.MODE_GEOM_CYLINDER_V = 3;
+        this.MODE_GEOM_DOUBLE_TORUS = 4;
+        this.MODE_GEOM_CONE_UP = 5;
+        this.MODE_GEOM_WAVE_GRID = 6;
+        this.MODE_GEOM_HOURGLASS = 7;
+        this.MODE_GEOM_SPIRAL_TOWER = 8;
+        this.MODE_GEOM_DIAMOND = 9;
+        this.MODE_GEOM_TORUS_KNOT = 10;
+        this.MODE_GEOM_DNA_HELIX = 11;
+        this.MODE_GEOM_SPHERE_SHELLS = 12;
+        this.MODE_GEOM_SPIRAL_FLAT = 13;
+        this.MODE_GEOM_GRID_3D = 14;
+        this.MODE_SINGULARITY = 15;
+        this.MODE_PSYCHIC_COLLAPSE = 16;
+        this.MODE_GRAVITY_SHOCK = 17;
+
+        this.modeSequence = [
+            this.MODE_GEOM_SPHERE,
+            this.MODE_GEOM_CUBE_FRAME,
+            this.MODE_GEOM_CYLINDER_V,
+            this.MODE_GEOM_DOUBLE_TORUS,
+            this.MODE_GEOM_CONE_UP,
+            this.MODE_GEOM_WAVE_GRID,
+            this.MODE_GEOM_HOURGLASS,
+            this.MODE_GEOM_SPIRAL_TOWER,
+            this.MODE_GEOM_DIAMOND,
+            this.MODE_GEOM_TORUS_KNOT,
+            this.MODE_GEOM_DNA_HELIX,
+            this.MODE_GEOM_SPHERE_SHELLS,
+            this.MODE_GEOM_SPIRAL_FLAT,
+            this.MODE_GEOM_GRID_3D,
+            this.MODE_SINGULARITY,
+            this.MODE_PSYCHIC_COLLAPSE,
+            this.MODE_GRAVITY_SHOCK,
+            this.MODE_DEFAULT
+        ];
+        this.sequenceIndex = 0;
+        this.currentMode = this.modeSequence[0];
         this.modeTimer = 0;
         this.modeInterval = 10.0;
-        this.MODE_DEFAULT = 0;
-        this.MODE_GRAVITY = 1;
-        this.MODE_SWARM = 2;
-        this.MODE_SNAKE = 3;
-        this.MODE_VORTEX = 4;
-        this.MODE_ATOM = 5;
-        this.MODE_PULSE = 6;
-        this.MODE_GRID_3D = 7;
-        this.MODE_FIGHT = 8;
-        this.MODE_RAIN = 9;
+        this.geometricTargets = new Map();
+        this.springKBase = 0.15;
+        this.currentVisibleCount = this.sphereCount;
 
         this.setScreenshotText(this.title);
     }
@@ -68,11 +103,11 @@ export class Scene19 extends SceneBase {
         if (phase === 0) {
             this.currentMode = this.MODE_DEFAULT;
             this.modeTimer = 0;
+            this.sequenceIndex = 0;
             this.particles.forEach(p => {
                 p.position.set(0, 200, 0);
                 p.velocity.set(0, 0, 0);
             });
-            this.useGravity = false;
         }
     }
 
@@ -105,28 +140,18 @@ export class Scene19 extends SceneBase {
             labelMax: 256
         });
 
-        // HDRI読み込み
         try {
-            const envMap = await loadHdrCached(hdriUrl);
-            envMap.mapping = THREE.EquirectangularReflectionMapping;
-            this.scene.environment = envMap;
-            this.scene.environmentIntensity = 1.5;
-            this.scene.background = envMap;
-            this.scene.fog = new THREE.FogExp2(0xb5d4e8, 0.00008);
-
+            const envMap = await this.addSkyDomeIfEnabled(hdriUrl);
             this.createSpheres(envMap);
             this.setupShadowLight();
         } catch (e) {
-            console.error('Scene19: HDRI load failed:', e);
+            console.error('Scene19: SkyDome/HDRI load failed:', e);
             this.createSpheres(null);
         }
         this.initPostProcessing();
         this.initialized = true;
     }
 
-    /**
-     * シャドウ用のディレクショナルライト（HDRIの太陽に合わせた位置・HDRIがメイン照明）
-     */
     setupShadowLight() {
         const sunLight = new THREE.DirectionalLight(0xfff5e6, 0.4);
         sunLight.position.set(3000, 8000, 5000);
@@ -158,8 +183,8 @@ export class Scene19 extends SceneBase {
             bumpScale: 0.8
         });
 
-        this.instancedMeshManager = new InstancedMeshManager(this.scene, boxGeo, sphereMat, this.sphereCount);
-        const mainMesh = this.instancedMeshManager.getMainMesh();
+        const manager = new InstancedMeshManager(this.scene, boxGeo, sphereMat, this.sphereCount);
+        const mainMesh = manager.getMainMesh();
         mainMesh.castShadow = true;
         mainMesh.receiveShadow = true;
 
@@ -168,21 +193,41 @@ export class Scene19 extends SceneBase {
             alphaTest: 0.5
         });
 
+        this.instancedMeshManagers.push(manager);
+
+        const creationList = [];
         for (let i = 0; i < this.sphereCount; i++) {
+            creationList.push({ typeIdx: 0, indexInType: i });
+        }
+
+        creationList.forEach((info, idx) => {
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos(2 * Math.random() - 1);
             const r = Math.pow(Math.random(), 1.5) * this.spawnRadius;
             const x = r * Math.sin(phi) * Math.cos(theta);
             const y = r * Math.sin(phi) * Math.sin(theta);
             const z = r * Math.cos(phi);
-            const radius = 10 + Math.pow(Math.random(), 2.0) * 50;
-            const p = new Scene12Particle(x, y, z, radius);
+
+            const sizeRand = Math.random();
+            let baseSize;
+            if (sizeRand < 0.7) baseSize = 5 + Math.random() * 7;
+            else if (sizeRand < 0.95) baseSize = 12 + Math.random() * 13;
+            else baseSize = 25 + Math.random() * 20;
+
+            const scaleX = baseSize * (0.5 + Math.random() * 1.5);
+            const scaleY = baseSize * (0.5 + Math.random() * 1.5);
+            const scaleZ = baseSize * (0.5 + Math.random() * 1.5);
+            const scale = new THREE.Vector3(scaleX, scaleY, scaleZ);
+            const radius = Math.max(scaleX, scaleY, scaleZ) * 0.5;
+
+            const p = new Scene14Particle(x, y, z, radius, scale, 0, idx);
             p.angularVelocity.multiplyScalar(2.0);
             this.particles.push(p);
-            this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, radius);
-        }
 
-        this.instancedMeshManager.markNeedsUpdate();
+            this.instancedMeshManagers[0].setMatrixAt(idx, p.position, p.rotation, p.scale);
+        });
+
+        this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
         this.setParticleCount(this.sphereCount);
     }
 
@@ -244,31 +289,38 @@ export class Scene19 extends SceneBase {
             });
         }
         this.addFilmGrainIfEnabled(0.35, false);
+        this.addLensFlareIfEnabled({ position: new THREE.Vector3(3000, 8000, 5000), intensity: 0.2 });
     }
 
     onUpdate(deltaTime) {
         if (!this.initialized) return;
         this.time += deltaTime;
 
+        this.setParticleCount(this.sphereCount);
+        this.currentVisibleCount = this.sphereCount;
+
+        if (this.instancedMeshManagers.length > 0) {
+            this.instancedMeshManagers.forEach(manager => {
+                const mainMesh = manager.getMainMesh();
+                if (mainMesh) {
+                    mainMesh.count = this.instancesPerType;
+                    mainMesh.instanceMatrix.needsUpdate = true;
+                }
+            });
+        }
+
         this.modeTimer += deltaTime;
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
-            let nextMode;
-            do {
-                nextMode = Math.floor(Math.random() * 10);
-            } while (nextMode === this.currentMode);
-            this.currentMode = nextMode;
-            this.useGravity = (this.currentMode === this.MODE_GRAVITY || this.currentMode === this.MODE_RAIN);
-            if (this.currentMode === this.MODE_RAIN) {
+            const oldMode = this.currentMode;
+            this.sequenceIndex = (this.sequenceIndex + 1) % this.modeSequence.length;
+            this.currentMode = this.modeSequence[this.sequenceIndex];
+
+            if (this.currentMode === this.MODE_SINGULARITY || oldMode === this.MODE_GRAVITY_SHOCK) {
+                this.triggerExpandEffect(100);
+            } else {
                 this.particles.forEach(p => {
-                    p.position.y = 1500 + Math.random() * 1000;
-                    p.velocity.set(0, -10 - Math.random() * 20, 0);
-                });
-            } else if (this.currentMode === this.MODE_FIGHT) {
-                this.particles.forEach((p, idx) => {
-                    const side = (idx % 2 === 0) ? 1 : -1;
-                    p.position.set(side * 800, (Math.random() - 0.5) * 500 + 200, (Math.random() - 0.5) * 1000);
-                    p.velocity.set(-side * 20, 0, 0);
+                    p.velocity.add(new THREE.Vector3((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50));
                 });
             }
         }
@@ -276,139 +328,344 @@ export class Scene19 extends SceneBase {
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
 
-        if (this.useDOF && this.bokehPass && this.instancedMeshManager) {
-            const mainMesh = this.instancedMeshManager.getMainMesh();
-            if (mainMesh) this.updateAutoFocus([mainMesh]);
+        if (this.useDOF && this.bokehPass && this.instancedMeshManagers.length > 0) {
+            const meshes = this.instancedMeshManagers.map(m => m.getMainMesh()).filter(m => !!m);
+            this.updateAutoFocus(meshes);
         }
     }
 
     updatePhysics(deltaTime) {
-        const subSteps = 2;
-        const dt = deltaTime / subSteps;
-        const halfSize = 950;
+        const visibleCount = Math.min(this.currentVisibleCount || 0, this.particles.length);
         const tempVec = new THREE.Vector3();
+        const halfSize = 4950;
 
-        for (let s = 0; s < subSteps; s++) {
-            this.particles.forEach((p, idx) => {
-                if (this.currentMode === this.MODE_SWARM) {
-                    const center = new THREE.Vector3(
-                        Math.sin(this.time * 0.5) * 300,
-                        Math.cos(this.time * 0.7) * 200 + 300,
-                        Math.sin(this.time * 0.3) * 300
-                    );
-                    const tx = center.x + p.targetOffset.x * 0.4;
-                    const ty = center.y + p.targetOffset.y * 0.4;
-                    const tz = center.z + p.targetOffset.z * 0.4;
-                    const springK = 0.05 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_SNAKE) {
-                    const t = this.time * 2.0 - idx * 0.1;
-                    const tx = Math.sin(t) * 500;
-                    const ty = Math.cos(t * 0.5) * 300 + 300;
-                    const tz = Math.sin(t * 0.7) * 500;
-                    const springK = 0.1 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_VORTEX) {
-                    const angle = this.time * 3.0 + p.position.y * 0.01;
-                    const radius = (p.position.y + 500) * 0.3 + 100;
-                    const tx = Math.cos(angle) * radius;
-                    const tz = Math.sin(angle) * radius;
-                    const springK = 0.08 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, 0.5, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                    if (p.position.y > 1500) p.position.y = -450;
-                } else if (this.currentMode === this.MODE_ATOM) {
-                    const speed = 2.0;
-                    const radius = 500 * p.radiusOffset;
-                    const axis = idx % 3;
-                    let tx = 0, ty = 200, tz = 0;
-                    if (axis === 0) {
-                        tx = Math.cos(this.time * speed + p.phaseOffset) * radius;
-                        ty = Math.sin(this.time * speed + p.phaseOffset) * radius + 200;
-                    } else if (axis === 1) {
-                        ty = Math.cos(this.time * speed + p.phaseOffset) * radius + 200;
-                        tz = Math.sin(this.time * speed + p.phaseOffset) * radius;
+        if (this.currentMode !== this.MODE_DEFAULT && !this.geometricTargets.has(this.currentMode)) {
+            this.generateGeometricTargets(this.currentMode);
+        }
+
+        const targets = this.geometricTargets.get(this.currentMode);
+
+        for (let idx = 0; idx < visibleCount; idx++) {
+            const p = this.particles[idx];
+            p.force.set(0, 0, 0);
+
+            if (this.currentMode !== this.MODE_DEFAULT && targets) {
+                const targetPos = targets[idx % targets.length];
+                let tx = targetPos.x + (p.isStray ? p.targetOffset.x * 0.5 : 0);
+                let ty = targetPos.y + (p.isStray ? p.targetOffset.y * 0.5 : 0);
+                let tz = targetPos.z + (p.isStray ? p.targetOffset.z * 0.5 : 0);
+
+                const breatheScale = 1.0 + Math.sin(this.time * 2.0 + (idx % 10)) * 0.05;
+                tx *= breatheScale;
+                ty *= breatheScale;
+                tz *= breatheScale;
+
+                let springK = this.springKBase * p.strayFactor;
+
+                if (this.currentMode === this.MODE_PSYCHIC_COLLAPSE) {
+                    const pauseDuration = 3.0;
+                    if (this.modeTimer < pauseDuration) {
+                        springK = 0;
+                        p.velocity.multiplyScalar(0.85);
                     } else {
-                        tx = Math.cos(this.time * speed + p.phaseOffset) * radius;
-                        tz = Math.sin(this.time * speed + p.phaseOffset) * radius;
+                        const pullProgress = (this.modeTimer - pauseDuration) / (this.modeInterval - pauseDuration);
+                        springK = 0.01 + pullProgress * 0.2;
                     }
-                    const springK = 0.06 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_PULSE) {
-                    const pulse = Math.pow(Math.sin(this.time * 2.0), 4.0);
-                    const radius = (300 + pulse * 400) * p.radiusOffset;
-                    const target = p.targetOffset.clone().normalize().multiplyScalar(radius);
-                    const springK = 0.1 * p.strayFactor;
-                    tempVec.set((target.x - p.position.x) * springK, (target.y + 300 - p.position.y) * springK, (target.z - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_GRID_3D) {
-                    const gridCount = 7;
-                    const spacing = 150;
-                    const gx = idx % gridCount;
-                    const gy = Math.floor(idx / gridCount) % gridCount;
-                    const gz = Math.floor(idx / (gridCount * gridCount));
-                    const tx = (gx - (gridCount - 1) * 0.5) * spacing;
-                    const ty = (gy - (gridCount - 1) * 0.5) * spacing + 400;
-                    const tz = (gz - (gridCount - 1) * 0.5) * spacing;
-                    const springK = 0.15 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_FIGHT) {
-                    const side = (idx % 2 === 0) ? 1 : -1;
-                    const tx = side * (Math.sin(this.time * 5.0) * 200 + 400);
-                    const ty = p.targetOffset.y * 0.5 + 300;
-                    const tz = p.targetOffset.z * 0.5;
-                    const springK = 0.1 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_RAIN) {
-                    p.addForce(this.gravityForce.clone().multiplyScalar(2.0));
-                    if (p.position.y < -450) {
-                        p.position.y = 1500;
-                        p.velocity.y = -10 - Math.random() * 20;
+                } else if (this.currentMode === this.MODE_GRAVITY_SHOCK) {
+                    const explosionDuration = 1.0;
+                    if (this.modeTimer < explosionDuration) {
+                        springK = 0;
+                        if (this.modeTimer < 0.1) {
+                            const dir = p.position.clone().normalize();
+                            p.velocity.add(dir.multiplyScalar(200));
+                        }
+                    } else {
+                        springK = 0.05;
+                        p.addForce(new THREE.Vector3(0, -20, 0));
                     }
-                } else if (this.currentMode === this.MODE_GRAVITY) {
-                    p.addForce(this.gravityForce);
-                } else {
-                    tempVec.copy(p.position).multiplyScalar(-0.002);
-                    p.addForce(tempVec);
                 }
 
-                p.update();
-                p.velocity.multiplyScalar(0.95);
+                tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                p.addForce(tempVec);
 
-                if (this.useWallCollision) {
-                    if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
-                    if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
-                    if (p.position.y > 1500) { p.position.y = 1500; p.velocity.y *= -0.5; }
-                    if (p.position.y < -450) {
-                        p.position.y = -450;
-                        p.velocity.y *= -0.2;
-                        const rollFactor = 0.1 / (p.radius / 30);
-                        p.angularVelocity.z = -p.velocity.x * rollFactor;
-                        p.angularVelocity.x = p.velocity.z * rollFactor;
-                        p.velocity.x *= 0.97;
-                        p.velocity.z *= 0.97;
-                    }
-                    if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.5; }
-                    if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.5; }
+                const centerX = 0, centerZ = 0;
+                const dx = p.position.x - centerX;
+                const dz = p.position.z - centerZ;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist > 10) {
+                    let vortexStrength = p.isStray ? 0.5 : 2.0;
+                    if (this.currentMode === this.MODE_SINGULARITY) vortexStrength *= 5.0;
+                    if (this.currentMode === this.MODE_PSYCHIC_COLLAPSE || this.currentMode === this.MODE_GRAVITY_SHOCK) vortexStrength *= 0.1;
+                    p.addForce(new THREE.Vector3(-dz / dist * vortexStrength, 0, dx / dist * vortexStrength));
                 }
-                p.updateRotation(dt);
-            });
-        }
 
-        if (this.instancedMeshManager) {
-            const mainMesh = this.instancedMeshManager.getMainMesh();
-            if (mainMesh) {
-                this.particles.forEach((p, i) => {
-                    this.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.radius);
-                });
-                this.instancedMeshManager.markNeedsUpdate();
+                let wiggleSpeed = p.isStray ? 0.5 : 2.0;
+                let wiggleStrength = p.isStray ? 3.0 : 5.0;
+                if (this.currentMode === this.MODE_PSYCHIC_COLLAPSE && this.modeTimer < 3.0) wiggleStrength = 0;
+                p.addForce(new THREE.Vector3(
+                    Math.sin(this.time * wiggleSpeed + idx) * wiggleStrength,
+                    Math.cos(this.time * (wiggleSpeed * 0.8) + idx) * wiggleStrength,
+                    Math.sin(this.time * (wiggleSpeed * 0.9) + idx) * wiggleStrength
+                ));
+            } else {
+                const tx = p.targetOffset.x;
+                const ty = p.targetOffset.y + 200;
+                const tz = p.targetOffset.z;
+                const defSpringK = 0.001 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
+                p.addForce(tempVec);
             }
+
+            p.update();
+            p.velocity.multiplyScalar(0.92);
+
+            if (this.useWallCollision) {
+                if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
+                if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
+                if (p.position.y > 4500) { p.position.y = 4500; p.velocity.y *= -0.5; }
+                if (p.position.y < -450) {
+                    p.position.y = -450;
+                    p.velocity.y *= -0.2;
+                    const rollFactor = 0.1 / (p.radius / 30);
+                    p.angularVelocity.z = -p.velocity.x * rollFactor;
+                    p.angularVelocity.x = p.velocity.z * rollFactor;
+                }
+                if (p.position.z > halfSize) { p.position.z = halfSize; p.velocity.z *= -0.5; }
+                if (p.position.z < -halfSize) { p.position.z = -halfSize; p.velocity.z *= -0.5; }
+            }
+            p.updateRotation(deltaTime);
+
+            this.instancedMeshManagers[0].setMatrixAt(idx, p.position, p.rotation, p.scale);
         }
+        this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
+    }
+
+    generateGeometricTargets(mode) {
+        const targets = [];
+        const count = this.sphereCount;
+        const center = new THREE.Vector3(0, 400, 0);
+
+        switch (mode) {
+            case this.MODE_GEOM_SPHERE:
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    const r = 1000;
+                    targets.push(new THREE.Vector3(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta) + 400,
+                        r * Math.cos(phi)
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_CUBE_FRAME:
+                for (let i = 0; i < count; i++) {
+                    const edge = Math.floor(Math.random() * 12);
+                    const t = Math.random();
+                    const s = 1000;
+                    let p = new THREE.Vector3();
+                    if (edge === 0) p.set(s, s, (t - 0.5) * 2 * s);
+                    else if (edge === 1) p.set(s, -s, (t - 0.5) * 2 * s);
+                    else if (edge === 2) p.set(-s, s, (t - 0.5) * 2 * s);
+                    else if (edge === 3) p.set(-s, -s, (t - 0.5) * 2 * s);
+                    else if (edge === 4) p.set(s, (t - 0.5) * 2 * s, s);
+                    else if (edge === 5) p.set(s, (t - 0.5) * 2 * s, -s);
+                    else if (edge === 6) p.set(-s, (t - 0.5) * 2 * s, s);
+                    else if (edge === 7) p.set(-s, (t - 0.5) * 2 * s, -s);
+                    else if (edge === 8) p.set((t - 0.5) * 2 * s, s, s);
+                    else if (edge === 9) p.set((t - 0.5) * 2 * s, s, -s);
+                    else if (edge === 10) p.set((t - 0.5) * 2 * s, -s, s);
+                    else if (edge === 11) p.set((t - 0.5) * 2 * s, -s, -s);
+                    targets.push(p.add(new THREE.Vector3(0, 400, 0)));
+                }
+                break;
+
+            case this.MODE_GEOM_CYLINDER_V:
+                for (let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const r = 600;
+                    const h = (Math.random() - 0.5) * 2000;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h + 400, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_GEOM_DOUBLE_TORUS:
+                for (let i = 0; i < count; i++) {
+                    const t = (i / (count / 2)) * Math.PI * 2;
+                    const r = 300;
+                    const R = 800;
+                    const isSecond = i > count / 2;
+                    const x = (R + r * Math.cos(t)) * Math.cos(t * 2);
+                    const y = (R + r * Math.cos(t)) * Math.sin(t * 2) + 400;
+                    const z = r * Math.sin(t);
+                    if (isSecond) targets.push(new THREE.Vector3(x, z + 400, y - 400));
+                    else targets.push(new THREE.Vector3(x, y, z));
+                }
+                break;
+
+            case this.MODE_GEOM_CONE_UP:
+                for (let i = 0; i < count; i++) {
+                    const h = Math.random();
+                    const r = (1.0 - h) * 1000;
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h * 1800 - 400, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_GEOM_WAVE_GRID: {
+                const gridSize = Math.ceil(Math.sqrt(count));
+                for (let i = 0; i < count; i++) {
+                    const ix = i % gridSize;
+                    const iz = Math.floor(i / gridSize);
+                    const x = (ix / gridSize - 0.5) * 3000;
+                    const z = (iz / gridSize - 0.5) * 3000;
+                    const d = Math.sqrt(x * x + z * z);
+                    const y = Math.sin(d * 0.005) * 300;
+                    targets.push(new THREE.Vector3(x, y + 400, z));
+                }
+                break;
+            }
+
+            case this.MODE_GEOM_HOURGLASS:
+                for (let i = 0; i < count; i++) {
+                    const h = (Math.random() - 0.5) * 2;
+                    const r = Math.abs(h) * 1000;
+                    const theta = Math.random() * Math.PI * 2;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h * 1000 + 400, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_GEOM_SPIRAL_TOWER:
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const theta = t * Math.PI * 16;
+                    const r = 800 * (1.0 - t * 0.5);
+                    const h = t * 2000 - 600;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, h + 400, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_GEOM_DIAMOND:
+                for (let i = 0; i < count; i++) {
+                    const h = (Math.random() - 0.5) * 2;
+                    const side = (1.0 - Math.abs(h)) * 1200;
+                    const x = (Math.random() - 0.5) * side * 2;
+                    const z = (Math.random() - 0.5) * side * 2;
+                    targets.push(new THREE.Vector3(x, h * 1200 + 400, z));
+                }
+                break;
+
+            case this.MODE_GEOM_TORUS_KNOT:
+                for (let i = 0; i < count; i++) {
+                    const t = (i / count) * Math.PI * 2;
+                    const p = 2, q = 3, r = 400, R = 800;
+                    const x = (R + r * Math.cos(q * t)) * Math.cos(p * t);
+                    const y = (R + r * Math.cos(q * t)) * Math.sin(p * t) + 400;
+                    const z = r * Math.sin(q * t);
+                    const offset = new THREE.Vector3((Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100, (Math.random() - 0.5) * 100);
+                    targets.push(new THREE.Vector3(x, y, z).add(offset));
+                }
+                break;
+
+            case this.MODE_GEOM_DNA_HELIX:
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const strand = i % 2 === 0 ? 0 : Math.PI;
+                    const theta = t * Math.PI * 10 + strand;
+                    const r = 400;
+                    const h = t * 2500 - 1250;
+                    let pos = new THREE.Vector3(Math.cos(theta) * r, h + 400, Math.sin(theta) * r);
+                    if (Math.random() < 0.3) {
+                        const lerpT = Math.random();
+                        const otherPos = new THREE.Vector3(Math.cos(theta + Math.PI) * r, h + 400, Math.sin(theta + Math.PI) * r);
+                        pos.lerp(otherPos, lerpT);
+                    }
+                    targets.push(pos);
+                }
+                break;
+
+            case this.MODE_GEOM_SPHERE_SHELLS:
+                for (let i = 0; i < count; i++) {
+                    const layer = i % 3;
+                    const r = 500 + layer * 400;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(2 * Math.random() - 1);
+                    targets.push(new THREE.Vector3(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        r * Math.sin(phi) * Math.sin(theta) + 400,
+                        r * Math.cos(phi)
+                    ));
+                }
+                break;
+
+            case this.MODE_GEOM_SPIRAL_FLAT:
+                for (let i = 0; i < count; i++) {
+                    const t = i / count;
+                    const theta = t * Math.PI * 20;
+                    const r = t * 1500;
+                    targets.push(new THREE.Vector3(Math.cos(theta) * r, 400 + (Math.random() - 0.5) * 50, Math.sin(theta) * r));
+                }
+                break;
+
+            case this.MODE_GEOM_GRID_3D: {
+                const sideCount = Math.ceil(Math.pow(count, 1 / 3));
+                for (let i = 0; i < count; i++) {
+                    const ix = i % sideCount;
+                    const iy = Math.floor(i / sideCount) % sideCount;
+                    const iz = Math.floor(i / (sideCount * sideCount));
+                    targets.push(new THREE.Vector3(
+                        (ix / sideCount - 0.5) * 2000,
+                        (iy / sideCount - 0.5) * 2000 + 400,
+                        (iz / sideCount - 0.5) * 2000
+                    ));
+                }
+                break;
+            }
+
+            case this.MODE_SINGULARITY:
+                for (let i = 0; i < count; i++) {
+                    const r = Math.pow(Math.random(), 5.0) * 500;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    targets.push(new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * r,
+                        Math.cos(phi) * r + 400,
+                        Math.sin(phi) * Math.sin(theta) * r
+                    ));
+                }
+                break;
+
+            case this.MODE_PSYCHIC_COLLAPSE:
+                for (let i = 0; i < count; i++) {
+                    targets.push(new THREE.Vector3(0, 400, 0));
+                }
+                break;
+
+            case this.MODE_GRAVITY_SHOCK:
+                for (let i = 0; i < count; i++) {
+                    targets.push(new THREE.Vector3(
+                        (Math.random() - 0.5) * 8000,
+                        -450,
+                        (Math.random() - 0.5) * 8000
+                    ));
+                }
+                break;
+
+            default:
+                for (let i = 0; i < count; i++) {
+                    const r = Math.random() * 1500;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    targets.push(new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * r,
+                        Math.cos(phi) * r + 400,
+                        Math.sin(phi) * Math.sin(theta) * r
+                    ));
+                }
+                break;
+        }
+        this.geometricTargets.set(mode, targets);
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -425,9 +682,9 @@ export class Scene19 extends SceneBase {
             (Math.random() - 0.5) * this.spawnRadius * 0.4,
             (Math.random() - 0.5) * this.spawnRadius * 0.4
         );
-        const explosionRadius = 800;
+        const explosionRadius = 2000;
         const vFactor = velocity / 127.0;
-        const explosionForce = 40.0 * vFactor;
+        const explosionForce = 250.0 * vFactor;
 
         this.particles.forEach(p => {
             const diff = p.position.clone().sub(center);
@@ -473,10 +730,10 @@ export class Scene19 extends SceneBase {
                 e.mesh.material.dispose();
             }
         });
-        if (this.instancedMeshManager) this.instancedMeshManager.dispose();
-        this.scene.fog = null;
-        this.scene.background = null;
-        this.scene.environment = null;
+        if (this.instancedMeshManagers) {
+            this.instancedMeshManagers.forEach(m => m.dispose());
+            this.instancedMeshManagers = [];
+        }
         super.dispose();
     }
 }

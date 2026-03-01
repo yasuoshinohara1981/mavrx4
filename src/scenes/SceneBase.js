@@ -15,6 +15,9 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
+import { createFlareTexture, createGhostTexture } from '../lib/LensflareTextures.js';
+import { SkyDome } from '../lib/SkyDome.js';
 
 export class SceneBase {
     constructor(renderer, camera) {
@@ -65,6 +68,11 @@ export class SceneBase {
         this.useDOF = false;   // サブクラスで有効化するためのフラグ
         this.filmPass = null;  // フィルムグレイン用のパス
         this.useFilmGrain = false;  // サブクラスで有効化するためのフラグ（Scene12以降でON）
+        this.lensFlare = null;      // レンズフレアオブジェクト
+        this.lensFlareLight = null; // フレア用の光源（位置決め用）
+        this.useLensFlare = false;  // サブクラスで有効化するためのフラグ
+        this.skyDome = null;        // HDRIスカイドーム（Scene19のみ有効）
+        this.useSkyDome = false;    // サブクラスで有効化するためのフラグ
         this.dofParams = {
             focus: 1000,
             aperture: 0.000005,
@@ -290,6 +298,56 @@ export class SceneBase {
         this.filmPass = new FilmPass(intensity, grayscale);
         this.composer.addPass(this.filmPass);
         debugLog('effect', 'FilmGrain (FilmPass) added');
+    }
+
+    /**
+     * レンズフレアを追加（useLensFlareがtrueの場合のみ）
+     * setup()の後、シーンのライト設定が完了した後に呼ぶこと
+     * @param {Object} [options] - オプション
+     * @param {THREE.Vector3} [options.position] - フレアの光源位置（デフォルト: 0, 800, 500）
+     * @param {number} [options.intensity=0.3] - フレアの強さ（控えめに）
+     */
+    addLensFlareIfEnabled(options = {}) {
+        if (!this.useLensFlare) return;
+        if (this.lensFlare) return; // 既に追加済み
+
+        const position = options.position || new THREE.Vector3(0, 800, 500);
+        const intensity = options.intensity ?? 0.3;
+
+        // フレア用の光源（強度0で位置決めのみ、シーン照明には影響しない）
+        this.lensFlareLight = new THREE.PointLight(0xffffff, 0, 10000);
+        this.lensFlareLight.position.copy(position);
+        this.scene.add(this.lensFlareLight);
+
+        // プロシージャルテクスチャで軽量フレアを構築
+        const tex0 = createFlareTexture(128, 0.4);
+        const tex1 = createFlareTexture(64, 0.6);
+        const tex2 = createGhostTexture(32, 128);
+
+        this.lensFlare = new Lensflare();
+        this.lensFlare.addElement(new LensflareElement(tex0, 200 * intensity, 0, new THREE.Color(0xffffff)));
+        this.lensFlare.addElement(new LensflareElement(tex1, 80 * intensity, 0.4, new THREE.Color(0xffffee)));
+        this.lensFlare.addElement(new LensflareElement(tex2, 60 * intensity, 0.7, new THREE.Color(0xffffdd)));
+
+        this.lensFlareLight.add(this.lensFlare);
+        debugLog('effect', 'LensFlare added');
+    }
+
+    /**
+     * HDRIスカイドームを適用（useSkyDomeがtrueの場合のみ）
+     * 使用するHDRIは引数でシーン側から渡す
+     * @param {string} hdriUrl - HDRIファイルのURL（importで取得したものを渡す）
+     * @param {Object} [options] - SkyDome.setupのオプション
+     * @returns {Promise<THREE.Texture|null>} envMap（マテリアル用）、無効時はnull
+     */
+    async addSkyDomeIfEnabled(hdriUrl, options = {}) {
+        if (!this.useSkyDome) return null;
+        if (this.skyDome) return this.skyDome.envMap; // 既に適用済み
+
+        this.skyDome = new SkyDome(this.scene);
+        const envMap = await this.skyDome.setup(hdriUrl, options);
+        debugLog('effect', 'SkyDome added');
+        return envMap;
     }
 
     /**
@@ -1085,6 +1143,22 @@ export class SceneBase {
             }
         }
         
+        // スカイドームの破棄
+        if (this.skyDome) {
+            this.skyDome.dispose();
+            this.skyDome = null;
+        }
+
+        // レンズフレアの破棄
+        if (this.lensFlare) {
+            if (this.lensFlare.dispose) this.lensFlare.dispose();
+            this.lensFlare = null;
+        }
+        if (this.lensFlareLight && this.scene) {
+            this.scene.remove(this.lensFlareLight);
+            this.lensFlareLight = null;
+        }
+
         // フィルムグレインの破棄
         if (this.filmPass) {
             this.filmPass.dispose();

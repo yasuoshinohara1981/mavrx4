@@ -48,6 +48,7 @@ export class Scene13 extends SceneBase {
         this.useBloom = true; 
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
+        this.useFilmGrain = true;     // フィルムグレインON
         this.bloomPass = null;
         this.ssaoPass = null;
 
@@ -377,6 +378,7 @@ export class Scene13 extends SceneBase {
                 maxblur: 0.003
             });
         }
+        this.addFilmGrainIfEnabled(0.35, false);
     }
 
     handlePhase(phase) {

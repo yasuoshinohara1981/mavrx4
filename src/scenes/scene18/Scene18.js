@@ -49,6 +49,7 @@ export class Scene18 extends SceneBase {
         // エフェクト設定
         this.useDOF = true; 
         this.useBloom = true; 
+        this.useFilmGrain = true;     // フィルムグレインON
         this.bloomPass = null;
 
         // ストロボエフェクト管理
@@ -1586,6 +1587,7 @@ export class Scene18 extends SceneBase {
                 maxblur: 0.005
             });
         }
+        this.addFilmGrainIfEnabled(0.35, false);
     }
 
     handleTrackNumber(trackNumber, message) {

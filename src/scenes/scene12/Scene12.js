@@ -51,6 +51,7 @@ export class Scene12 extends SceneBase {
         this.useSSAO = false; // 重いのでオフ
         this.useWallCollision = true; // 壁判定オン
         this.useTacoFeet = true;      // 赤い足オン
+        this.useFilmGrain = true;     // フィルムグレインON
         this.bloomPass = null;
         this.ssaoPass = null;
 
@@ -383,6 +384,7 @@ export class Scene12 extends SceneBase {
                 maxblur: 0.003
             });
         }
+        this.addFilmGrainIfEnabled(0.35, false);
     }
 
     onUpdate(deltaTime) {

@@ -62,6 +62,7 @@ export class Scene16 extends SceneBase {
         // エフェクト設定
         this.useDOF = true; // SceneBaseのフラグを使用
         this.useBloom = true; 
+        this.useFilmGrain = true;     // フィルムグレインON
         this.bloomPass = null;
 
         this.trackEffects = {
@@ -405,6 +406,7 @@ export class Scene16 extends SceneBase {
                 maxblur: 0.005
             });
         }
+        this.addFilmGrainIfEnabled(0.35, false);
     }
 
     /**

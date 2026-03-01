@@ -14,6 +14,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
 
 export class SceneBase {
     constructor(renderer, camera) {
@@ -62,6 +63,8 @@ export class SceneBase {
         
         this.bokehPass = null; // 被写界深度（DOF）用のパス
         this.useDOF = false;   // サブクラスで有効化するためのフラグ
+        this.filmPass = null;  // フィルムグレイン用のパス
+        this.useFilmGrain = false;  // サブクラスで有効化するためのフラグ（Scene12以降でON）
         this.dofParams = {
             focus: 1000,
             aperture: 0.000005,
@@ -269,6 +272,24 @@ export class SceneBase {
         this.composer.addPass(this.bokehPass);
         
         debugLog('effect', 'DOF (BokehPass) initialized');
+    }
+
+    /**
+     * フィルムグレインを追加（useFilmGrainがtrueの場合のみ）
+     * initPostProcessingの最後で呼ぶこと
+     * @param {number} [intensity=0.35] - グレイン強度
+     * @param {boolean} [grayscale=false] - グレースケール化するか
+     */
+    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false) {
+        if (!this.useFilmGrain) return;
+        if (!this.composer) {
+            this.composer = new EffectComposer(this.renderer);
+            this.composer.addPass(new RenderPass(this.scene, this.camera));
+        }
+        if (this.filmPass) return; // 既に追加済み
+        this.filmPass = new FilmPass(intensity, grayscale);
+        this.composer.addPass(this.filmPass);
+        debugLog('effect', 'FilmGrain (FilmPass) added');
     }
 
     /**
@@ -1064,12 +1085,22 @@ export class SceneBase {
             }
         }
         
+        // フィルムグレインの破棄
+        if (this.filmPass) {
+            this.filmPass.dispose();
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.filmPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.filmPass = null;
+        }
+
         // EffectComposerを破棄
         if (this.composer) {
             this.composer.dispose();
             this.composer = null;
         }
-        
+
         // DOFの破棄
         if (this.bokehPass) {
             this.bokehPass.enabled = false;

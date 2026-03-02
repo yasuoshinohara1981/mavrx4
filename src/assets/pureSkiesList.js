@@ -1,11 +1,28 @@
 /**
- * pure_skies HDRI（src/assets/hdri/pure_skies/ 配下）
+ * HDRI（src/assets/hdri/ 配下の全フォルダ）
  * import.meta.glob でビルド時に取り込み、ランダム選択
+ * nature, pure_skies, urban など全HDRIから選択
+ *
+ * 光源設定: hdriLightConfig.json があればそれを優先（scripts/analyze-hdri-lights.mjs で事前解析）
+ * なければファイル名キーワードから推定
  */
 
-// ビルド時に src/assets/hdri/pure_skies/*.exr をすべて取り込む
-const hdriModules = import.meta.glob('./hdri/pure_skies/*.exr', { eager: true, as: 'url' });
-const hdriEntries = Object.entries(hdriModules);
+import hdriLightConfig from './hdriLightConfig.json';
+
+// ビルド時に src/assets/hdri/**/*.exr と *.hdr をすべて取り込む
+const exrModules = import.meta.glob('./hdri/**/*.exr', { eager: true, as: 'url' });
+const hdrModules = import.meta.glob('./hdri/**/*.hdr', { eager: true, as: 'url' });
+const hdriModules = { ...exrModules, ...hdrModules };
+
+// フォルダごとにグループ化（nature / pure_skies / urban を均等に選ぶため）
+const hdriByFolder = {};
+for (const [path, url] of Object.entries(hdriModules)) {
+  const match = path.match(/hdri\/([^/]+)\//);
+  const folder = match ? match[1] : 'other';
+  if (!hdriByFolder[folder]) hdriByFolder[folder] = [];
+  hdriByFolder[folder].push([path, url]);
+}
+const folderNames = Object.keys(hdriByFolder).filter(f => hdriByFolder[f].length > 0);
 
 /** ファイル名から光源・フレア設定を推定 */
 function getLightConfigFromFilename(filename) {
@@ -21,7 +38,7 @@ function getLightConfigFromFilename(filename) {
       fogDensity: 0.00012
     };
   }
-  if (name.includes('sunset') || name.includes('dusk') || name.includes('dawn') || name.includes('sunrise') || name.includes('evening')) {
+  if (name.includes('sunset') || name.includes('dusk') || name.includes('dawn') || name.includes('sunrise') || name.includes('evening') || name.includes('fire')) {
     return {
       sunPosition: { x: 2500, y: 2000, z: 8500 },
       sunColor: 0xffcc88,
@@ -89,11 +106,12 @@ function getLightConfigFromFilename(filename) {
 
 /**
  * ランダムに1つ選んで URL と光源・フレア設定を返す
- * src/assets/hdri/pure_skies/ 内の全ファイルから選択
+ * フォルダ（nature / pure_skies / urban）を均等確率で選んでから、その中から1つ選ぶ
+ * → pure_skies が60個でも urban が1個でも、選ばれる確率は同じになる
  */
 export function getRandomPureSky() {
-  if (hdriEntries.length === 0) {
-    console.warn('pureSkiesList: No HDRI files found in src/assets/hdri/pure_skies/');
+  if (folderNames.length === 0) {
+    console.warn('pureSkiesList: No HDRI files found in src/assets/hdri/');
     return {
       url: '',
       filename: '(none)',
@@ -106,9 +124,18 @@ export function getRandomPureSky() {
       fogDensity: 0.00008
     };
   }
-  const [path, url] = hdriEntries[Math.floor(Math.random() * hdriEntries.length)];
-  const filename = path.split('/').pop() || path;
-  const config = getLightConfigFromFilename(filename);
+  // 1. フォルダを均等確率で選択
+  const folder = folderNames[Math.floor(Math.random() * folderNames.length)];
+  const entries = hdriByFolder[folder];
+  // 2. そのフォルダ内からランダムに1つ選択
+  const [globPath, url] = entries[Math.floor(Math.random() * entries.length)];
+  const filename = globPath.split('/').pop() || globPath.split('\\').pop() || globPath;
+  // hdriLightConfig のキー形式: "pure_skies/xxx.exr"
+  const configKey = globPath.replace(/^.*hdri[/\\]/, '').replace(/^[/\\]/, '');
+  const analyzedConfig = hdriLightConfig[configKey];
+  const config = analyzedConfig
+    ? { ...analyzedConfig, sunPosition: { ...analyzedConfig.sunPosition } }
+    : getLightConfigFromFilename(filename);
   return {
     url,
     filename,

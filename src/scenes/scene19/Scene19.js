@@ -1,6 +1,7 @@
 /**
- * Scene19: HDRI Sky Dome + 反射球体群
+ * Scene19: HDRI Sky Dome + 透明ガラスBox群
  * pure_skies からランダムに1つ選んで適用 + Scene14風の幾何学モード
+ * transmission で光透過を表現したガラス風のBox
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -26,8 +27,8 @@ export class Scene19 extends SceneBase {
         this.raycaster = new THREE.Raycaster();
 
         this.partTypes = 1;
-        this.instancesPerType = 10000;
-        this.sphereCount = 10000;
+        this.instancesPerType = 7000;
+        this.sphereCount = 7000;
         this.spawnRadius = 1200;
         this.instancedMeshManagers = [];
         this.particles = [];
@@ -209,17 +210,18 @@ export class Scene19 extends SceneBase {
 
     createSpheres(envMap) {
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-        const bumpMap = this.generateBumpMap();
+        // 軽量な透明ガラス風マテリアル（白飛びしないよう反射・clearcoat を控えめに）
         const sphereMat = new THREE.MeshPhysicalMaterial({
-            color: 0xffffff,
-            metalness: 0.05,
-            roughness: 0.12,
+            color: 0xe8f0f8,
+            metalness: 0,
+            roughness: 0.15,
             envMap: envMap,
-            envMapIntensity: 0.6,
-            clearcoat: 0.5,
-            clearcoatRoughness: 0.08,
-            bumpMap: bumpMap,
-            bumpScale: 2.0
+            envMapIntensity: 0.5,
+            clearcoat: 0.35,
+            clearcoatRoughness: 0.1,
+            transparent: true,
+            opacity: 0.5,
+            side: THREE.DoubleSide
         });
 
         const manager = new InstancedMeshManager(this.scene, boxGeo, sphereMat, this.sphereCount);
@@ -261,45 +263,6 @@ export class Scene19 extends SceneBase {
 
         this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
         this.setParticleCount(this.sphereCount);
-    }
-
-    generateBumpMap() {
-        const size = 256;
-        const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#808080';
-        ctx.fillRect(0, 0, size, size);
-
-        for (let i = 0; i < 500; i++) {
-            const x = Math.random() * size;
-            const y = Math.random() * size;
-            const r = 1.5 + Math.random() * 2.5;
-            const isBump = Math.random() > 0.5;
-            ctx.fillStyle = isBump ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        for (let i = 0; i < 50; i++) {
-            const x = Math.random() * size;
-            const y = Math.random() * size;
-            const r = 10 + Math.random() * 25;
-            const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-            const val = Math.random() > 0.5 ? 255 : 0;
-            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.45)`);
-            grad.addColorStop(1, 'rgba(128, 128, 128, 0)');
-            ctx.fillStyle = grad;
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        const tex = new THREE.CanvasTexture(canvas);
-        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-        return tex;
     }
 
     initPostProcessing() {

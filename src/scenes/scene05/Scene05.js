@@ -1341,19 +1341,7 @@ export class Scene05 extends SceneBase {
         if (this.SHOW_CAMERA_DEBUG && this.debugScene) {
             // 診断ログ（一時的）
             if (!this._debugLogged) {
-                console.log('[Scene05 Debug]', {
-                    debugScene: !!this.debugScene,
-                    debugSceneChildren: this.debugScene?.children?.length,
-                    cameraDebugGroup: !!this.cameraDebugGroup,
-                    cameraDebugGroupVisible: this.cameraDebugGroup?.visible,
-                    cameraDebugGroupParent: this.cameraDebugGroup?.parent?.uuid === this.debugScene?.uuid ? 'debugScene' : 'other',
-                    cameraDebugGroupChildren: this.cameraDebugGroup?.children?.length,
-                    cameraDebugSpheres: this.cameraDebugSpheres?.length,
-                    firstSphereVisible: this.cameraDebugSpheres?.[0]?.visible,
-                    firstSphereParent: this.cameraDebugSpheres?.[0]?.parent?.uuid === this.cameraDebugGroup?.uuid ? 'cameraDebugGroup' : 'other',
-                    cameraParticles: this.cameraParticles?.length
-                });
-                this._debugLogged = true;
+this._debugLogged = true;
             }
             
             // debugSceneの背景を確実に透明にする

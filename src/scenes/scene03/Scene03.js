@@ -107,8 +107,7 @@ export class Scene03 extends SceneBase {
         if (this.useSharedResources && this.sharedResourceManager) {
             // 共有リソースから取得（既に初期化済み）
             this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene03');
-            console.log('[Scene03] 共有リソースからGPUパーティクルシステムを取得');
-        } else {
+} else {
             // 通常通り新規作成
         this.gpuParticleSystem = new GPUParticleSystem(
             this.renderer,
@@ -699,9 +698,7 @@ export class Scene03 extends SceneBase {
      * デュレーション: 中心部まで届くようなクレーターの長さ（depth）
      */
     createCrater(velocity = 127.0, durationMs = 0.0) {
-        console.log(`[Scene03] createCrater called: velocity=${velocity}, durationMs=${durationMs}`);
-        
-        // ランダムな位置を生成（球面上）
+// ランダムな位置を生成（球面上）
         const latitude = (Math.random() - 0.5) * Math.PI;  // -PI/2 〜 PI/2
         const longitude = Math.random() * Math.PI * 2;  // 0 〜 2*PI
         
@@ -734,7 +731,6 @@ export class Scene03 extends SceneBase {
             age: 0.0  // 年齢（時間経過で徐々に凹む）
         });
         
-        console.log(`[Scene03] Crater created: lat=${latitude.toFixed(3)}, lon=${longitude.toFixed(3)}, velocity=${velocity}, duration=${durationMs}ms, radius=${radius.toFixed(3)}, depth=${depth.toFixed(1)}, totalCraters=${this.craters.length}`);
     }
     
     /**
@@ -764,16 +760,14 @@ export class Scene03 extends SceneBase {
             const velocity = args[0] || 127.0;
             const noteNumber = args[1] || 64.0;
             const durationMs = args[2] || 0.0;
-            console.log(`[Scene03] Track 5: velocity=${velocity}, durationMs=${durationMs}`);
-            this.createCrater(velocity, durationMs);
+this.createCrater(velocity, durationMs);
         }
         // トラック6: レーザースキャンエフェクト（ベロシティとデュレーションに応じて）
         else if (trackNumber === 6) {
             const velocity = args[0] || 127.0;
             const noteNumber = args[1] || 64.0;
             const durationMs = args[2] || 0.0;
-            console.log(`[Scene03] Track 6: velocity=${velocity}, durationMs=${durationMs}`);
-            this.applyLaserScan(velocity, noteNumber, durationMs);
+this.applyLaserScan(velocity, noteNumber, durationMs);
         }
     }
     
@@ -807,7 +801,6 @@ export class Scene03 extends SceneBase {
             this.chromaticAberrationEndTime = 0;
         }
         
-        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -840,7 +833,6 @@ export class Scene03 extends SceneBase {
             this.glitchEndTime = 0;
         }
         
-        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -872,7 +864,6 @@ export class Scene03 extends SceneBase {
             this.laserScans.shift();  // 古いスキャンを削除
         }
         
-        console.log(`Track 6: Laser scan applied (velocity: ${velocity}, note: ${noteNumber}, speed: ${speed.toFixed(3)}, intensity: ${intensity.toFixed(2)}, duration: ${durationMs}ms, totalScans: ${this.laserScans.length})`);
     }
     
     /**
@@ -1151,9 +1142,7 @@ export class Scene03 extends SceneBase {
      * GPUパーティクルシステム以外の要素をクリーンアップ
      */
     cleanupSceneSpecificElements() {
-        console.log('Scene03.cleanupSceneSpecificElements: シーン固有要素をクリーンアップ');
-        
-        // 線描画システムを破棄
+// 線描画システムを破棄
         if (this.lineSystem) {
             this.lineSystem.children.forEach(line => {
                 if (line.geometry) line.geometry.dispose();
@@ -1182,9 +1171,7 @@ export class Scene03 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene03.dispose: クリーンアップ開始');
-        
-        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
+// GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
@@ -1194,8 +1181,7 @@ export class Scene03 extends SceneBase {
             if (this.useSharedResources && this.sharedResourceManager) {
                 // 共有リソースの場合は返却のみ（disposeしない）
                 this.sharedResourceManager.releaseGPUParticleSystem('scene03');
-                console.log('[Scene03] 共有リソースを返却（メモリ上には保持）');
-            } else {
+} else {
                 // 通常の場合はdispose
             this.gpuParticleSystem.dispose();
             }
@@ -1251,10 +1237,7 @@ export class Scene03 extends SceneBase {
             this.composer.dispose();
             this.composer = null;
         }
-        
-        console.log('Scene03.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ
+// 親クラスのdisposeを呼ぶ
         super.dispose();
     }
 }

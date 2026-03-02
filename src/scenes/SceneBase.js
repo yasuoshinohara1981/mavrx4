@@ -344,6 +344,12 @@ export class SceneBase {
         if (!this.useSkyDome) return null;
         if (this.skyDome) return this.skyDome.envMap; // 既に適用済み
 
+        this.skyDomeLightConfig = {
+            position: options.sunPosition ? new THREE.Vector3().copy(options.sunPosition) : null,
+            color: options.sunColor ?? 0xffffff,
+            intensity: options.sunIntensity ?? 0.5
+        };
+
         this.skyDome = new SkyDome(this.scene);
         const envMap = await this.skyDome.setup(hdriUrl, options);
         debugLog('effect', 'SkyDome added');
@@ -848,7 +854,6 @@ export class SceneBase {
     handleOSC(message) {
         // デバッグ: 全てのOSCメッセージをログ出力（/phase/確認用）
         if (message.address && (message.address.includes('phase') || message.address.includes('Phase'))) {
-            console.log('[SceneBase] OSC message received:', JSON.stringify(message));
         }
         
         // /phase/メッセージを処理（/phase/ または /phase の両方に対応）
@@ -858,7 +863,6 @@ export class SceneBase {
                 const phaseValue = typeof args[0] === 'number' ? args[0] : parseFloat(args[0]);
                 if (!isNaN(phaseValue)) {
                     this.phase = Math.floor(phaseValue);  // integerとして保存
-                    console.log(`[SceneBase] Phase updated: ${this.phase} (from ${message.address}, args: ${JSON.stringify(args)})`);
                 }
             }
             return;  // 処理済み
@@ -1148,6 +1152,7 @@ export class SceneBase {
             this.skyDome.dispose();
             this.skyDome = null;
         }
+        this.skyDomeLightConfig = null;
 
         // レンズフレアの破棄
         if (this.lensFlare) {
@@ -1329,8 +1334,7 @@ export class SceneBase {
     takeScreenshot(is16_9) {
         // 既にスクリーンショット処理中の場合はスキップ
         if (this.pendingScreenshot || this.screenshotExecuting) {
-            console.log('⚠️ スクリーンショット処理中です');
-            return;
+return;
         }
         
         if (!this.renderer || !this.renderer.domElement) {
@@ -1433,8 +1437,7 @@ export class SceneBase {
         this.pendingScreenshot = true;
         this.pendingScreenshotFilename = filename;
         this.screenshotTextEndTime = Date.now() + 3000; // 3秒後（余裕を持たせる）
-        console.log('📸 スクリーンショット予約:', filename, 'is16_9:', is16_9);
-    }
+}
     
     /**
      * スクリーンショットテキストを描画
@@ -1494,27 +1497,14 @@ export class SceneBase {
         // スクリーンショットを実行（テキスト表示後に）
         // 注意: executePendingScreenshot()は1回だけ実行されるように、フラグをチェック
         if (this.pendingScreenshot && !this.screenshotExecuting) {
-            console.log('📸 スクリーンショット実行準備完了', {
-                pendingScreenshot: this.pendingScreenshot,
-                showScreenshotText: this.showScreenshotText,
-                screenshotExecuting: this.screenshotExecuting,
-                filename: this.pendingScreenshotFilename
-            });
-            // 次のフレームで実行するように遅延（テキストが確実に描画されるように）
+// 次のフレームで実行するように遅延（テキストが確実に描画されるように）
             // 2フレーム待ってから実行（テキストが確実に描画されるように）
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     if (this.pendingScreenshot && this.showScreenshotText && !this.screenshotExecuting) {
-                        console.log('📸 executePendingScreenshot呼び出し');
-                        this.executePendingScreenshot();
+this.executePendingScreenshot();
                     } else {
-                        console.log('⚠️ スクリーンショット実行条件を満たしていません', {
-                            pendingScreenshot: this.pendingScreenshot,
-                            showScreenshotText: this.showScreenshotText,
-                            screenshotExecuting: this.screenshotExecuting,
-                            filename: this.pendingScreenshotFilename
-                        });
-                    }
+}
                 });
             });
         }
@@ -1609,8 +1599,7 @@ export class SceneBase {
                 };
                 
                 // サーバーに送信
-                console.log('📸 サーバーに送信開始:', filename);
-                fetch('http://localhost:3001/api/screenshot', {
+fetch('http://localhost:3001/api/screenshot', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1618,13 +1607,11 @@ export class SceneBase {
                     body: JSON.stringify(requestData)
                 })
                 .then(response => {
-                    console.log('📸 サーバー応答受信:', response.status, response.statusText);
-                    return response.json();
+return response.json();
                 })
                 .then(data => {
                     if (data.success) {
-                        console.log('✅ スクリーンショット保存成功:', data.path);
-                        debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
+debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
                     } else {
                         console.error('❌ スクリーンショット保存エラー:', data.error);
                     }
@@ -1761,9 +1748,7 @@ export class SceneBase {
         if (this.scene) {
             this.scene.add(this.gridRuler3D.group);
         }
-        
-        console.log('[SceneBase] 3Dグリッドとルーラーを初期化しました');
-    }
+}
     
     /**
      * カメラデバッグ用オブジェクトを初期化

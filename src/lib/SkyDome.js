@@ -24,6 +24,7 @@ export class SkyDome {
      * @param {number} [options.fogColor=0xb5d4e8] - フォグの色
      * @param {number} [options.fogDensity=0.00008] - フォグの密度
      * @param {boolean} [options.fog=true] - フォグを有効にするか
+     * @param {Object} [options.rotation] - HDRIの回転（rad）{x,y,z} で光源とHDRIを合わせる
      * @returns {Promise<THREE.Texture>} envMap（マテリアルのenvMapに渡す用）
      */
     async setup(hdriUrl, options = {}) {
@@ -35,6 +36,12 @@ export class SkyDome {
         this.scene.environment = envMap;
         this.scene.environmentIntensity = options.environmentIntensity ?? 1.5;
         this.scene.background = envMap;
+
+        if (options.rotation) {
+            const r = options.rotation;
+            this.scene.backgroundRotation = new THREE.Euler(r.x ?? 0, r.y ?? 0, r.z ?? 0);
+            this.scene.environmentRotation = new THREE.Euler(r.x ?? 0, r.y ?? 0, r.z ?? 0);
+        }
 
         if (options.fog !== false) {
             this.scene.fog = new THREE.FogExp2(
@@ -55,6 +62,8 @@ export class SkyDome {
             this.scene.environment = null;
             this.scene.background = null;
             this.scene.fog = null;
+            this.scene.backgroundRotation = null;
+            this.scene.environmentRotation = null;
         }
         this.envMap = null;
     }

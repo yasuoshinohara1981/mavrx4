@@ -101,8 +101,7 @@ export class Scene01 extends SceneBase {
         if (this.useSharedResources && this.sharedResourceManager) {
             // 共有リソースから取得（既に初期化済み）
             this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene01');
-            console.log('[Scene01] 共有リソースからGPUパーティクルシステムを取得');
-        } else {
+} else {
             // 通常通り新規作成
         this.gpuParticleSystem = new GPUParticleSystem(
             this.renderer,
@@ -621,9 +620,7 @@ export class Scene01 extends SceneBase {
      * GPUパーティクルシステム以外の要素をクリーンアップ
      */
     cleanupSceneSpecificElements() {
-        console.log('Scene01.cleanupSceneSpecificElements: シーン固有要素をクリーンアップ');
-        
-        // ミサイルを破棄
+// ミサイルを破棄
         this.missiles.forEach(missile => {
             if (missile.dispose) {
                 missile.dispose(this.scene);
@@ -691,9 +688,7 @@ export class Scene01 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene01.dispose: クリーンアップ開始');
-        
-        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
+// GPUパーティクルシステムを破棄（共有リソースを使っている場合は返却のみ）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
@@ -703,8 +698,7 @@ export class Scene01 extends SceneBase {
             if (this.useSharedResources && this.sharedResourceManager) {
                 // 共有リソースの場合は返却のみ（disposeしない）
                 this.sharedResourceManager.releaseGPUParticleSystem('scene01');
-                console.log('[Scene01] 共有リソースを返却（メモリ上には保持）');
-            } else {
+} else {
                 // 通常の場合はdispose
             this.gpuParticleSystem.dispose();
             }
@@ -787,10 +781,7 @@ export class Scene01 extends SceneBase {
         // LFOをクリア
         this.noiseScaleLFO = null;
         this.noiseStrengthLFO = null;
-        
-        console.log('Scene01.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ（最後に呼ぶ）
+// 親クラスのdisposeを呼ぶ（最後に呼ぶ）
         super.dispose();
     }
 }

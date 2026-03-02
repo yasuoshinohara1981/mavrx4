@@ -108,9 +108,7 @@ async function initSharedResourceManager() {
     sharedResourceManager = new SharedResourceManager(renderer);
     
     // 初期化（最大量のリソースを事前に作成）
-    console.log('[main] 共有リソースマネージャーを初期化中...');
-    await sharedResourceManager.init();
-    console.log('[main] 共有リソースマネージャー初期化完了');
+await sharedResourceManager.init();
 }
 
 // ============================================
@@ -125,10 +123,8 @@ function initSceneManager() {
     
     // モード表示
     if (IS_DEVELOPMENT_MODE) {
-        console.log(`[main] 開発モード: デフォルトシーン（Scene ${DEFAULT_SCENE_INDEX + 1}）のみ読み込み`);
-    } else {
-        console.log('[main] ライブモード: 全てのシーンをプリロード');
-    }
+} else {
+}
     
     // シーン切り替え時のコールバック
     sceneManager.onSceneChange = (sceneName) => {
@@ -183,8 +179,7 @@ function onWindowResize() {
 function toggleFullscreen() {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
-            console.log('フルスクリーンエラー:', err);
-        });
+});
     } else {
         document.exitFullscreen();
     }
@@ -257,12 +252,10 @@ function handleKeyDown(e) {
             sceneManager.globalShowHUD = !sceneManager.globalShowHUD;
             // 現在のシーンにも適用
             currentScene.showHUD = sceneManager.globalShowHUD;
-            console.log('HUD:', sceneManager.globalShowHUD ? 'ON' : 'OFF');
-        } else {
+} else {
             // フォールバック（sceneManagerがない場合）
             currentScene.showHUD = !currentScene.showHUD;
-            console.log('HUD:', currentScene.showHUD ? 'ON' : 'OFF');
-        }
+}
         return;
     }
     
@@ -312,8 +305,7 @@ function handleKeyDown(e) {
         e.preventDefault();
         if (currentScene.reset) {
             currentScene.reset();
-            console.log('Scene reset');
-        }
+}
         return;
     }
     
@@ -368,14 +360,12 @@ function handleKeyUp(e) {
     if (e.key === 'l' || e.key === 'L') {
         // Lキーで線描画の切り替え
         currentScene.SHOW_LINES = !currentScene.SHOW_LINES;
-        console.log('SHOW_LINES:', currentScene.SHOW_LINES);
-    }
+}
     
     if (e.key === 'p' || e.key === 'P') {
         // Pキーでパーティクル表示の切り替え
         currentScene.SHOW_PARTICLES = !currentScene.SHOW_PARTICLES;
-        console.log('SHOW_PARTICLES:', currentScene.SHOW_PARTICLES);
-    }
+}
     
     // g/Gキーで3Dグリッドとルーラーの表示/非表示を切り替え
     if (e.key === 'g' || e.key === 'G') {
@@ -384,8 +374,7 @@ function handleKeyUp(e) {
             // 既に初期化されている場合は表示/非表示を切り替え
             currentScene.showGridRuler3D = !currentScene.showGridRuler3D;
             currentScene.gridRuler3D.setVisible(currentScene.showGridRuler3D);
-            console.log('GridRuler3D:', currentScene.showGridRuler3D ? 'ON' : 'OFF');
-        } else {
+} else {
             // 初期化されていない場合はデフォルトパラメータで初期化
             currentScene.showGridRuler3D = true;
             currentScene.initGridRuler3D({
@@ -396,8 +385,7 @@ function handleKeyUp(e) {
                 floorDivisions: 40,
                 labelMax: 64
             });
-            console.log('GridRuler3D: 初期化して表示しました');
-        }
+}
     }
     
     // c/Cキーでカメラデバッグ表示の切り替え（Scene04専用）
@@ -421,7 +409,6 @@ function resetKeyStates() {
  */
 function handleWindowBlur() {
     resetKeyStates();
-    console.log('Window blur: キー状態をリセット');
 }
 
 /**
@@ -430,8 +417,7 @@ function handleWindowBlur() {
 function handleVisibilityChange() {
     if (document.hidden) {
         resetKeyStates();
-        console.log('Page hidden: キー状態をリセット');
-    }
+}
 }
 
 // キーイベントリスナーを登録
@@ -464,16 +450,12 @@ async function init() {
     setTimeout(() => {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(err => {
-                console.log('フルスクリーンエラー（自動起動失敗）:', err);
-                console.log('F11キーで手動フルスクリーンにできます');
             });
         }
     }, 500);
     
     // アニメーション開始
     animate();
-    
-    console.log('Three.js MAVRX4 Live Visual 起動完了');
 }
 
 // DOM読み込み後に初期化

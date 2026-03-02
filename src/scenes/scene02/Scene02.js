@@ -212,8 +212,7 @@ export class Scene02 extends SceneBase {
                         transparent: true,
                         side: THREE.DoubleSide
                     });
-                    console.log('Scene02 sphere shader loaded successfully');
-                } else {
+} else {
                     console.warn('Could not load Scene02 sphere shader files. Using fallback rendering.');
                     this.useShaderRendering = false;
                 }
@@ -247,8 +246,7 @@ export class Scene02 extends SceneBase {
                         transparent: true,
                         side: THREE.DoubleSide
                     });
-                    console.log('Scene02 line shader loaded successfully');
-                } else {
+} else {
                     console.warn('Could not load Scene02 line shader files. Using fallback rendering.');
                     this.useShaderLineRendering = false;
                 }
@@ -665,9 +663,7 @@ export class Scene02 extends SceneBase {
         const lightness = 50.0;   // 明度50%（濃い赤）
         
         // デバッグ用ログ（ベロシティと色の対応を確認）
-        console.log(`createRedSphere - velocity: ${velocity}, hue: ${hue}, saturation: ${saturation}, lightness: ${lightness}`);
-        
-        // 赤いsphereを作成（DOFエフェクト用にカメラを渡す）
+// 赤いsphereを作成（DOFエフェクト用にカメラを渡す）
         const redSphere = new Scene02_RedSphere(position, hue, saturation, lightness, this.scene, this.sphereGroup, this.useShaderRendering, this.sphereMaterial, this.camera);
         redSphere.createThreeObjects();
         this.redSpheres.push(redSphere);
@@ -675,7 +671,6 @@ export class Scene02 extends SceneBase {
         // sphere数が300を超えたら、次のトラック2でリセットするフラグを立てる
         if (this.redSpheres.length > 300) {
             this.shouldResetOnTrack2 = true;
-            console.log(`Sphere count exceeded 300 (${this.redSpheres.length}), will reset on next Track 2`);
         }
         
         // 暫く間があいた後の最初のsphereの場合のみスコープを追加
@@ -761,8 +756,7 @@ export class Scene02 extends SceneBase {
             // sphere数が300を超えていたらリセット
             if (this.shouldResetOnTrack2) {
                 this.shouldResetOnTrack2 = false;
-                console.log('Track 2: Resetting due to sphere count exceeding 300');
-                this.reset();
+this.reset();
         }
             return;  // 処理済み
         }
@@ -790,9 +784,7 @@ export class Scene02 extends SceneBase {
             const noteNumber = args[0] || 64.0;  // ノート（MIDI）
             const velocity = args[1] || 127.0;  // ベロシティ（0-127）
             const durationMs = args[2] || 0.0;  // デュレーション（ms）
-            console.log(`handleTrackNumber - trackNumber: ${trackNumber}, note: ${noteNumber}, velocity: ${velocity}, duration: ${durationMs}`);
-            
-            this.handleTrack5(velocity);
+this.handleTrack5(velocity);
         }
     }
     
@@ -806,8 +798,7 @@ export class Scene02 extends SceneBase {
         // トラック5: 接続チェックをスキップするためフラグを設定
         if (trackNumber === 5) {
             this.key5Pressed = true;
-            console.log('Track 5: Connection check disabled');
-        }
+}
     }
     
     /**
@@ -820,9 +811,7 @@ export class Scene02 extends SceneBase {
         // トラック5: 接続チェックを再開
         if (trackNumber === 5) {
             this.key5Pressed = false;
-            console.log('Track 5: Connection check enabled');
-            
-            // キーが離された時に、既存のsphereの接続を再チェック
+// キーが離された時に、既存のsphereの接続を再チェック
             this.redSpheres.forEach(sphere => {
                 this.checkNewConnections(sphere);
             });
@@ -841,9 +830,7 @@ export class Scene02 extends SceneBase {
             this.growingSphere = this.redSpheres[this.redSpheres.length - 1];
             this.growingSphereScale = 1.0;
         }
-        
-        console.log('Track 5: Red sphere created');
-    }
+}
     
     /**
      * 5キーの状態を設定
@@ -892,9 +879,7 @@ export class Scene02 extends SceneBase {
         if (this.scopeCtx && this.scopeCanvas) {
             this.scopeCtx.clearRect(0, 0, this.scopeCanvas.width, this.scopeCanvas.height);
         }
-        
-        console.log('Scene02 reset');
-    }
+}
     
     /**
      * リサイズ処理
@@ -914,9 +899,7 @@ export class Scene02 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene02.dispose: クリーンアップ開始');
-        
-        // すべてのsphereを破棄
+// すべてのsphereを破棄
         this.redSpheres.forEach(sphere => {
             if (sphere.dispose) {
                 sphere.dispose(this.scene);
@@ -990,10 +973,7 @@ export class Scene02 extends SceneBase {
                 light.dispose();
             }
         });
-        
-        console.log('Scene02.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ
+// 親クラスのdisposeを呼ぶ
         super.dispose();
     }
 }

@@ -30,6 +30,8 @@ export class Scene14Particle extends Particle {
         
         // 螺旋モードでの担当高度を固定（0.0 〜 1.0）
         this.spiralHeightFactor = Math.random();
+        // 螺旋モード用：上昇速度のノイズ（Scene13互換）
+        this.spiralSpeedFactor = 0.5 + Math.random() * 1.0;
         
         // 【追加】はみ出し（Stray）設定
         // 散らし量をさらに減らして5%に設定（15% -> 5%）

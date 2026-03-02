@@ -13,9 +13,7 @@ export class Scene04 extends SceneBase {
         this.title = 'mathym | drmsh';
         this.sceneNumber = 4;
         this.kitNo = 37;  // キット番号を設定
-        console.log('Scene04: コンストラクタ実行', this.title);
-        
-        // 共有リソースマネージャー
+// 共有リソースマネージャー
         this.sharedResourceManager = sharedResourceManager;
         this.useSharedResources = !!sharedResourceManager;
         
@@ -107,8 +105,7 @@ export class Scene04 extends SceneBase {
         if (this.useSharedResources && this.sharedResourceManager) {
             // 共有リソースから取得（既に初期化済み）
             this.gpuParticleSystem = this.sharedResourceManager.getGPUParticleSystem('scene04');
-            console.log('[Scene04] 共有リソースからGPUパーティクルシステムを取得');
-            // terrainNoiseSeedはSharedResourceManagerのinit()時に生成済み
+// terrainNoiseSeedはSharedResourceManagerのinit()時に生成済み
         } else {
             // 通常通り新規作成
             this.gpuParticleSystem = new GPUParticleSystem(
@@ -130,8 +127,7 @@ export class Scene04 extends SceneBase {
             
             // シェーダーの読み込み完了を待つ（初期化も完了する）
             await this.gpuParticleSystem.initPromise;
-            console.log('Scene04: GPUParticleSystem初期化完了');
-        }
+}
         
         // ノイズオフセットテクスチャを取得
         if (this.gpuParticleSystem.noiseOffsetTexture) {
@@ -208,9 +204,7 @@ export class Scene04 extends SceneBase {
         
         // 初期色を計算（GPUParticleSystemの初期化は既に完了している）
         this.updateInitialColors();
-        
-        console.log('Scene04: パーティクルデータ初期化完了');
-    }
+}
     
     /**
      * ライトを設定
@@ -702,9 +696,7 @@ export class Scene04 extends SceneBase {
         if (this.scopeCtx && this.scopeCanvas) {
             this.scopeCtx.clearRect(0, 0, this.scopeCanvas.width, this.scopeCanvas.height);
         }
-        
-        console.log('Scene04 reset');
-    }
+}
     
     /**
      * リサイズ処理
@@ -722,9 +714,7 @@ export class Scene04 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene04.dispose: クリーンアップ開始');
-        
-        // GPUパーティクルシステムを破棄（共有リソースを使っている場合は破棄しない）
+// GPUパーティクルシステムを破棄（共有リソースを使っている場合は破棄しない）
         if (this.gpuParticleSystem) {
             const particleSystem = this.gpuParticleSystem.getParticleSystem();
             if (particleSystem) {
@@ -791,10 +781,7 @@ export class Scene04 extends SceneBase {
                 light.dispose();
             }
         });
-        
-        console.log('Scene04.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ
+// 親クラスのdisposeを呼ぶ
         super.dispose();
     }
 }

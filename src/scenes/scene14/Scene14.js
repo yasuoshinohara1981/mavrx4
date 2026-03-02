@@ -558,7 +558,6 @@ export class Scene14 extends SceneBase {
             this.sequenceIndex = (this.sequenceIndex + 1) % this.modeSequence.length;
             this.currentMode = this.modeSequence[this.sequenceIndex];
             
-            console.log(`Mode Switched: ${this.currentMode} (Index: ${this.sequenceIndex})`);
             
             // モード切り替え時の演出
             if (this.currentMode === this.MODE_SINGULARITY || oldMode === this.MODE_GRAVITY_WELL) {
@@ -1256,13 +1255,11 @@ export class Scene14 extends SceneBase {
         const dist = 1000 + Math.random() * 2000; 
         cp.position.set(Math.cos(angle1) * Math.sin(angle2) * dist, Math.sin(angle1) * Math.sin(angle2) * dist + 500, Math.cos(angle2) * dist);
         cp.applyRandomForce();
-        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Wide Random)`);
     }
 
     dispose() {
         this.initialized = false;
-        console.log('Scene14.dispose: クリーンアップ開始');
-        if (this.studio) this.studio.dispose();
+if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }

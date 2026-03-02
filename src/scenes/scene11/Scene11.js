@@ -16,7 +16,7 @@ import { Scene11_CircleEffect } from './Scene11_CircleEffect.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { loadHdrCached } from '../../lib/hdrCache.js';
-import hdri from '../../assets/autumn_field_puresky_1k.hdr';
+import hdri from '../../assets/hdri/pure_skies/autumn_field_puresky_1k.hdr';
 
 export class Scene11 extends SceneTemplate {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -94,7 +94,6 @@ export class Scene11 extends SceneTemplate {
     }
     
     async setup() {
-        // console.log('=== Scene11 setup() START ===');
         
         // スクリーンショット用テキストを更新
         this.setScreenshotText(this.title);
@@ -370,16 +369,13 @@ export class Scene11 extends SceneTemplate {
             // 高度はさらに低く維持（1.5m〜3m）
             this.player.boxMin.y = 1.0;
             this.player.boxMax.y = 3.0;
-            
-            console.log("Player movement restricted to building bounds:", this.buildingOnlyBounds);
-        }
+}
         
         // cityCenterをリセット（もう原点が中心）
         this.cityCenter.set(0, 0, 0);
     }
     
     async loadSpecialBuildings() {
-        // console.log('=== loadSpecialBuildings() START ===');
         const lod2BasePath = '/assets/533946_2/LOD2';
         const objLoader = new OBJLoader();
         const mtlLoader = new MTLLoader();
@@ -543,7 +539,6 @@ export class Scene11 extends SceneTemplate {
                 
                 this.scene.add(model);
                 this.specialBuildings.push(model);
-                // console.log(`[Diagnostic-Building] ID: ${id}, Final Position:`, JSON.stringify(model.position));
                 
             } catch (error) {
                 console.error(`Error loading building ${id}:`, error);
@@ -629,7 +624,6 @@ export class Scene11 extends SceneTemplate {
                 
                 this.scene.add(model);
                 this.demObjects.push(model);
-                // console.log(`[Diagnostic-DEM] ID: ${id}, Final Position:`, JSON.stringify(model.position));
             } catch (e) {}
         }
     }
@@ -713,7 +707,6 @@ export class Scene11 extends SceneTemplate {
         this._updateCounter = (this._updateCounter || 0) + 1;
         
         if (!this._lastCamLog || Date.now() - this._lastCamLog > 1000) {
-            // console.log(`[Diagnostic-Camera] Pos: (${this.camera.position.x.toFixed(2)}, ${this.camera.position.y.toFixed(2)}, ${this.camera.position.z.toFixed(2)})`);
             this._lastCamLog = Date.now();
         }
 
@@ -1062,9 +1055,7 @@ export class Scene11 extends SceneTemplate {
 
         this.skysphere = new THREE.Mesh(geometry, material);
         this.scene.add(this.skysphere);
-        
-        console.log("Skysphere created.");
-    }
+}
 
     /**
      * 夕焼け風のグラデーションテクスチャを生成

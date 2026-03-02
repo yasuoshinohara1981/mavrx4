@@ -207,9 +207,7 @@ export class SceneTemplate extends SceneBase {
      * Three.jsのオブジェクトを破棄してメモリリークを防ぐ
      */
     dispose() {
-        console.log('SceneTemplate.dispose: クリーンアップ開始');
-        
-        // ============================================
+// ============================================
         // ここにシーン固有のクリーンアップ処理を記述
         // ============================================
         // 例：
@@ -218,10 +216,7 @@ export class SceneTemplate extends SceneBase {
         // - ライトの削除
         // - Canvasの削除
         // - イベントリスナーの削除
-        
-        console.log('SceneTemplate.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ（最後に呼ぶ）
+// 親クラスのdisposeを呼ぶ（最後に呼ぶ）
         super.dispose();
     }
 }

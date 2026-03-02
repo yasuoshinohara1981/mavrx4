@@ -124,8 +124,7 @@ export class SceneManager {
         
         if (scene) {
             this.scenes[index] = scene;
-            console.log(`[SceneManager] シーン ${index + 1} を遅延ロードしました`);
-        }
+}
         
         return scene;
     }
@@ -133,13 +132,11 @@ export class SceneManager {
     initScenes() {
         if (this.isDevelopmentMode) {
             // 開発モード: デフォルトシーンのみ読み込み
-            console.log(`[SceneManager] 開発モード: デフォルトシーン（Scene ${this.defaultSceneIndex + 1}）のみ読み込み`);
-            this.createScene(this.defaultSceneIndex);
+this.createScene(this.defaultSceneIndex);
             this.currentSceneIndex = this.defaultSceneIndex;
         } else {
             // ライブモード: 全てのシーンをプリロード
-            console.log('[SceneManager] ライブモード: 全てのシーンをプリロード');
-            // シーンを追加（Processingと同じ順序）
+// シーンを追加（Processingと同じ順序）
             // シーン1と3は共有リソースマネージャーを使用
             this.scenes.push(new Scene01(this.renderer, this.camera, this.sharedResourceManager));
             this.scenes.push(new Scene02(this.renderer, this.camera));
@@ -179,8 +176,7 @@ export class SceneManager {
         // 開発モードの場合、まだ作成されていないシーンは遅延ロード
         if (!this.scenes[index]) {
             if (this.isDevelopmentMode) {
-                console.log(`[SceneManager] 開発モード: シーン ${index + 1} を遅延ロードします`);
-                this.createScene(index);
+this.createScene(index);
             } else {
                 // ライブモードでシーンが存在しない場合はエラー
                 console.warn(`シーンインデックス ${index} は無効です`);
@@ -196,8 +192,7 @@ export class SceneManager {
         
         // 同じシーンへの切り替えは無視
         if (index === this.currentSceneIndex && this.scenes[index]) {
-            console.log(`既にシーン ${index + 1} がアクティブです`);
-            return;
+return;
         }
         
         try {
@@ -217,9 +212,7 @@ export class SceneManager {
                 if (oldScene.setResourceActive) {
                     oldScene.setResourceActive(false);
                 }
-                
-                console.log(`古いシーン（${oldScene.title}）を非アクティブ化`);
-            }
+}
         } catch (err) {
             console.error('シーン切り替え時のクリーンアップエラー:', err);
             // エラーが発生してもシーン切り替えは続行
@@ -255,10 +248,7 @@ export class SceneManager {
                     if (this.onSceneChange) {
                         this.onSceneChange(newScene.title || `Scene ${index + 1}`);
                     }
-                    
-                    console.log(`シーン切り替え: ${newScene.title || `Scene ${index + 1}`}`);
-                    
-                    // テクスチャのリセット処理は呼ばない（前のシーンの状態を保持）
+// テクスチャのリセット処理は呼ばない（前のシーンの状態を保持）
                     // シーン固有の後処理を実行（非同期で実行）
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
@@ -302,9 +292,7 @@ export class SceneManager {
                 if (!isNaN(kitValue)) {
                     const kitNo = Math.floor(kitValue);
                     this.selectedKitNo = kitNo;
-                    console.log(`[SceneManager] Kit number received: ${kitNo}, switching scene...`);
-                    
-                    // 該当するkitNoを持つシーンを探して切り替え
+// 該当するkitNoを持つシーンを探して切り替え
                     this.switchSceneByKitNo(kitNo);
                 }
             }
@@ -327,8 +315,7 @@ export class SceneManager {
         for (let i = 0; i < this.scenes.length; i++) {
             const scene = this.scenes[i];
             if (scene && scene.kitNo === kitNo) {
-                console.log(`[SceneManager] Found scene with kitNo ${kitNo} at index ${i}, switching...`);
-                this.switchScene(i);
+this.switchScene(i);
                 return;
             }
         }

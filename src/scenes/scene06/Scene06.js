@@ -471,12 +471,6 @@ export class Scene06 extends SceneBase {
         
         this.instancedManager.markNeedsUpdate();
         this.setParticleCount(particleIndex);
-        console.log(`✅ ${particleIndex}個の建物をGPUインスタンシングで作成しました`);
-        console.log(`   低い建物群: 期待${this.numLowBuildings}個 / 実際${lowBuildingCount}個`);
-        console.log(`   小さいBox: 期待${this.numSmallBoxes}個 / 実際${smallBoxCount}個`);
-        console.log(`   通常のビル: 期待${this.numBuildings}個 / 実際${buildingCount}個`);
-        console.log(`   中心部の巨大ビル: 期待${this.numCenterLandmarks}個 / 実際${centerLandmarkCount}個`);
-        console.log(`   ランドマーク: 期待${this.numLandmarks}個 / 実際${landmarkCount}個`);
     }
     
     /**
@@ -929,10 +923,7 @@ export class Scene06 extends SceneBase {
             this.explosionLights.push({ light: light, explosion: explosion });
         }
         
-        console.log(`💥 爆発発生！位置: (${explosionCenter.x.toFixed(1)}, ${explosionCenter.y.toFixed(1)}, ${explosionCenter.z.toFixed(1)})`);
-        console.log(`   最大半径: ${explosionMaxRadius.toFixed(1)}, 高さ: ${heightY.toFixed(1)}, 強さ: ${velocity || 'default'}, 長さ: ${explosionLifetime}フレーム`);
-        console.log(`   総爆発数: ${this.explosions.length}, ライト数: ${this.explosionLights.length}`);
-    }
+}
     
     /**
      * 描画処理
@@ -1233,9 +1224,7 @@ export class Scene06 extends SceneBase {
             lightData.light.dispose();
     }
         this.explosionLights = [];
-    
-        console.log('🔄 シーンをリセットしました');
-    }
+}
     
     /**
      * 色収差エフェクトを初期化
@@ -1359,7 +1348,6 @@ export class Scene06 extends SceneBase {
             this.chromaticAberrationEndTime = 0;
         }
         
-        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -1390,7 +1378,6 @@ export class Scene06 extends SceneBase {
             this.glitchEndTime = 0;
         }
         
-        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -1486,9 +1473,7 @@ export class Scene06 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene06.dispose: クリーンアップ開始');
-        
-        // インスタンスメッシュマネージャーを破棄
+// インスタンスメッシュマネージャーを破棄
         if (this.instancedManager) {
             this.instancedManager.dispose();
             this.instancedManager = null;
@@ -1545,10 +1530,7 @@ export class Scene06 extends SceneBase {
                 light.dispose();
             }
         });
-        
-        console.log('Scene06.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ
+// 親クラスのdisposeを呼ぶ
         super.dispose();
     }
 }

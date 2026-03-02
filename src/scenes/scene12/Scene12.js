@@ -96,9 +96,7 @@ export class Scene12 extends SceneBase {
         if (phase === 0) {
             this.currentMode = this.MODE_DEFAULT;
             this.modeTimer = 0; 
-            console.log("Phase 0 detected: Resetting positions to origin");
-
-            // 全パーティクルの位置を原点に強制移動
+// 全パーティクルの位置を原点に強制移動
             this.particles.forEach(p => {
                 p.position.set(0, 200, 0); // 少し浮かせて原点付近に
                 p.velocity.set(0, 0, 0);   // 勢いもリセット
@@ -410,9 +408,7 @@ export class Scene12 extends SceneBase {
             
             this.currentMode = nextMode;
             this.useGravity = (this.currentMode === this.MODE_GRAVITY || this.currentMode === this.MODE_RAIN);
-            console.log(`Mode Switched: ${this.currentMode}`);
-
-            // モード切り替え時の初期化
+// モード切り替え時の初期化
             if (this.currentMode === this.MODE_RAIN) {
                 this.particles.forEach(p => {
                     p.position.y = 1500 + Math.random() * 1000;
@@ -710,8 +706,7 @@ export class Scene12 extends SceneBase {
 
     dispose() {
         this.initialized = false;
-        console.log('Scene12.dispose: クリーンアップ開始');
-        if (this.studio) this.studio.dispose();
+if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }

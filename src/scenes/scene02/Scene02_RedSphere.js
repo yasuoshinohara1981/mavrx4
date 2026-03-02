@@ -110,14 +110,12 @@ export class Scene02_RedSphere {
             const rgbColor = this.hslToRgb(this.hue, this.saturation, this.lightness);
             
             // デバッグ用ログ（色が正しく設定されているか確認）
-            console.log(`Sphere color - Hue: ${this.hue}, Sat: ${this.saturation}, Light: ${this.lightness}, RGB: (${rgbColor.r.toFixed(3)}, ${rgbColor.g.toFixed(3)}, ${rgbColor.b.toFixed(3)})`);
             
             // 赤の場合、直接RGBで鮮やかな赤を指定（hue=0の時）
             let finalColor = rgbColor;
             if (Math.abs(this.hue) < 1 || Math.abs(this.hue - 360) < 1) {
                 // 赤の場合、直接鮮やかな赤を指定
                 finalColor = new THREE.Color(1.0, 0.0, 0.0);  // 純粋な赤
-                console.log(`  -> Using pure red (1.0, 0.0, 0.0) for hue=${this.hue}`);
             }
             
             // マットな質感にするため、emissiveは控えめに

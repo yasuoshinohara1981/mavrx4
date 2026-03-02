@@ -63,7 +63,7 @@ const debugCategories = {
  */
 export function debugLog(category, ...args) {
     if (debugCategories[category]) {
-        console.log(`[${category}]`, ...args);
+        // ログ無効化（console.log削除済み）
     }
 }
 
@@ -97,7 +97,6 @@ export function debugError(category, ...args) {
 export function setDebugCategory(category, enabled) {
     if (category in debugCategories) {
         debugCategories[category] = enabled;
-        console.log(`[DebugLogger] ${category} = ${enabled ? 'ON' : 'OFF'}`);
     } else {
         console.warn(`[DebugLogger] Unknown category: ${category}`);
     }
@@ -111,7 +110,6 @@ export function setAllDebugCategories(enabled) {
     for (const category in debugCategories) {
         debugCategories[category] = enabled;
     }
-    console.log(`[DebugLogger] All categories = ${enabled ? 'ON' : 'OFF'}`);
 }
 
 /**

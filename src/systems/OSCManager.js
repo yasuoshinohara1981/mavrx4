@@ -26,7 +26,6 @@ export class OSCManager {
                 if (this.onStatusChange) {
                     this.onStatusChange('Connected');
                 }
-                console.log(`OSC: WebSocket接続成功 (${this.wsUrl})`);
             };
             
             // メッセージ受信
@@ -45,12 +44,9 @@ export class OSCManager {
                 if (this.onStatusChange) {
                     this.onStatusChange('Disconnected');
                 }
-                console.log('OSC: WebSocket接続終了');
-                
-                // 再接続を試みる（5秒後）
+// 再接続を試みる（5秒後）
                 setTimeout(() => {
-                    console.log('OSC: 再接続を試みます...');
-                    this.init();
+this.init();
                 }, 5000);
             };
             
@@ -60,8 +56,6 @@ export class OSCManager {
                 if (this.onStatusChange) {
                     this.onStatusChange('Error');
                 }
-                console.log('OSC: WebSocketサーバーに接続できません。');
-                console.log('OSC: 別ターミナルで "npm run osc-server" を実行してください。');
             };
             
         } catch (error) {

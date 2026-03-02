@@ -509,7 +509,6 @@ export class Scene16 extends SceneBase {
 
         // 全トラックのレベル状態を調査（デバッグ用）
         if (Math.floor(this.time * 60) % 60 === 0) {
-            console.log(`DEBUG - Track 5: ${(this.trackValues[5] || 0).toFixed(2)} | Track 6: ${track6Force.toFixed(2)} | Track 7: ${track7Color.toFixed(2)}`);
         }
         
         // トラック6で「時間の進み方」自体を加速させる

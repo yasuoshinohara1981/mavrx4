@@ -102,13 +102,10 @@ export class SharedResourceManager {
         if (this.isInitialized) {
             return;
         }
-        
-        console.log('[SharedResourceManager] 初期化開始...');
-        const startTime = performance.now();
+const startTime = performance.now();
         
         // GPUパーティクルシステムのプールを初期化
         for (const [sceneName, config] of Object.entries(this.gpuParticlePools)) {
-            console.log(`[SharedResourceManager] ${sceneName}のGPUパーティクルシステムを初期化中... (${config.maxParticles}粒)`);
             
             // 最大量のGPUパーティクルシステムを作成
             const initOptions = { ...config.initOptions };  // コピーを作成
@@ -137,12 +134,9 @@ export class SharedResourceManager {
             
             // プールに追加
             config.pool.push(gpuParticleSystem);
-            
-            console.log(`[SharedResourceManager] ${sceneName}のGPUパーティクルシステム初期化完了`);
-        }
+}
         
         const endTime = performance.now();
-        console.log(`[SharedResourceManager] 初期化完了 (${(endTime - startTime).toFixed(2)}ms)`);
         
         this.isInitialized = true;
     }
@@ -200,8 +194,7 @@ export class SharedResourceManager {
     releaseGPUParticleSystem(sceneName) {
         // 使用中フラグを解除（実際にはdisposeしない）
         this.activeResources.delete(sceneName);
-        console.log(`[SharedResourceManager] ${sceneName}のGPUパーティクルシステムを返却（メモリ上には保持）`);
-    }
+}
     
     /**
      * リソースの有効/無効を切り替え（update/レンダリングのスキップ制御）
@@ -229,15 +222,13 @@ export class SharedResourceManager {
                 const pooledResource = config.pool[0];
                 if (pooledResource && pooledResource.resetToInitialState) {
                     pooledResource.resetToInitialState();
-                    console.log(`[SharedResourceManager] ${sceneName}のテクスチャを初期状態にリセット`);
-                }
+}
             }
         } else {
             // アクティブなリソースの場合は直接リセット
             if (resource.resetToInitialState) {
                 resource.resetToInitialState();
-                console.log(`[SharedResourceManager] ${sceneName}のテクスチャを初期状態にリセット`);
-            }
+}
         }
     }
     
@@ -246,9 +237,7 @@ export class SharedResourceManager {
      * 全リソースをクリーンアップ（アプリ終了時のみ）
      */
     dispose() {
-        console.log('[SharedResourceManager] 全リソースをクリーンアップ中...');
-        
-        // 全GPUパーティクルシステムを破棄
+// 全GPUパーティクルシステムを破棄
         for (const [sceneName, config] of Object.entries(this.gpuParticlePools)) {
             for (const system of config.pool) {
                 if (system.dispose) {
@@ -260,7 +249,5 @@ export class SharedResourceManager {
         
         this.activeResources.clear();
         this.isInitialized = false;
-        
-        console.log('[SharedResourceManager] クリーンアップ完了');
-    }
+}
 }

@@ -397,9 +397,7 @@ export class Scene13 extends SceneBase {
             
             this.currentMode = this.MODE_DEFAULT;
             this.modeTimer = 0; 
-            console.log("Phase 0 detected: Resetting positions and effects");
-            
-            this.particles.forEach(p => {
+this.particles.forEach(p => {
                 p.position.set(0, 200, 0);
                 p.velocity.set(0, 0, 0);
             });
@@ -534,12 +532,10 @@ export class Scene13 extends SceneBase {
 
             // 全モード一周したら履歴をリセットして、また全モード選ばれるようにする
             if (this.modeHistory.size >= this.totalModeCount) {
-                console.log("All modes visited at least once! Resetting history.");
-                this.modeHistory.clear();
+this.modeHistory.clear();
                 this.modeHistory.add(this.currentMode); // 現在のモードは既読にする
             }
 
-            console.log(`Auto Randomizing Mode: ${this.currentMode} (Weighted, History: ${this.modeHistory.size}/${this.totalModeCount})`);
 
             // モードフラグの更新（updatePhysicsで使用）
             this.useGravity = (this.currentMode === this.MODE_GRAVITY);
@@ -889,7 +885,6 @@ export class Scene13 extends SceneBase {
         );
         cp.applyRandomForce();
 
-        console.log(`Camera switched to #${this.currentCameraIndex + 1} (Wide Random)`);
     }
 
     /**
@@ -931,15 +926,13 @@ export class Scene13 extends SceneBase {
                 cp.applyPreset('DEFAULT');
                 break;
         }
-        console.log(`Camera Preset Applied for Mode: ${mode}`);
-    }
+}
 
     reset() { super.reset(); }
 
     dispose() {
         this.initialized = false;
-        console.log('Scene13.dispose: クリーンアップ開始');
-        if (this.studio) this.studio.dispose();
+if (this.studio) this.studio.dispose();
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }

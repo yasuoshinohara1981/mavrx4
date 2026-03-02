@@ -1151,7 +1151,6 @@ export class Scene18 extends SceneBase {
                     const segments = radius > 60 ? 140 : 70;
                     geometry = new THREE.TubeGeometry(curve, segments, radius, 10, false); 
                 } catch (e) {
-                    console.error("TubeGeometry creation failed:", e);
                     continue; // このケーブルの生成をスキップ
                 }
                 
@@ -1591,7 +1590,6 @@ export class Scene18 extends SceneBase {
     }
 
     handleTrackNumber(trackNumber, message) {
-        console.log(`[Scene18] handleTrackNumber: ${trackNumber}`);
         if (trackNumber === 2) {
             const args = message.args || [];
             const durationMs = (args.length >= 3) ? args[2] : 500;
@@ -1604,8 +1602,6 @@ export class Scene18 extends SceneBase {
             const args = message.args || [];
             const velocity = args[1] !== undefined ? args[1] : 127;
             const durationMs = args[2] !== undefined ? args[2] : 2000; // デュレーションを取得（デフォルト2秒）
-            
-            console.log(`[Scene18] Callout triggered by track 5, velocity: ${velocity}, duration: ${durationMs}ms`);
             
             if (this.calloutSystem) {
                 const phi = Math.random() * Math.PI * 2;
@@ -1630,7 +1626,6 @@ export class Scene18 extends SceneBase {
         if (trackNumber === 6) {
             const args = message.args || [];
             const velocity = args[1] !== undefined ? args[1] : 127;
-            console.log(`[Scene18] Main pulse triggered by track 6, velocity: ${velocity}`);
             this.triggerPulse(velocity);
         }
 

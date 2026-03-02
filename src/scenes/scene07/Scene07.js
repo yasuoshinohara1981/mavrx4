@@ -190,8 +190,7 @@ export class Scene07 extends SceneBase {
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            console.log(`✅ 発光体テクスチャを保存しました: ${data.path}`);
-                            resolve(true);
+resolve(true);
                         } else {
                             console.warn('発光体テクスチャの保存に失敗:', data.error);
                             resolve(false);
@@ -234,11 +233,9 @@ export class Scene07 extends SceneBase {
                     }
                 );
             });
-            console.log('✅ 既存の発光体テクスチャを読み込みました');
-        } catch (error) {
+} catch (error) {
             // テクスチャが存在しない場合は生成
-            console.log('📝 発光体テクスチャを生成中...');
-            const canvas = this.generateGlowTexture();
+const canvas = this.generateGlowTexture();
             
             // サーバーに保存（非同期、エラーでも続行）
             this.saveGlowTextureToServer(canvas).catch(err => {
@@ -248,8 +245,7 @@ export class Scene07 extends SceneBase {
             // Canvasからテクスチャを作成
             glowTexture = new THREE.CanvasTexture(canvas);
             glowTexture.colorSpace = THREE.SRGBColorSpace;
-            console.log('✅ 発光体テクスチャを生成しました');
-        }
+}
         
         // ビルボード用のPlaneGeometry（常にカメラを向く）
         const geometry = new THREE.PlaneGeometry(1, 1);
@@ -385,8 +381,7 @@ export class Scene07 extends SceneBase {
         pointsGeometry.attributes.size.needsUpdate = true;
         
         this.setParticleCount(particleIndex);
-        console.log(`✅ ${particleIndex}個のPointsを格子状に配置しました`);
-    }
+}
     
     /**
      * 線で接続（隣接するSphere同士を線で繋ぐ）
@@ -444,9 +439,7 @@ export class Scene07 extends SceneBase {
         this.lineMesh = new THREE.LineSegments(this.lineGeometry, lineMaterial);
         this.lineMesh.renderOrder = 0;
         this.scene.add(this.lineMesh);
-        
-        console.log(`✅ ${this.connections.length}本の接続線を作成しました`);
-    }
+}
     
     /**
      * カメラパーティクルの距離パラメータを設定（上から見下ろす感じで近めの距離、範囲を狭める）
@@ -866,8 +859,6 @@ export class Scene07 extends SceneBase {
             }
         }
         
-        console.log(`💪 力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-        console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたSphere: ${affectedCount}個`);
     }
     
     /**
@@ -1053,9 +1044,7 @@ export class Scene07 extends SceneBase {
         
         // 線の位置を更新
         this.updateConnections();
-    
-        console.log('🔄 シーンをリセットしました');
-    }
+}
     
     /**
      * 色収差エフェクトを初期化
@@ -1178,7 +1167,6 @@ export class Scene07 extends SceneBase {
             this.chromaticAberrationEndTime = 0;
         }
         
-        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -1209,7 +1197,6 @@ export class Scene07 extends SceneBase {
             this.glitchEndTime = 0;
         }
         
-        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -1305,9 +1292,7 @@ export class Scene07 extends SceneBase {
      * クリーンアップ処理（シーン切り替え時に呼ばれる）
      */
     dispose() {
-        console.log('Scene07.dispose: クリーンアップ開始');
-        
-        // Pointsメッシュを破棄
+// Pointsメッシュを破棄
         if (this.pointsMesh) {
             this.scene.remove(this.pointsMesh);
             if (this.pointsMesh.geometry) {
@@ -1367,10 +1352,7 @@ export class Scene07 extends SceneBase {
                 light.dispose();
             }
         });
-        
-        console.log('Scene07.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ
+// 親クラスのdisposeを呼ぶ
         super.dispose();
     }
 }

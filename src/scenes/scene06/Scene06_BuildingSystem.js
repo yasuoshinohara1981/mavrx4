@@ -206,7 +206,6 @@ export class Scene06_BuildingSystem {
             this.createBuildingMesh(building);
         }
         
-        console.log(`Scene06: ${this.buildings.length} buildings initialized (CPU版)`);
     }
     
     /**

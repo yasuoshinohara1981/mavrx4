@@ -95,10 +95,7 @@ export class GPUParticleSystem {
     async loadShaders() {
         try {
             // publicフォルダからシェーダーを読み込む
-            const shaderBasePath = `/shaders/${this.shaderPath}/`;
-            
-            console.log(`シェーダー読み込み開始: ${shaderBasePath}`);
-            
+            const shaderBasePath = `/shaders/${this.shaderPath}/`;      
             const loadShader = async (path, name) => {
                 const response = await fetch(path);
                 if (!response.ok) {
@@ -108,7 +105,6 @@ export class GPUParticleSystem {
                 if (!text || text.trim().length === 0) {
                     throw new Error(`Empty shader file: ${name}`);
                 }
-                console.log(`✓ ${name} loaded (${text.length} chars)`);
                 return text;
             };
             
@@ -126,11 +122,7 @@ export class GPUParticleSystem {
                 colorUpdate: { vertex: colorVert, fragment: colorFrag },
                 particleRender: { vertex: renderVert, fragment: renderFrag }
             };
-            
-            console.log(`✓ シェーダー読み込み完了: ${this.shaderPath}`);
         } catch (error) {
-            console.error('✗ シェーダーの読み込みエラー:', error);
-            console.warn('デフォルトシェーダーを使用します');
             // フォールバック: デフォルトシェーダーを使用
             this.shaders = this.getDefaultShaders();
         }
@@ -536,7 +528,6 @@ export class GPUParticleSystem {
      */
     createUpdateShader() {
         if (!this.shaders) {
-            console.error('シェーダーが読み込まれていません');
             return;
         }
         
@@ -626,7 +617,6 @@ export class GPUParticleSystem {
         
         // 描画用シェーダーマテリアル
         if (!this.shaders) {
-            console.error('シェーダーが読み込まれていません');
             return;
         }
         
@@ -913,7 +903,6 @@ export class GPUParticleSystem {
                 scene
             });
         }).catch(err => {
-            console.error('線描画シェーダーの読み込みに失敗:', err);
             return null;
         });
     }
@@ -1027,8 +1016,6 @@ export class GPUParticleSystem {
         if (scene) {
             scene.add(this.lineSystem);
         }
-        
-        console.log(`[GPUParticleSystem] 線描画システム作成完了 (${lineGeometries.length}本)`);
         
         return Promise.resolve(this.lineSystem);
     }

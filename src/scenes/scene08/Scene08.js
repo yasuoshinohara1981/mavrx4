@@ -221,8 +221,7 @@ export class Scene08 extends SceneBase {
         pointsGeometry.attributes.size.needsUpdate = true;
         
         this.setParticleCount(particleIndex);
-        console.log(`✅ ${particleIndex}個のパーティクルを格子状に配置しました（Scene07と同じ初期配置）`);
-    }
+}
     
     /**
      * 線で接続（隣接するパーティクル同士を線で繋ぐ）
@@ -290,9 +289,7 @@ export class Scene08 extends SceneBase {
         this.lineMesh = new THREE.LineSegments(this.lineGeometry, lineMaterial);
         this.lineMesh.renderOrder = 0;
         this.scene.add(this.lineMesh);
-        
-        console.log(`✅ ${this.connections.length}本の接続線を作成しました`);
-    }
+}
     
     /**
      * カメラパーティクルの距離パラメータを設定
@@ -781,8 +778,6 @@ export class Scene08 extends SceneBase {
                     velocity: velocity || 127.0
                 };
                 this.activeUpwardForces.push(forceData);
-                console.log(`💪 布に下からの継続的な力（突き上げ）を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-                console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, デュレーション: ${durationMs}ms`);
             } else {
                 // 上からの力（通常）
                 const forceData = {
@@ -794,8 +789,6 @@ export class Scene08 extends SceneBase {
                     velocity: velocity || 127.0
                 };
                 this.activeForces.push(forceData);
-                console.log(`💪 布に継続的な力を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-                console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, デュレーション: ${durationMs}ms`);
             }
         } else {
             // デュレーションが指定されていない場合は、一度だけ力を加える
@@ -825,8 +818,6 @@ export class Scene08 extends SceneBase {
             }
             
             const forceType = isUpward ? '下からの力（突き上げ）' : '力';
-            console.log(`💪 布に${forceType}を適用！位置: (${forceCenter.x.toFixed(1)}, ${forceCenter.y.toFixed(1)}, ${forceCenter.z.toFixed(1)})`);
-            console.log(`   強さ: ${forceStrength.toFixed(1)}, 影響範囲: ${forceRadius.toFixed(1)}, 影響を受けたパーティクル: ${affectedCount}個`);
         }
     }
     
@@ -1017,9 +1008,7 @@ export class Scene08 extends SceneBase {
         
         // 線の位置を更新
         this.updateConnections();
-    
-        console.log('🔄 シーンをリセットしました');
-    }
+}
     
     /**
      * 色収差エフェクトを初期化
@@ -1127,7 +1116,6 @@ export class Scene08 extends SceneBase {
             this.chromaticAberrationEndTime = 0;
         }
         
-        console.log(`Track 3: Chromatic aberration applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -1154,7 +1142,6 @@ export class Scene08 extends SceneBase {
             this.glitchEndTime = 0;
         }
         
-        console.log(`Track 4: Glitch effect applied (velocity: ${velocity}, note: ${noteNumber}, amount: ${amount.toFixed(2)}, duration: ${durationMs}ms)`);
     }
     
     /**
@@ -1239,9 +1226,7 @@ export class Scene08 extends SceneBase {
      * クリーンアップ処理
      */
     dispose() {
-        console.log('Scene08.dispose: クリーンアップ開始');
-        
-        // Pointsメッシュを破棄
+// Pointsメッシュを破棄
         if (this.pointsMesh) {
             this.scene.remove(this.pointsMesh);
             if (this.pointsMesh.geometry) {
@@ -1303,10 +1288,7 @@ export class Scene08 extends SceneBase {
                 light.dispose();
             }
         });
-        
-        console.log('Scene08.dispose: クリーンアップ完了');
-        
-        // 親クラスのdisposeを呼ぶ
+// 親クラスのdisposeを呼ぶ
         super.dispose();
     }
 }

@@ -66,6 +66,16 @@ export class Scene19 extends SceneBase {
         this.MODE_SINGULARITY = 15;
         this.MODE_PSYCHIC_COLLAPSE = 16;
         this.MODE_GRAVITY_SHOCK = 17;
+        // Scene13風の運動パターン
+        this.MODE_SC13_SPIRAL = 18;
+        this.MODE_SC13_TORUS = 19;
+        this.MODE_SC13_WALL = 20;
+        this.MODE_SC13_WAVE = 21;
+        this.MODE_SC13_BLACK_HOLE = 22;
+        this.MODE_SC13_PILLARS = 23;
+        this.MODE_SC13_CHAOS = 24;
+        this.MODE_SC13_DEFORM = 25;
+        this.MODE_SC13_GRAVITY = 26;
 
         this.modeSequence = [
             this.MODE_GEOM_SPHERE,
@@ -85,6 +95,15 @@ export class Scene19 extends SceneBase {
             this.MODE_SINGULARITY,
             this.MODE_PSYCHIC_COLLAPSE,
             this.MODE_GRAVITY_SHOCK,
+            this.MODE_SC13_SPIRAL,
+            this.MODE_SC13_TORUS,
+            this.MODE_SC13_WALL,
+            this.MODE_SC13_WAVE,
+            this.MODE_SC13_BLACK_HOLE,
+            this.MODE_SC13_PILLARS,
+            this.MODE_SC13_CHAOS,
+            this.MODE_SC13_DEFORM,
+            this.MODE_SC13_GRAVITY,
             this.MODE_DEFAULT
         ];
         this.sequenceIndex = 0;
@@ -142,6 +161,7 @@ export class Scene19 extends SceneBase {
 
         try {
             const skyConfig = getRandomPureSky();
+            console.log('Scene19 HDRI:', skyConfig.filename || '(unknown)');
             this.selectedPureSkyConfig = skyConfig; // フレアのON/OFF用に保持
             const envMap = await this.addSkyDomeIfEnabled(skyConfig.url, {
                 environmentIntensity: 1.5,
@@ -199,27 +219,20 @@ export class Scene19 extends SceneBase {
             clearcoat: 0.5,
             clearcoatRoughness: 0.08,
             bumpMap: bumpMap,
-            bumpScale: 0.8
+            bumpScale: 2.0
         });
 
         const manager = new InstancedMeshManager(this.scene, boxGeo, sphereMat, this.sphereCount);
         const mainMesh = manager.getMainMesh();
         mainMesh.castShadow = true;
         mainMesh.receiveShadow = true;
-
         mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
             depthPacking: THREE.RGBADepthPacking,
             alphaTest: 0.5
         });
-
         this.instancedMeshManagers.push(manager);
 
-        const creationList = [];
-        for (let i = 0; i < this.sphereCount; i++) {
-            creationList.push({ typeIdx: 0, indexInType: i });
-        }
-
-        creationList.forEach((info, idx) => {
+        for (let idx = 0; idx < this.sphereCount; idx++) {
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos(2 * Math.random() - 1);
             const r = Math.pow(Math.random(), 1.5) * this.spawnRadius;
@@ -244,7 +257,7 @@ export class Scene19 extends SceneBase {
             this.particles.push(p);
 
             this.instancedMeshManagers[0].setMatrixAt(idx, p.position, p.rotation, p.scale);
-        });
+        }
 
         this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
         this.setParticleCount(this.sphereCount);
@@ -259,24 +272,24 @@ export class Scene19 extends SceneBase {
         ctx.fillStyle = '#808080';
         ctx.fillRect(0, 0, size, size);
 
-        for (let i = 0; i < 400; i++) {
+        for (let i = 0; i < 500; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 1 + Math.random() * 2;
+            const r = 1.5 + Math.random() * 2.5;
             const isBump = Math.random() > 0.5;
-            ctx.fillStyle = isBump ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+            ctx.fillStyle = isBump ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)';
             ctx.beginPath();
             ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fill();
         }
 
-        for (let i = 0; i < 40; i++) {
+        for (let i = 0; i < 50; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
-            const r = 8 + Math.random() * 20;
+            const r = 10 + Math.random() * 25;
             const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
             const val = Math.random() > 0.5 ? 255 : 0;
-            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.25)`);
+            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.45)`);
             grad.addColorStop(1, 'rgba(128, 128, 128, 0)');
             ctx.fillStyle = grad;
             ctx.beginPath();
@@ -339,6 +352,22 @@ export class Scene19 extends SceneBase {
 
             if (this.currentMode === this.MODE_SINGULARITY || oldMode === this.MODE_GRAVITY_SHOCK) {
                 this.triggerExpandEffect(100);
+            } else if (this.currentMode === this.MODE_SC13_SPIRAL) {
+                this.particles.forEach((p, idx) => {
+                    const r = Math.random() * this.spawnRadius;
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    p.position.set(
+                        r * Math.sin(phi) * Math.cos(theta),
+                        p.spiralHeightFactor * 5000 - 500,
+                        r * Math.sin(phi) * Math.sin(theta)
+                    );
+                    p.velocity.set(0, 0, 0);
+                });
+            } else if (this.currentMode === this.MODE_SC13_GRAVITY) {
+                this.particles.forEach(p => {
+                    if (p.velocity.y > 0) p.velocity.y = 0;
+                });
             } else {
                 this.particles.forEach(p => {
                     p.velocity.add(new THREE.Vector3((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50));
@@ -359,18 +388,22 @@ export class Scene19 extends SceneBase {
         const visibleCount = Math.min(this.currentVisibleCount || 0, this.particles.length);
         const tempVec = new THREE.Vector3();
         const halfSize = 4950;
+        const dt = deltaTime;
+        const isScene13Mode = this.currentMode >= this.MODE_SC13_SPIRAL && this.currentMode <= this.MODE_SC13_GRAVITY;
 
-        if (this.currentMode !== this.MODE_DEFAULT && !this.geometricTargets.has(this.currentMode)) {
+        if (!isScene13Mode && this.currentMode !== this.MODE_DEFAULT && !this.geometricTargets.has(this.currentMode)) {
             this.generateGeometricTargets(this.currentMode);
         }
 
-        const targets = this.geometricTargets.get(this.currentMode);
+        const targets = isScene13Mode ? null : this.geometricTargets.get(this.currentMode);
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const p = this.particles[idx];
             p.force.set(0, 0, 0);
 
-            if (this.currentMode !== this.MODE_DEFAULT && targets) {
+            if (isScene13Mode) {
+                this.applyScene13Physics(idx, p, tempVec, dt);
+            } else if (this.currentMode !== this.MODE_DEFAULT && targets) {
                 const targetPos = targets[idx % targets.length];
                 let tx = targetPos.x + (p.isStray ? p.targetOffset.x * 0.5 : 0);
                 let ty = targetPos.y + (p.isStray ? p.targetOffset.y * 0.5 : 0);
@@ -438,12 +471,20 @@ export class Scene19 extends SceneBase {
             }
 
             p.update();
-            p.velocity.multiplyScalar(0.92);
+            p.velocity.multiplyScalar(isScene13Mode ? 0.95 : 0.92);
 
             if (this.useWallCollision) {
                 if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.5; }
                 if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.5; }
-                if (p.position.y > 4500) { p.position.y = 4500; p.velocity.y *= -0.5; }
+                if (p.position.y > 4500) {
+                    if (this.currentMode === this.MODE_SC13_SPIRAL) {
+                        p.position.y = -450;
+                        p.velocity.y *= 0.1;
+                    } else {
+                        p.position.y = 4500;
+                        p.velocity.y *= -0.5;
+                    }
+                }
                 if (p.position.y < -450) {
                     p.position.y = -450;
                     p.velocity.y *= -0.2;
@@ -459,6 +500,119 @@ export class Scene19 extends SceneBase {
             this.instancedMeshManagers[0].setMatrixAt(idx, p.position, p.rotation, p.scale);
         }
         this.instancedMeshManagers.forEach(m => m.markNeedsUpdate());
+    }
+
+    /** Scene13風の運動パターン（直接力計算） */
+    applyScene13Physics(idx, p, tempVec, dt) {
+        const count = this.sphereCount;
+        const spiralSpeed = (p.spiralSpeedFactor ?? 1.0);
+
+        if (this.currentMode === this.MODE_SC13_SPIRAL) {
+            const side = (idx % 2 === 0) ? 1 : -1;
+            const rotationSpeed = 1.5;
+            const radius = 800 * p.radiusOffset * p.strayRadiusOffset;
+            const verticalSpeed = 15.0 * spiralSpeed;
+            p.position.y += verticalSpeed * dt * 60;
+            const angle = (this.time * rotationSpeed) + (p.position.y * 0.006) + (side === 1 ? 0.3 : Math.PI + 0.3) + (p.phaseOffset * 0.05);
+            const targetX = Math.cos(angle) * radius;
+            const targetZ = Math.sin(angle) * radius;
+            p.velocity.y *= 0.9;
+            const spiralSpringK = 0.05 * p.strayFactor;
+            tempVec.set((targetX - p.position.x) * spiralSpringK, 0, (targetZ - p.position.z) * spiralSpringK);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_TORUS) {
+            const mainRadius = 1200;
+            const tubeRadius = 60 * p.radiusOffset * p.strayRadiusOffset;
+            const theta = (idx / count) * Math.PI * 2 + (this.time * 0.2);
+            const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5) + p.phaseOffset;
+            const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
+            const ty = tubeRadius * Math.sin(phi) + 300;
+            const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
+            const torusSpringK = 0.01 * p.strayFactor;
+            tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_WALL) {
+            const cols = 200;
+            const spacing = 40;
+            const zOffset = p.isStray ? (p.targetOffset.z * 5.0) : (p.targetOffset.z * 0.2);
+            const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
+            const ty = (Math.floor(idx / cols) - (count / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
+            const tz = 0 + zOffset;
+            const wallSpringK = 0.01 * p.strayFactor;
+            tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_WAVE) {
+            const cols = Math.floor(Math.sqrt(count));
+            const spacing = 5000 / cols;
+            const yOffset = p.isStray ? (p.targetOffset.y * 2.0) : (p.targetOffset.y * 0.05);
+            const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
+            const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.05;
+            const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
+            const waveSpringK = 0.01 * p.strayFactor;
+            tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_BLACK_HOLE) {
+            if (idx % 10 < 7) {
+                const radius = (idx / count) * 1200 + 50 + p.targetOffset.x * 0.5;
+                const angle = (idx * 0.05) + (this.time * 3.0) + p.phaseOffset * 0.1;
+                const tx = Math.cos(angle) * radius;
+                const tz = Math.sin(angle) * radius;
+                const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
+                const bhSpringK = 0.02 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
+                p.addForce(tempVec);
+            } else {
+                const side = (idx % 2 === 0) ? 1 : -1;
+                const tx = (Math.random() - 0.5) * 40 + p.targetOffset.x * 0.1;
+                const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
+                const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
+                const jetSpringK = 0.02 * p.strayFactor;
+                tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
+                p.addForce(tempVec);
+            }
+        } else if (this.currentMode === this.MODE_SC13_PILLARS) {
+            const pillarIdx = idx % 5;
+            const angle = (pillarIdx / 5) * Math.PI * 2;
+            const pillarRadius = 1500;
+            const px = Math.cos(angle) * pillarRadius;
+            const pz = Math.sin(angle) * pillarRadius;
+            const tx = px + (Math.sin(idx + this.time) * 100) + p.targetOffset.x * 0.5;
+            const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
+            const ty = ((idx / 5) / (count / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
+            const pillarSpringK = 0.01 * p.strayFactor;
+            tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_CHAOS) {
+            const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 0.5 * p.strayFactor;
+            tempVec.copy(p.position).normalize().multiplyScalar(force);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_DEFORM) {
+            const baseRadius = 600;
+            const noiseSpeed = 0.5;
+            const theta = (idx / count) * Math.PI * 2;
+            const phi = Math.acos(2 * (idx / count) - 1);
+            const nx = Math.cos(theta) * Math.sin(phi);
+            const ny = Math.sin(theta) * Math.sin(phi);
+            const nz = Math.cos(phi);
+            const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) * Math.cos(ny * 5.0 + this.time * noiseSpeed) * Math.sin(nz * 5.0 + this.time * noiseSpeed) * 100;
+            const r = (baseRadius + distortion) * p.radiusOffset;
+            const tx = nx * r;
+            const ty = ny * r + 300;
+            const tz = nz * r;
+            const defSpringK = 0.01 * p.strayFactor;
+            tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
+            p.addForce(tempVec);
+        } else if (this.currentMode === this.MODE_SC13_GRAVITY) {
+            p.velocity.multiplyScalar(0.98);
+            p.addForce(this.gravityForce);
+        } else {
+            const tx = p.targetOffset.x;
+            const ty = p.targetOffset.y + 200;
+            const tz = p.targetOffset.z;
+            const defSpringK = 0.0005 * p.strayFactor;
+            tempVec.set((tx - p.position.x) * defSpringK, (ty - p.position.y) * defSpringK, (tz - p.position.z) * defSpringK);
+            p.addForce(tempVec);
+        }
     }
 
     generateGeometricTargets(mode) {

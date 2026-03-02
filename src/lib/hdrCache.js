@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 
-// HDRI (RGBE) loader cache
+// HDRI loader cache (HDR/EXR対応)
 // - 複数シーンで同じHDRを何度もloadしない（GPUメモリ/初期化時間の節約）
-// - file(=importされたURL文字列)ごとにPromiseをキャッシュする
 const _hdrPromiseCache = new Map();
 
 export function loadHdrCached(file) {
@@ -12,20 +12,23 @@ export function loadHdrCached(file) {
   const cached = _hdrPromiseCache.get(key);
   if (cached) return cached;
 
+  const isExr = /\.exr$/i.test(file);
+
   const p = new Promise((resolve, reject) => {
-    new RGBELoader().load(
-      file,
-      (result) => {
-        try {
-          result.mapping = THREE.EquirectangularReflectionMapping;
-          resolve(result);
-        } catch (e) {
-          reject(e);
-        }
-      },
-      undefined,
-      (err) => reject(err)
-    );
+    const onLoad = (result) => {
+      try {
+        result.mapping = THREE.EquirectangularReflectionMapping;
+        resolve(result);
+      } catch (e) {
+        reject(e);
+      }
+    };
+
+    if (isExr) {
+      new EXRLoader().load(file, onLoad, undefined, (err) => reject(err));
+    } else {
+      new RGBELoader().load(file, onLoad, undefined, (err) => reject(err));
+    }
   });
 
   _hdrPromiseCache.set(key, p);

@@ -1,6 +1,6 @@
 /**
  * Scene19: HDRI Sky Dome + 反射球体群
- * kloofendal_48d_partly_cloudy_puresky 8K HDRI + Scene14風の幾何学モード
+ * pure_skies からランダムに1つ選んで適用 + Scene14風の幾何学モード
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -10,12 +10,12 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene14Particle } from '../scene14/Scene14Particle.js';
-import hdriUrl from '../../assets/the_sky_is_on_fire_8k.hdr';
+import { getRandomPureSky } from '../../assets/pureSkiesList.js';
 
 export class Scene19 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Sky Dome: Kloofendal';
+        this.title = 'Sky Dome: Pure Skies';
         this.sceneNumber = 19;
         this.kitNo = 19;
         this.initialized = false;
@@ -141,24 +141,39 @@ export class Scene19 extends SceneBase {
         });
 
         try {
-            const envMap = await this.addSkyDomeIfEnabled(hdriUrl, {
-                environmentIntensity: 1.8,
-                fogColor: 0xffaa88,
-                fogDensity: 0.0001
+            const skyConfig = getRandomPureSky();
+            this.selectedPureSkyConfig = skyConfig; // フレアのON/OFF用に保持
+            const envMap = await this.addSkyDomeIfEnabled(skyConfig.url, {
+                environmentIntensity: 1.5,
+                fogColor: skyConfig.fogColor ?? 0xb5d4e8,
+                fogDensity: skyConfig.fogDensity ?? 0.00008,
+                sunPosition: skyConfig.sunPosition,
+                sunColor: skyConfig.sunColor,
+                sunIntensity: skyConfig.sunIntensity
             });
             this.createSpheres(envMap);
             this.setupShadowLight();
         } catch (e) {
             console.error('Scene19: SkyDome/HDRI load failed:', e);
+            this.selectedPureSkyConfig = { useLensFlare: true, lensFlareIntensity: 0.25 };
             this.createSpheres(null);
         }
+        this.useLensFlare = this.selectedPureSkyConfig?.useLensFlare ?? true;
         this.initPostProcessing();
         this.initialized = true;
     }
 
     setupShadowLight() {
-        const sunLight = new THREE.DirectionalLight(0xff6633, 1.2);
-        sunLight.position.set(5000, 1500, 8000);
+        const cfg = this.skyDomeLightConfig;
+        const sunLight = new THREE.DirectionalLight(
+            cfg?.color ?? 0xaaccff,
+            cfg?.intensity ?? 0.5
+        );
+        if (cfg?.position) {
+            sunLight.position.copy(cfg.position);
+        } else {
+            sunLight.position.set(0, 5000, 8000);
+        }
         sunLight.castShadow = true;
         sunLight.shadow.mapSize.width = 2048;
         sunLight.shadow.mapSize.height = 2048;
@@ -293,7 +308,9 @@ export class Scene19 extends SceneBase {
             });
         }
         this.addFilmGrainIfEnabled(0.35, false);
-        this.addLensFlareIfEnabled({ position: new THREE.Vector3(5000, 1500, 8000), intensity: 0.25 });
+        const flarePos = this.skyDomeLightConfig?.position ?? new THREE.Vector3(0, 5000, 8000);
+        const flareIntensity = this.selectedPureSkyConfig?.lensFlareIntensity ?? 0.25;
+        this.addLensFlareIfEnabled({ position: flarePos, intensity: flareIntensity });
     }
 
     onUpdate(deltaTime) {

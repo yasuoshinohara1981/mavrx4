@@ -630,6 +630,11 @@ export class SceneBase {
         // Scene02など、deltaTimeを使うシーンのみ、ここで更新する
         // this.time += deltaTime;  // サブクラスで独自更新するため、コメントアウト
         
+        // スカイドームの更新
+        if (this.skyDome && this.useSkyDome) {
+            this.skyDome.update(this.camera);
+        }
+
         // サブクラスの更新処理
         this.onUpdate(deltaTime);
         
@@ -733,6 +738,9 @@ export class SceneBase {
             this.renderer.setClearColor(0x000000);
         }
         
+        // スカイドームは scene.background に HDRI を設定しているため、
+        // EffectComposer の RenderPass がシーンを描画する際に自動で背景として表示される
+
         // 色反転エフェクトが有効な場合はColorInversionのcomposerを使用
         if (this.colorInversion && this.colorInversion.isEnabled()) {
             // トラック2が有効な時も他のパス（DOF, Bloomなど）を効かせるため、一時的に追加
@@ -777,6 +785,7 @@ export class SceneBase {
                 }
             }
         }
+        
         
         // HUDを描画（非表示の時はCanvasをクリア）
         if (this.hud) {
@@ -1334,7 +1343,7 @@ export class SceneBase {
     takeScreenshot(is16_9) {
         // 既にスクリーンショット処理中の場合はスキップ
         if (this.pendingScreenshot || this.screenshotExecuting) {
-return;
+            return;
         }
         
         if (!this.renderer || !this.renderer.domElement) {
@@ -1437,7 +1446,7 @@ return;
         this.pendingScreenshot = true;
         this.pendingScreenshotFilename = filename;
         this.screenshotTextEndTime = Date.now() + 3000; // 3秒後（余裕を持たせる）
-}
+    }
     
     /**
      * スクリーンショットテキストを描画
@@ -1497,14 +1506,12 @@ return;
         // スクリーンショットを実行（テキスト表示後に）
         // 注意: executePendingScreenshot()は1回だけ実行されるように、フラグをチェック
         if (this.pendingScreenshot && !this.screenshotExecuting) {
-// 次のフレームで実行するように遅延（テキストが確実に描画されるように）
             // 2フレーム待ってから実行（テキストが確実に描画されるように）
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     if (this.pendingScreenshot && this.showScreenshotText && !this.screenshotExecuting) {
-this.executePendingScreenshot();
-                    } else {
-}
+                        this.executePendingScreenshot();
+                    }
                 });
             });
         }
@@ -1599,7 +1606,7 @@ this.executePendingScreenshot();
                 };
                 
                 // サーバーに送信
-fetch('http://localhost:3001/api/screenshot', {
+                fetch('http://localhost:3001/api/screenshot', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1607,11 +1614,11 @@ fetch('http://localhost:3001/api/screenshot', {
                     body: JSON.stringify(requestData)
                 })
                 .then(response => {
-return response.json();
+                    return response.json();
                 })
                 .then(data => {
                     if (data.success) {
-debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
+                        debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
                     } else {
                         console.error('❌ スクリーンショット保存エラー:', data.error);
                     }
@@ -1748,7 +1755,7 @@ debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
         if (this.scene) {
             this.scene.add(this.gridRuler3D.group);
         }
-}
+    }
     
     /**
      * カメラデバッグ用オブジェクトを初期化
@@ -2013,4 +2020,3 @@ debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
         }
     }
 }
-

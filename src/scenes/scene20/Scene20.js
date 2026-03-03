@@ -219,15 +219,13 @@ export class Scene20 extends SceneBase {
         coreGeo.setAttribute('color', new THREE.BufferAttribute(coreColors, 3));
 
         const coreMat = new THREE.MeshPhysicalMaterial({
-            color: 0xe8f0f8,
+            color: 0xffffff,
             metalness: 0,
             roughness: 0.15,
             envMap: envMap,
             envMapIntensity: 0.5,
             clearcoat: 0.35,
             clearcoatRoughness: 0.1,
-            transparent: true,
-            opacity: 0.5,
             side: THREE.DoubleSide,
             vertexColors: true
         });
@@ -310,15 +308,13 @@ export class Scene20 extends SceneBase {
 
     createTentacleMesh(geometry, envMap) {
         const material = new THREE.MeshPhysicalMaterial({
-            color: 0xe8f0f8,
+            color: 0xffffff,
             metalness: 0,
             roughness: 0.15,
             envMap: envMap,
             envMapIntensity: 0.5,
             clearcoat: 0.35,
             clearcoatRoughness: 0.1,
-            transparent: true,
-            opacity: 0.5,
             side: THREE.DoubleSide,
             vertexColors: true
         });

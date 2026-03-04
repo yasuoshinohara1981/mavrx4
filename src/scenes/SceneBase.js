@@ -39,6 +39,7 @@ export class SceneBase {
         // HUD
         this.hud = null;
         this.showHUD = true;
+        this.hudPositionMode = 0;  // 0=正方形, 1=16:9左, 2=9:16右, 3=非表示
         this.calloutSystem = new CalloutSystem(); // 共通コールアウトシステム
         this.lastFrameTime = null;  // FPS計算用
         this.oscStatus = 'Unknown';  // OSC接続状態
@@ -790,6 +791,8 @@ export class SceneBase {
         // HUDを描画（非表示の時はCanvasをクリア）
         if (this.hud) {
             if (this.showHUD) {
+                // 横位置モードをHUDに反映
+                this.hud.positionMode = this.hudPositionMode;
                 const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
                 const now = performance.now();
                 const frameRate = this.lastFrameTime ? 1.0 / ((now - this.lastFrameTime) / 1000.0) : 60.0;
@@ -1521,129 +1524,68 @@ export class SceneBase {
      * スクリーンショットを実際に撮影（テキスト表示後に呼ばれる）
      */
     executePendingScreenshot() {
-        // 既に実行中の場合はスキップ（念のため）
-        if (this.screenshotExecuting) {
-            return;
-        }
-        
-        // 実行中フラグを設定（重複実行を防ぐ）
+        if (this.screenshotExecuting) return;
         this.screenshotExecuting = true;
         
-        if (!this.pendingScreenshot || !this.showScreenshotText) {
-            this.screenshotExecuting = false;
-            return;
-        }
-        if (!this.renderer || !this.renderer.domElement) {
-            this.screenshotExecuting = false;
-            return;
-        }
-        
-        // ファイル名をローカル変数に保存（非同期処理中にリセットされないように）
         const filename = this.pendingScreenshotFilename;
-        
-        if (!filename) {
-            console.error('❌ ファイル名が設定されていません');
-            this.pendingScreenshot = false;
-            this.pendingScreenshotFilename = '';
-            this.screenshotExecuting = false;
-            return;
-        }
-        
         debugLog('init', `📸 スクリーンショット撮影開始: ${filename}`);
         
-        // Three.jsのCanvasとスクリーンショット用Canvasを合成
-        const size = new THREE.Vector2();
-        this.renderer.getSize(size);
-        const width = size.width;
-        const height = size.height;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
         
-        // 一時的なCanvasを作成して合成
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = width;
         tempCanvas.height = height;
         const tempCtx = tempCanvas.getContext('2d');
         
-        // Three.jsのCanvasを描画
-        tempCtx.drawImage(this.renderer.domElement, 0, 0);
+        // 背景を黒で塗りつぶす
+        tempCtx.fillStyle = '#000000';
+        tempCtx.fillRect(0, 0, width, height);
         
-        // HUDのCanvasを描画（HUDが表示されている場合）
-        if (this.hud && this.hud.canvas && this.showHUD) {
-            tempCtx.drawImage(this.hud.canvas, 0, 0);
-        }
-        
-        // スクリーンショット用Canvas（テキスト）を描画
-        if (this.screenshotCanvas) {
-            tempCtx.drawImage(this.screenshotCanvas, 0, 0);
-        }
-        
-        // 画像をBase64に変換してサーバーに送信
-        tempCanvas.toBlob((blob) => {
-            if (!blob) {
-                console.error('❌ Blobの作成に失敗しました');
-                this.pendingScreenshot = false;
-                this.pendingScreenshotFilename = '';
-                this.screenshotExecuting = false;
-                return;
+        // 合成（サイズを指定して確実に全体を描画）
+        try {
+            // メインの3Dレンダリング結果を描画
+            tempCtx.drawImage(this.renderer.domElement, 0, 0, width, height);
+            
+            // HUDを描画
+            const hudCanvas = document.getElementById('hud-canvas');
+            if (hudCanvas && this.showHUD) {
+                tempCtx.drawImage(hudCanvas, 0, 0, width, height);
             }
             
-            // BlobをBase64に変換
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64data = reader.result;
-                
-                // データの検証
-                if (!base64data) {
-                    console.error('❌ Base64データが生成されていません');
-                    this.pendingScreenshot = false;
-                    this.pendingScreenshotFilename = '';
-                    this.screenshotExecuting = false;
-                    return;
-                }
-                
-                const requestData = {
-                    filename: filename,
-                    imageData: base64data
-                };
-                
-                // サーバーに送信
-                fetch('http://localhost:3001/api/screenshot', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(requestData)
-                })
-                .then(response => {
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success) {
-                        debugLog('init', `✅ スクリーンショット保存成功: ${data.path}`);
-                    } else {
-                        console.error('❌ スクリーンショット保存エラー:', data.error);
-                    }
-                    // 成功/失敗に関わらず、フラグをリセット
-                    this.pendingScreenshot = false;
-                    this.pendingScreenshotFilename = '';
-                    this.screenshotExecuting = false;
-                })
-                .catch(error => {
-                    console.error('❌ スクリーンショット送信エラー:', error.message);
-                    console.error('❌ エラー詳細:', error);
-                    // エラー時もフラグをリセット
-                    this.pendingScreenshot = false;
-                    this.pendingScreenshotFilename = '';
-                    this.screenshotExecuting = false;
-                });
-            };
-            reader.onerror = (error) => {
-                console.error('❌ FileReaderエラー:', error);
-                this.pendingScreenshot = false;
-                this.pendingScreenshotFilename = '';
-                this.screenshotExecuting = false;
-            };
-            reader.readAsDataURL(blob);
-        }, 'image/png');
+            // スクリーンショット用テキスト（Canvas）を描画
+            if (this.screenshotCanvas) {
+                tempCtx.drawImage(this.screenshotCanvas, 0, 0, width, height);
+            }
+            
+            const base64data = tempCanvas.toDataURL('image/jpeg', 0.8);
+            debugLog('init', `📤 送信中... (${(base64data.length / 1024).toFixed(0)} KB)`);
+            
+            fetch('http://localhost:3001/api/screenshot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename, imageData: base64data })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) debugLog('init', `✅ 保存成功: ${data.path}`);
+                else console.error('❌ 保存失敗:', data.error);
+            })
+            .catch(err => console.error('❌ 送信失敗:', err))
+            .finally(() => this.resetScreenshotFlags());
+        } catch (err) {
+            console.error('❌ 合成/生成失敗:', err);
+            this.resetScreenshotFlags();
+        }
+    }
+    
+    /**
+     * スクリーンショット用フラグをリセット
+     */
+    resetScreenshotFlags() {
+        this.pendingScreenshot = false;
+        this.pendingScreenshotFilename = '';
+        this.screenshotExecuting = false;
     }
     
     /**

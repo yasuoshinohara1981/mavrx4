@@ -6,9 +6,24 @@
 
 import * as THREE from 'three';
 
+/**
+ * HUD横幅モード（h/Hキーでサイクル）
+ * 0: 正方形（現状）
+ * 1: 16:9用（横幅が広い）
+ * 2: 9:16縦動画用（横幅が狭い）
+ * 3: 非表示
+ */
+export const HUD_POSITION_MODE = {
+    SQUARE: 0,
+    WIDE_16_9: 1,
+    TALL_9_16: 2,
+    HIDDEN: 3
+};
+
 export class HUD {
     constructor() {
         this.showHUD = true;  // HUD表示フラグ
+        this.positionMode = HUD_POSITION_MODE.SQUARE;  // 横幅モード（0=正方形, 1=16:9広, 2=9:16狭）
         this.hudColor = '#ffffff';
         this.hudColorDim = 'rgba(255, 255, 255, 0.8)';
         this.fontSize = 20;  // 少し小さく
@@ -35,14 +50,14 @@ export class HUD {
             this.canvas.style.zIndex = '10000';  // パーティクルより上に表示
         } else {
             // 新しいCanvasを作成
-        this.canvas = document.createElement('canvas');
-        this.canvas.id = 'hud-canvas';
-        this.canvas.style.position = 'absolute';
-        this.canvas.style.top = '0';
-        this.canvas.style.left = '0';
-        this.canvas.style.pointerEvents = 'none';
-        this.canvas.style.zIndex = '10000';  // パーティクルより上に表示
-        document.body.appendChild(this.canvas);
+            this.canvas = document.createElement('canvas');
+            this.canvas.id = 'hud-canvas';
+            this.canvas.style.position = 'absolute';
+            this.canvas.style.top = '0';
+            this.canvas.style.left = '0';
+            this.canvas.style.pointerEvents = 'none';
+            this.canvas.style.zIndex = '10000';  // パーティクルより上に表示
+            document.body.appendChild(this.canvas);
         }
         
         this.ctx = this.canvas.getContext('2d');
@@ -60,11 +75,55 @@ export class HUD {
      * サイズを更新
      */
     updateSize() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-        this.squareSize = Math.min(window.innerWidth, window.innerHeight);
-        this.squareX = (window.innerWidth - this.squareSize) / 2;
-        this.squareY = (window.innerHeight - this.squareSize) / 2;
+        const screenW = Math.floor(window.innerWidth);
+        const screenH = Math.floor(window.innerHeight);
+        
+        // キャンバスサイズを画面全体に設定
+        if (this.canvas.width !== screenW || this.canvas.height !== screenH) {
+            this.canvas.width = screenW;
+            this.canvas.height = screenH;
+            this.canvas.style.width = screenW + 'px';
+            this.canvas.style.height = screenH + 'px';
+        }
+        
+        // 高さは常に画面の高さを基準にする（変えない）
+        let h = screenH;
+        let w;
+        
+        // モードに応じて横幅を設定（高さは固定）
+        // 注: 9:16や16:9は厳密な比率ではなく、実用的な見た目を優先した比率を使用
+        switch (this.positionMode) {
+            case HUD_POSITION_MODE.WIDE_16_9:
+                w = h * (4 / 3);  // 16:9ではなく4:3（やや広め）
+                break;
+            case HUD_POSITION_MODE.TALL_9_16:
+                w = h * (3 / 4);  // 9:16ではなく3:4（やや狭め）
+                break;
+            case HUD_POSITION_MODE.SQUARE:
+            default:
+                w = h;
+                break;
+        }
+
+        // 横幅が画面幅を超える場合のみ調整（高さは変えない）
+        if (w > screenW) {
+            w = screenW;
+        }
+
+        this.squareWidth = w;
+        this.squareHeight = h;
+        this.margin = h * 0.15;
+        
+        // 中央配置
+        this.squareX = (screenW - w) / 2;
+        this.squareY = (screenH - h) / 2;
+        this.squareSize = h;
+        
+        // デバッグ: サイズ情報を出力（1秒に1回）
+        if (!this._lastDebugTime || Date.now() - this._lastDebugTime > 1000) {
+            console.log(`📐 HUD Size: screenW=${screenW}, screenH=${screenH}, w=${w.toFixed(0)}, h=${h.toFixed(0)}, mode=${this.positionMode}`);
+            this._lastDebugTime = Date.now();
+        }
     }
     
     /**
@@ -79,16 +138,10 @@ export class HUD {
      * HUDを描画
      */
     display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = []) {
-        // HUDが非表示の場合は何もしない
-        if (!this.showHUD) {
-            return;
-        }
-        
         // 目盛りのスケール（カメラに合わせる）
         this.hudScales = hudScales;
         
         // 色反転エフェクトが有効な場合はHUDの色を反転（白→黒）
-        // mavrx4準拠：中心線/円が濃すぎないように dim は alpha 0.3
         if (backgroundWhite) {
             this.hudColor = '#000000';
             this.hudColorDim = 'rgba(0, 0, 0, 0.3)';
@@ -97,8 +150,14 @@ export class HUD {
             this.hudColorDim = 'rgba(255, 255, 255, 0.3)';
         }
         
-        // サイズを更新
+        // サイズを更新（キャンバスのリセットを伴う）
         this.updateSize();
+        
+        // HUDが非表示の場合は、サイズ更新だけして終了（クリア状態を維持）
+        if (!this.showHUD) {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            return;
+        }
         
         // Canvasをクリア
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -111,17 +170,14 @@ export class HUD {
         this.ctx.translate(this.squareX, this.squareY);
         
         // HUDの描画（正方形領域内）
-        // 3Dグリッド（床+縦）＋ルーラー（g/Gでトグル）
         if (hudGrid && hudGrid.enabled && hudGrid.camera && hudGrid.box) {
             this.draw3DGridAndRulers(hudGrid.camera, hudGrid.box);
         }
 
-        // ===== 追加HUD: 上部の「白バー + 赤インジケータ」=====
-        // "常に動く"共通値で駆動（timeベースのスキャン）
+        // 上部のインジケータバー
         this.drawTopIndicatorBar(time, currentBar, rotationY, debugText, actualTick);
 
-        // ===== 追加HUD: 下部のモードバー（軍事UIっぽい）=====
-        // drawBottomModeBar(time, phase, currentBar, trackEffects, actualTick)
+        // 下部のモードバー
         this.drawBottomModeBar(time, phase, currentBar, trackEffects, actualTick);
 
         this.drawCornerMarkers();
@@ -131,11 +187,11 @@ export class HUD {
         this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName, sceneNumber);
         this.drawStatusBar(rotationX, rotationY, distance, noiseLevel, oscStatus, particleCount);
         
-        // 航空機風HUD要素を追加
+        // 航空機風HUD要素
         this.drawAltitudeTape(cameraPosition);
         this.drawFlightParameters(frameRate, distance, rotationX, rotationY);
         
-        // 2Dコールアウトを描画
+        // 2Dコールアウト
         if (callouts && callouts.length > 0) {
             this.drawCallouts(callouts);
         }
@@ -221,12 +277,14 @@ export class HUD {
      * - Scene依存しない共通値として使える
      */
     drawTopIndicatorBar(time = 0, currentBar = 0, rotationY = 0, debugText = '', actualTick = 0) {
-        const w = this.squareSize;
-        const marginX = w * 0.12;
-        const y = w * 0.06;
-        const barW = w - marginX * 2;
-        const x0 = marginX;
-        const x1 = x0 + barW;
+        const w = this.squareWidth;
+        const h = this.squareHeight;
+        const margin = this.margin;
+        const extra = 30; // コーナーマーカーより少し外側に出す量
+        const x0 = margin - extra;
+        const x1 = w - margin + extra;
+        const barW = x1 - x0;
+        const y = h * 0.06;
 
         // フェーズマーカーの定義（小節数, フェーズ番号, フェーズ名）
         // 1小節目 = スタート地点なので無視
@@ -339,7 +397,7 @@ export class HUD {
         const label = hasTick
             ? `PROG ${(scan * 100).toFixed(0)}  TICK ${Math.floor(actualTick)}  HDG ${Math.round(heading)}`
             : `SCAN ${(scan * 100).toFixed(0)}  HDG ${Math.round(heading)}`;
-        this.ctx.fillText(label, x0, y - 14);
+        this.ctx.fillText(label, margin, y - 14);
 
         // デバッグ表示（シーンから渡す）
         if (debugText) {
@@ -348,7 +406,7 @@ export class HUD {
             this.ctx.font = '14px monospace';
             this.ctx.textAlign = 'right';
             this.ctx.textBaseline = 'bottom';
-            this.ctx.fillText(String(debugText), x1, y - 14);
+            this.ctx.fillText(String(debugText), w - margin, y - 14);
         }
 
         this.ctx.restore();
@@ -360,10 +418,13 @@ export class HUD {
      * - time でスキャン/点滅を加える
      */
     drawBottomModeBar(time = 0, phase = 0, currentBar = 0, trackEffects = null, actualTick = 0) {
-        const w = this.squareSize;
-        const y = w * 0.93;
-        const barW = w * 0.78;
-        const x0 = (w - barW) * 0.5;
+        const w = this.squareWidth;
+        const hTotal = this.squareHeight;
+        const margin = this.margin;
+        const extra = 30;
+        const barW = (w - margin * 2) + extra * 2;
+        const x0 = margin - extra;
+        const y = hTotal * 0.93;
         const h = 26;
         const pad = 10;
         const labels = ['FLIR', 'TARGET', 'NAV', 'IR'];
@@ -429,7 +490,7 @@ export class HUD {
         this.ctx.fillStyle = this.hudColor;
         this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'bottom';
-        this.ctx.fillText(`${t2} ${t3} ${t4}`, x0, y - h - 16);
+        this.ctx.fillText(`${t2} ${t3} ${t4}`, margin, y - h - 16);
 
         this.ctx.restore();
     }
@@ -463,8 +524,8 @@ export class HUD {
             // クリップ外は捨てる
             if (!isFinite(v.x) || !isFinite(v.y) || !isFinite(v.z)) return null;
             if (v.z < -1 || v.z > 1) return null;
-            const px = (v.x * 0.5 + 0.5) * this.squareSize;
-            const py = (-v.y * 0.5 + 0.5) * this.squareSize;
+            const px = (v.x * 0.5 + 0.5) * this.squareWidth;
+            const py = (-v.y * 0.5 + 0.5) * this.squareHeight;
             return { x: px, y: py };
         };
 
@@ -596,7 +657,7 @@ export class HUD {
         this.ctx.strokeStyle = this.hudColor;
         this.ctx.lineWidth = 3;
         
-        const margin = this.squareSize * 0.15;
+        const margin = this.margin;
         const markerSize = 30;
         
         // 左上
@@ -609,26 +670,26 @@ export class HUD {
         
         // 右上
         this.ctx.beginPath();
-        this.ctx.moveTo(this.squareSize - margin, margin);
-        this.ctx.lineTo(this.squareSize - margin - markerSize, margin);
-        this.ctx.moveTo(this.squareSize - margin, margin);
-        this.ctx.lineTo(this.squareSize - margin, margin + markerSize);
+        this.ctx.moveTo(this.squareWidth - margin, margin);
+        this.ctx.lineTo(this.squareWidth - margin - markerSize, margin);
+        this.ctx.moveTo(this.squareWidth - margin, margin);
+        this.ctx.lineTo(this.squareWidth - margin, margin + markerSize);
         this.ctx.stroke();
         
         // 左下
         this.ctx.beginPath();
-        this.ctx.moveTo(margin, this.squareSize - margin);
-        this.ctx.lineTo(margin + markerSize, this.squareSize - margin);
-        this.ctx.moveTo(margin, this.squareSize - margin);
-        this.ctx.lineTo(margin, this.squareSize - margin - markerSize);
+        this.ctx.moveTo(margin, this.squareHeight - margin);
+        this.ctx.lineTo(margin + markerSize, this.squareHeight - margin);
+        this.ctx.moveTo(margin, this.squareHeight - margin);
+        this.ctx.lineTo(margin, this.squareHeight - margin - markerSize);
         this.ctx.stroke();
         
         // 右下
         this.ctx.beginPath();
-        this.ctx.moveTo(this.squareSize - margin, this.squareSize - margin);
-        this.ctx.lineTo(this.squareSize - margin - markerSize, this.squareSize - margin);
-        this.ctx.moveTo(this.squareSize - margin, this.squareSize - margin);
-        this.ctx.lineTo(this.squareSize - margin, this.squareSize - margin - markerSize);
+        this.ctx.moveTo(this.squareWidth - margin, this.squareHeight - margin);
+        this.ctx.lineTo(this.squareWidth - margin - markerSize, this.squareHeight - margin);
+        this.ctx.moveTo(this.squareWidth - margin, this.squareHeight - margin);
+        this.ctx.lineTo(this.squareWidth - margin, this.squareHeight - margin - markerSize);
         this.ctx.stroke();
     }
     
@@ -639,8 +700,8 @@ export class HUD {
         this.ctx.strokeStyle = this.hudColorDim;
         this.ctx.lineWidth = 2;
         
-        const centerX = this.squareSize / 2;
-        const centerY = this.squareSize / 2;
+        const centerX = this.squareWidth / 2;
+        const centerY = this.squareHeight / 2;
         const size = 20;
         
         // 十字線
@@ -679,11 +740,11 @@ export class HUD {
         this.ctx.strokeStyle = this.hudColorDim;
         this.ctx.lineWidth = 2;
         
-        const centerX = this.squareSize / 2;
+        const centerX = this.squareWidth / 2;
         
         this.ctx.beginPath();
         this.ctx.moveTo(centerX, 0);
-        this.ctx.lineTo(centerX, this.squareSize);
+        this.ctx.lineTo(centerX, this.squareHeight);
         this.ctx.stroke();
     }
     
@@ -698,10 +759,10 @@ export class HUD {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'top';
         
-        const margin = this.squareSize * 0.15;
-        const y = this.squareSize - margin - 40;
+        const margin = this.margin;
+        const y = this.squareHeight - margin - 40;
         const startX = margin + 30;
-        const endX = this.squareSize - margin - 30;
+        const endX = this.squareWidth - margin - 30;
         const rulerLength = endX - startX;
         
         // メインライン
@@ -719,7 +780,7 @@ export class HUD {
         
         // 画面の「高さ」に相当するワールド長（中心付近）
         const worldHeight = 2.0 * distToTarget * Math.tan(fovRad * 0.5);
-        const worldPerPixel = worldHeight / Math.max(1, this.squareSize);
+        const worldPerPixel = worldHeight / Math.max(1, this.squareHeight);
         const rulerWorldLength = worldPerPixel * rulerLength;
         
         // いい感じの目盛り最大値（1-2-5系）
@@ -766,7 +827,7 @@ export class HUD {
      * 情報パネルを描画
      */
     drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null, sceneNumber = null) {
-        const margin = this.squareSize * 0.15;
+        const margin = this.margin;
         let x = margin + 20;
         let y = margin + 40;
         const lineHeight = 20;
@@ -879,11 +940,11 @@ export class HUD {
         this.ctx.textAlign = 'right';
         this.ctx.textBaseline = 'top';
         
-        const margin = this.squareSize * 0.15;
-        const scaleX = this.squareSize - margin - 30;
+        const margin = this.margin;
+        const scaleX = this.squareWidth - margin - 20; // コーナーマーカーの内側に確実に配置
         const altLabelY = margin + 40;
         const scaleY = altLabelY + 40;
-        const scaleHeight = this.squareSize * 0.4;
+        const scaleHeight = this.squareHeight * 0.4;
         
         // ALTラベル
         this.ctx.fillText('ALT', scaleX, altLabelY);
@@ -927,21 +988,23 @@ export class HUD {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         
-        const margin = this.squareSize * 0.15;
+        const margin = this.margin;
+        const extra = 30; // コーナーマーカーより少し外側に出す量
         const barHeight = 35;
-        const barWidth = this.squareSize - margin * 2;
-        const barX = margin;
-        const rulerY = this.squareSize - margin - 40;
+        const barWidth = (this.squareWidth - margin * 2) + extra * 2;
+        const barX = margin - extra;
+        const rulerY = this.squareHeight - margin - 40;
         const rulerTextY = rulerY + 8;
         const barY = rulerTextY + 50;  // Processingと同じ
         
         // ステータスバーの枠
         this.ctx.strokeRect(barX, barY, barWidth, barHeight);
         
-        // ステータスバー内の区切り線（4分割、Processingと同じ）
-        const divisionX1 = barX + barWidth / 4;
-        const divisionX2 = barX + barWidth / 2;
-        const divisionX3 = barX + barWidth * 3 / 4;
+        // ステータスバー内の区切り線（4分割、コーナーマーカー位置基準）
+        const innerW = this.squareWidth - margin * 2;
+        const divisionX1 = margin + innerW * 0.25;
+        const divisionX2 = margin + innerW * 0.5;
+        const divisionX3 = margin + innerW * 0.75;
         
         this.ctx.beginPath();
         this.ctx.moveTo(divisionX1, barY);
@@ -952,38 +1015,45 @@ export class HUD {
         this.ctx.lineTo(divisionX3, barY + barHeight);
         this.ctx.stroke();
         
-        // ステータス表示（Processingと同じ）
+        // ステータス表示（コーナーマーカー位置基準）
         const rotXDeg = (rotationX * 180) / Math.PI;
         const rotYDeg = (rotationY * 180) / Math.PI;
         
-        // 左側：ローテーション角度
-        this.ctx.fillText(`ROT: ${rotXDeg.toFixed(1)}°/${rotYDeg.toFixed(1)}°`, barX + barWidth / 8, barY + barHeight / 2);
+        this.ctx.textBaseline = 'middle';
+        
+        // 左側：ローテーション角度（左コーナー位置）
+        this.ctx.textAlign = 'left';
+        this.ctx.fillText(`ROT: ${rotXDeg.toFixed(1)}°/${rotYDeg.toFixed(1)}°`, margin + 10, barY + barHeight / 2);
         
         // 左から2番目：距離情報
-        this.ctx.fillText(`DST: ${distance.toFixed(0)}m`, barX + barWidth * 3 / 8, barY + barHeight / 2);
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(`DST: ${distance.toFixed(0)}m`, margin + innerW * 0.3, barY + barHeight / 2);
         
-        // 中央：検知ステータス（ノイズレベルに基づく）
-        const detectStatus = noiseLevel > 30.0 ? 'DETECT' : 'SCAN';
-        this.ctx.fillText(`STAT: ${detectStatus}`, barX + barWidth / 2, barY + barHeight / 2);
+        // 中央：検知ステータス（OSC接続状態を表示）
+        this.ctx.textAlign = 'center';
+        const statusText = oscStatus ? 'ONLINE' : 'OFFLINE';
+        this.ctx.fillText(`STAT: ${statusText}`, margin + innerW * 0.5, barY + barHeight / 2);
         
         // 右から2番目：ノイズレベル
-        this.ctx.fillText(`NOISE: ${noiseLevel.toFixed(1)}`, barX + barWidth * 5 / 8, barY + barHeight / 2);
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(`NOISE: ${noiseLevel.toFixed(1)}`, margin + innerW * 0.7, barY + barHeight / 2);
         
-        // 右側：システムステータス
-        this.ctx.fillText('SYS: OK', barX + barWidth * 7 / 8, barY + barHeight / 2);
+        // 右側：システムステータス（右コーナー位置）
+        this.ctx.textAlign = 'right';
+        this.ctx.fillText('SYS: OK', margin + innerW - 10, barY + barHeight / 2);
     }
     
     /**
      * 速度テープを描画（左側、四隅マーカーの中、枠なし）
      */
     drawSpeedTape(cameraPosition, distance) {
-        const margin = this.squareSize * 0.15;
+        const margin = this.margin;
         const markerSize = 30;
         const tapeWidth = 80;
-        const tapeX = margin + markerSize + 10;  // 四隅マーカーの右側
+        const tapeX = margin + 20;  // コーナーマーカーの内側に確実に配置
         const tapeY = margin + markerSize + 10;  // 四隅マーカーの下側
-        const tapeHeight = this.squareSize - (margin + markerSize) * 2 - 20;  // 上下のマーカー間
-        const centerY = this.squareSize / 2;
+        const tapeHeight = this.squareHeight - (margin + markerSize) * 2 - 20;  // 上下のマーカー間
+        const centerY = this.squareHeight / 2;
         
         // 現在の速度を計算（距離ベース、簡易版）
         const speed = Math.max(0, Math.min(999, distance * 0.1 + Math.random() * 50));
@@ -1036,6 +1106,8 @@ export class HUD {
      * 高度テープを描画（右側、シンプルな縦目盛り）
      */
     drawAltitudeTape(cameraPosition) {
+        // デバッグ: 高度テープ描画開始
+        this.ctx.save();
         this.ctx.strokeStyle = this.hudColor;
         this.ctx.fillStyle = this.hudColor;
         this.ctx.lineWidth = 2;
@@ -1043,22 +1115,22 @@ export class HUD {
         this.ctx.textAlign = 'right';
         this.ctx.textBaseline = 'top';
         
-        const margin = this.squareSize * 0.15;
-        const scaleX = this.squareSize - margin - 30;
+        const margin = this.margin;
+        const scaleX = this.squareWidth - margin - 30;
         const altLabelY = margin + 40;
         const scaleY = altLabelY + 40;
-        const scaleHeight = this.squareSize * 0.4;
+        const scaleHeight = this.squareHeight * 0.4;
         
         // ALTラベル
         this.ctx.fillText('ALT', scaleX, altLabelY);
         
-        // メインライン（縦線）
+        // メインライン
         this.ctx.beginPath();
         this.ctx.moveTo(scaleX, scaleY);
         this.ctx.lineTo(scaleX, scaleY + scaleHeight);
         this.ctx.stroke();
         
-        // 目盛り（ズームに応じてリアルタイムに変える：カメラYを中心に±レンジ表示）
+        // 目盛り
         const cameraY = (this.hudScales && typeof this.hudScales.cameraY === 'number') ? this.hudScales.cameraY : (cameraPosition?.y ?? 0);
         const distToTarget = (this.hudScales && typeof this.hudScales.distToTarget === 'number') ? this.hudScales.distToTarget : 1.0;
         const fovDeg = (this.hudScales && typeof this.hudScales.fovDeg === 'number') ? this.hudScales.fovDeg : 60.0;
@@ -1096,7 +1168,6 @@ export class HUD {
             this.ctx.lineTo(scaleX, y);
             this.ctx.stroke();
             
-            // 数値を表示（5の倍数のみ）
             if (i % 5 === 0) {
                 this.ctx.textBaseline = 'middle';
                 const v = altMin + altRange * (i / divisions);
@@ -1104,14 +1175,15 @@ export class HUD {
                 this.ctx.textBaseline = 'top';
             }
         }
+        this.ctx.restore();
     }
     
     /**
      * ピッチラダーを描画（水平線の上下に角度マーカー）
      */
     drawPitchLadder(rotationX) {
-        const centerX = this.squareSize / 2;
-        const centerY = this.squareSize / 2;
+        const centerX = this.squareWidth / 2;
+        const centerY = this.squareHeight / 2;
         const pitchDeg = (rotationX * 180) / Math.PI;
         
         this.ctx.strokeStyle = this.hudColor;
@@ -1146,8 +1218,8 @@ export class HUD {
      * 飛行経路マーカーを描画（中心の円形マーカー）
      */
     drawFlightPathMarker(rotationX, rotationY) {
-        const centerX = this.squareSize / 2;
-        const centerY = this.squareSize / 2;
+        const centerX = this.squareWidth / 2;
+        const centerY = this.squareHeight / 2;
         
         // ピッチとロールに基づいてマーカーの位置を調整
         const pitchOffset = (rotationX * 180) / Math.PI * 5;
@@ -1178,8 +1250,8 @@ export class HUD {
      * コンパスローズを描画（下部の方位表示）
      */
     drawCompassRose(rotationY) {
-        const centerX = this.squareSize / 2;
-        const bottomY = this.squareSize - 60;
+        const centerX = this.squareWidth / 2;
+        const bottomY = this.squareHeight - 60;
         const radius = 80;
         
         const heading = ((rotationY * 180) / Math.PI + 360) % 360;
@@ -1228,10 +1300,10 @@ export class HUD {
      * 飛行パラメータを描画（各種情報、四隅マーカーの高さに合わせる）
      */
     drawFlightParameters(frameRate, distance, rotationX, rotationY) {
-        const margin = this.squareSize * 0.15;
-        const topY = margin;  // 四隅マーカーの高さに合わせる
-        const leftX = this.squareSize / 2 - 150;
-        const rightX = this.squareSize / 2 + 150;
+        const margin = this.margin;
+        const topY = margin - 40; // コーナーマーカーより上に配置（左側テープと被らないように）
+        const leftX = this.squareWidth / 2 - 150;
+        const rightX = this.squareWidth / 2 + 150;
         
         this.ctx.fillStyle = this.hudColor;
         this.ctx.font = `${this.fontWeight} ${this.fontSize - 4}px ${this.fontFamily}`;
@@ -1249,8 +1321,8 @@ export class HUD {
         
         // 中央上部：モード表示
         this.ctx.textAlign = 'center';
-        this.ctx.fillText(`CMD`, this.squareSize / 2, topY);
-        this.ctx.fillText(`LNAV`, this.squareSize / 2, topY + 20);
+        this.ctx.fillText(`CMD`, this.squareWidth / 2, topY);
+        this.ctx.fillText(`LNAV`, this.squareWidth / 2, topY + 20);
     }
     
     /**

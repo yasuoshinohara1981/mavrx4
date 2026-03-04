@@ -244,26 +244,29 @@ function handleKeyDown(e) {
         return;
     }
     
-    // h/HキーでHUDのオンオフ（グローバル状態を更新）
+    // h/HキーでHUDの位置・表示をサイクル（正方形→16:9→9:16→非表示→正方形…）
     if (e.key === 'h' || e.key === 'H') {
         e.preventDefault();
-        // グローバル状態を更新
         if (sceneManager) {
-            sceneManager.globalShowHUD = !sceneManager.globalShowHUD;
-            // 現在のシーンにも適用
+            // 4段階サイクル: 0→1→2→3→0
+            sceneManager.globalHudPositionMode = (sceneManager.globalHudPositionMode + 1) % 4;
+            sceneManager.globalShowHUD = (sceneManager.globalHudPositionMode !== 3);
             currentScene.showHUD = sceneManager.globalShowHUD;
-} else {
-            // フォールバック（sceneManagerがない場合）
+            currentScene.hudPositionMode = sceneManager.globalHudPositionMode;
+        } else {
             currentScene.showHUD = !currentScene.showHUD;
-}
+        }
         return;
     }
     
-    // s/Sキーでスクリーンショット（正方形）
+    // s/Sキーでスクリーンショット
     if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         if (currentScene.takeScreenshot) {
-            currentScene.takeScreenshot(false);  // false = 正方形
+            // HUDの現在のモードに合わせて16:9か正方形かを自動判定
+            // 1: 16:9, それ以外: 正方形
+            const isWide = (sceneManager && sceneManager.globalHudPositionMode === 1);
+            currentScene.takeScreenshot(isWide);
         }
         return;
     }

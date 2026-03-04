@@ -121,8 +121,8 @@ const httpServer = http.createServer((req, res) => {
                     return;
                 }
                 
-                // Base64データをデコード
-                const base64Data = imageData.replace(/^data:image\/png;base64,/, '');
+                // Base64データをデコード（プレフィックスを汎用的に除去）
+                const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
                 const buffer = Buffer.from(base64Data, 'base64');
                 
                 // 保存先ディレクトリを決定（pathが指定されている場合はpublic配下）
@@ -203,8 +203,8 @@ const httpServer = http.createServer((req, res) => {
                     return;
                 }
                 
-                // Base64データをデコード
-                const base64Data = imageData.replace(/^data:image\/png;base64,/, '');
+                // Base64データをデコード（プレフィックスを汎用的に除去）
+                const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
                 console.log('Base64データサイズ:', base64Data.length, 'bytes');
                 const buffer = Buffer.from(base64Data, 'base64');
                 console.log('Bufferサイズ:', buffer.length, 'bytes');

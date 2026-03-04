@@ -42,6 +42,8 @@ export class SceneManager {
         
         // HUDの状態をグローバルに保持（シーン切り替えに関係なく保持）
         this.globalShowHUD = true;
+        // HUD横位置モード: 0=正方形(中央), 1=16:9(左), 2=9:16(右), 3=非表示
+        this.globalHudPositionMode = 0;
         
         // 選択されたキット番号（OSCの/kit/メッセージで受け取る値）
         this.selectedKitNo = 0;
@@ -233,6 +235,7 @@ return;
             
             // HUDの状態をグローバル状態に合わせる（シーン切り替え時）
             newScene.showHUD = this.globalShowHUD;
+            newScene.hudPositionMode = this.globalHudPositionMode;
             
             // 共有リソースを使っている場合は即座にアクティブ化（表示を開始）
             // setup()は非同期で実行されるため、ブロッキングしない
@@ -248,6 +251,7 @@ return;
                 }).then(() => {
                     // HUDの状態を再度設定（setup()後に確実に適用）
                     newScene.showHUD = this.globalShowHUD;
+                    newScene.hudPositionMode = this.globalHudPositionMode;
                     
                     // コールバックを呼び出し
                     if (this.onSceneChange) {

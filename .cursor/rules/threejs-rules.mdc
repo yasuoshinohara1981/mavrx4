@@ -1,0 +1,274 @@
+---
+description: Three.js Live Visualプロジェクト固有のルール（起動手順、シーン追加、シェーダー管理など）
+globs: threejs-live/**
+alwaysApply: false
+---
+
+# Three.js Live Visual プロジェクトルール
+
+## 現在のメインプロジェクト
+
+- **メイン**: `@threejs-live/mavrx4`
+- **レンダリング方式**: **WebGL（Three.js）**
+- 旧 `@threejs-live/mavrx4-webgpu` はWebGPU版として別プロジェクトとして存在
+
+## 起動手順
+
+このプロジェクトを起動するには、**2つのターミナル**が必要です：
+
+### 1. OSCサーバーの起動（必須）
+
+```bash
+cd /Users/shinoharayasuo/Documents/threejs-live/mavrx4
+npm run osc-server
+```
+
+OSCサーバーが起動すると：
+- OSC受信ポート: `30337`（Processingと同じ）
+- WebSocketポート: `8080`
+- HTTPサーバーポート: `3001`（スクリーンショット保存用）
+- コンソールに「OSC WebSocket Server 起動完了」と表示される
+
+### 2. 開発サーバーの起動
+
+```bash
+cd /Users/shinoharayasuo/Documents/threejs-live/mavrx4
+npm run dev
+```
+
+ブラウザで `http://localhost:3000` が自動的に開きます。
+
+## プロジェクト構造
+
+```
+mavrx4/
+├── index.html
+├── package.json
+├── vite.config.js
+├── osc-server.js
+├── src/
+│   ├── main.js
+│   ├── lib/
+│   │   ├── BackgroundGradient.js
+│   │   ├── CameraParticle.js
+│   │   ├── ColorInversion.js
+│   │   ├── DebugLogger.js
+│   │   ├── GPUClothSystem.js
+│   │   ├── GPUParticleSystem.js
+│   │   ├── GridRuler3D.js
+│   │   ├── HUD.js
+│   │   ├── InstancedMeshManager.js
+│   │   ├── LFO.js
+│   │   ├── Particle.js
+│   │   ├── RandomLFO.js
+│   │   └── SharedResourceManager.js
+│   ├── scenes/
+│   │   ├── SceneBase.js
+│   │   ├── SceneTemplate.js
+│   │   ├── scene01/        # Scene01: 爆発・ミサイル・スコープ
+│   │   ├── scene02/        # Scene02: 接続・赤球・黄球・スコープ
+│   │   ├── scene03/        # Scene03: 球体パーティクル + クレーター + レーザースキャン
+│   │   ├── scene04/        # Scene04: 1000x1000のTerrain表示
+│   │   ├── scene05/        # Scene05: テンプレートベース（リセット済み）
+│   │   ├── scene06/        # Scene06: パーティクル爆発テスト
+│   │   ├── scene07/        # Scene07: 格子状のSphereネットワーク
+│   │   ├── scene08/        # Scene08: 布のシミュレーション
+│   │   ├── scene09/        # Scene09: テンプレートベース（リセット済み）
+│   │   └── scene10/        # Scene10: カラビ・ヤウ多様体
+│   └── systems/
+│       ├── OSCManager.js
+│       └── SceneManager.js
+└── public/
+    └── shaders/
+        ├── common/         # 共通シェーダー（色反転、色収差、グリッチなど）
+        ├── scene01/        # Scene01専用シェーダー
+        ├── scene02/        # Scene02専用シェーダー
+        ├── scene03/        # Scene03専用シェーダー
+        ├── scene04/        # Scene04専用シェーダー
+        ├── scene08/        # Scene08専用シェーダー
+        ├── scene09/        # Scene09専用シェーダー
+        └── scene10/        # Scene10専用シェーダー
+```
+
+## 新規シーン追加
+
+### 最短手順
+
+1) `src/scenes/sceneXX/SceneXX.js` を作成
+- 例: `src/scenes/scene12/Scene12.js`
+
+2) **`SceneBase` を継承して作る**
+- テンプレ: `src/scenes/SceneTemplate.js`
+- `constructor(renderer, camera, sharedResourceManager = null)` の形式で作成
+- `constructor()` で `this.title` と `this.trackEffects` を設定
+- シーン固有ロジックは `onUpdate()` / `handleTrackNumber()` を上書き
+- 共有リソースを使用する場合は `sharedResourceManager` パラメータを受け取る
+
+3) `src/systems/SceneManager.js` に import + `this.scenes.push(new SceneXX(...))` を追加
+
+4) `src/main.js` の `Ctrl + 数字` 分岐に `sceneManager.switchScene(n)` を追加（インデックスは0から始まる）
+
+## キーボード操作
+
+### シーン切り替え
+- **Ctrl + 1**: Scene11
+- **Ctrl + 2**: Scene12
+- **Ctrl + 3**: Scene13
+- **Ctrl + 4**: Scene14
+- **Ctrl + 5**: Scene15
+- **Ctrl + 6**: Scene16
+- **Ctrl + 7**: Scene17
+- **Ctrl + 8**: Scene18
+- **Ctrl + 9**: Scene19
+- **Ctrl + 0**: Scene20
+
+### トラック処理（数字キー）
+- **0**: トラック10
+- **1**: カメラランダマイズ ON/OFF
+- **2**: 色反転エフェクト ON/OFF
+- **3**: 色収差エフェクト ON/OFF
+- **4**: グリッチエフェクト ON/OFF
+- **5-9**: OSCメッセージ送信（トラック5-9）
+
+### その他の操作
+- **h/H**: HUDの横幅・表示をサイクル（正方形→16:9広→9:16狭→非表示→正方形…）
+- **s/S**: 正方形のスクリーンショットを撮影
+- **y/Y**: 16:9のスクリーンショットを撮影
+- **F11**: フルスクリーン切り替え
+- **r/R**: シーンをリセット（キーを離した時）
+- **l/L**: 線描画の表示/非表示を切り替え（キーを離した時）
+- **p/P**: パーティクル表示の表示/非表示を切り替え（キーを離した時）
+- **g/G**: 3Dグリッドとルーラーの表示/非表示を切り替え（キーを離した時）
+  - グリッドが初期化されていない場合は、デフォルトパラメータで自動初期化される
+
+## OSC通信
+
+### OSCメッセージ形式
+
+- **トラックメッセージ**: `/track/{trackNumber} [noteNumber, velocity, duration]`
+  - `trackNumber`: 1-16
+  - `noteNumber`: ノート番号（0-127）
+  - `velocity`: ベロシティ（0-127）
+  - `duration`: デュレーション（ミリ秒）
+
+- **フェーズメッセージ**: `/phase/` または `/phase [phaseValue]`
+  - `phaseValue`: フェーズ値（整数）
+
+- **actual_tickメッセージ**: `/actual_tick/` または `/actual_tick [tickValue]`
+  - `tickValue`: ティック値（整数、96小節で1ループ）
+  - 1小節 = 96 ticks × 4拍子 = 384 ticks
+  - 96小節 = 36,864 ticks で1ループ
+  - HUDの上部インジケータバーで進行度として表示される
+
+### ポート設定
+
+- **OSC受信ポート**: `30337`（Processingと同じ）
+- **WebSocketポート**: `8080`
+- **HTTPサーバーポート**: `3001`（スクリーンショット保存用）
+
+## HUD機能
+
+HUDには以下の機能が実装されています：
+
+- **横幅切り替え（h/Hキーでサイクル）**:
+  - 正方形 → 16:9用（横幅が広い）→ 9:16縦動画用（横幅が狭い）→ 非表示 → 正方形…
+
+- **上部インジケータバー**: 白バー + 赤インジケータ（進行度表示）
+  - `actual_tick`が有効な場合は`PROG`（進行度）として表示
+  - フェーズマーカー（9つのフェーズ）を表示
+  - ヘディング（HDG）表示
+- **下部モードバー**: FLIR / TARGET / NAV / IR（フェーズに応じて切り替え）
+- **情報パネル**: FPS、カメラ情報、位置、パーティクル数、時間、フェーズ、エフェクト状態
+- **ステータスバー**: ローテーション、距離、検知ステータス、ノイズレベル
+- **高度テープ**: 右側に縦目盛り（ズーム対応）
+- **スケールルーラー**: 下部に横目盛り（ズーム対応）
+
+## 3Dグリッドとルーラー（GridRuler3D）
+
+`GridRuler3D.js`は共通クラスとして実装されており、すべてのシーンで使用可能です：
+
+- **共通クラス**: `src/lib/GridRuler3D.js`（mavrx4-webgpuから移植）
+- **初期化**: `SceneBase.initGridRuler3D(params)`メソッドを使用
+- **表示制御**: `g/G`キーで表示/非表示を切り替え
+- **自動初期化**: グリッドが初期化されていない状態で`g/G`キーを押すと、デフォルトパラメータで自動初期化される
+- **機能**:
+  - 床（XZ平面）のグリッド表示
+  - X軸とZ軸のルーラー（目盛りとラベル）
+  - 主要目盛り（0/16/32/48/64）に赤い十字マーカー
+  - ラベルはSpriteで表示（カメラに向かってビルボード）
+- **使用例**:
+  ```javascript
+  this.showGridRuler3D = true;  // デフォルトで表示
+  this.initGridRuler3D({
+      center: { x: 0, y: 0, z: 0 },
+      size: { x: 1000, y: 1000, z: 1000 },
+      floorY: -500,
+      floorSize: 2000,
+      floorDivisions: 40,
+      labelMax: 64
+  });
+  ```
+- **現在の使用状況**:
+  - Scene09: デフォルトで表示（初期化済み）
+  - Scene10: デフォルトで表示（初期化済み）
+  - その他のシーン: `g/G`キーで自動初期化可能
+
+## シェーダーファイルの整理ルール
+
+- **shadersフォルダ直下にはファイルを置かない**: シェーダーファイルは必ず各シーンのフォルダ（`scene01/`, `scene02/`, `scene03/`など）または共通フォルダ（`common/`）に配置すること
+- **各シーン専用のシェーダー**: 特定のシーンでのみ使用されるシェーダーは、そのシーンのフォルダ（例：`shaders/scene03/`）に配置すること
+- **複数シーンで使用するシェーダー**: 複数のシーンで使用されるシェーダーは、`shaders/common/`フォルダに配置し、各シーンから参照すること
+- **重複の排除**: 同じシェーダーが複数の場所に存在する場合は、`common/`フォルダに統一し、重複を削除すること
+- **シーン間で共通のシェーダーを使う場合**: 他のシーンのシェーダーを参考にする場合は、そのシーンのフォルダにコピーして使用すること。直接参照してはいけない
+- **共通関数の扱い**: 複数のシーンで使用される共通の関数やユーティリティは、`shaders/common/`フォルダに配置すること
+
+## GPUパーティクルシステムの開発ルール
+
+`GPUParticleSystem.js`は複数のシーンで使用される共通ライブラリです。以下のルールに従って開発してください：
+
+- **基本的にはシーン個別の機能やパラメータは直接GPUParticleSystem.jsを編集しない**
+  - シーン固有の機能やパラメータ（例：`boxSize`、`forcePoint`など）を`GPUParticleSystem.js`に直接追加してはいけません
+  - これにより、他のシーンに影響を与えたり、コードが汚れるのを防ぎます
+
+- **基本的な機能で拡張性のあるパラメーターやメソッドなら追加してもよい**
+  - 複数のシーンで使用される可能性がある汎用的な機能や、拡張性のあるパラメータは追加しても問題ありません
+  - 例：`particleSize`、`baseRadius`など、多くのシーンで使用される可能性があるパラメータ
+
+- **シーン個別の機能が欲しい場合には継承するなりした新しいクラスで対応する**
+  - シーン固有の機能が必要な場合は、`GPUParticleSystem`を継承した新しいクラスを作成してください
+  - 例：`Scene09GPUParticleSystem.js`（`Scene09`専用のパラメータを追加）
+  - 継承クラスでは、`createUpdateShader()`などのメソッドをオーバーライドして、シーン固有のuniformsを追加できます
+
+## 共有リソースシステム
+
+`SharedResourceManager.js`を使用して、複数のシーン間でGPUパーティクルシステムを共有できます：
+
+- **共有リソースを使用するシーン**: Scene01, Scene03, Scene04, Scene09, Scene10
+- **共有リソースを使用しないシーン**: Scene02, Scene05, Scene06, Scene07, Scene08
+- 共有リソースを使用することで、メモリ使用量を削減し、シーン切り替え時のパフォーマンスを向上させます
+
+## SceneTemplate
+
+`SceneTemplate.js`は新しいシーンを作成する際のテンプレートです：
+
+- **ベースクラス**: `SceneBase`を継承
+- **共有リソース対応**: `sharedResourceManager`パラメータに対応
+- **3Dグリッド対応**: `initGridRuler3D()`メソッドの使用例を含む
+- **使用状況**:
+  - Scene05: テンプレートベースにリセット済み（最小実装）
+  - Scene09: テンプレートベースにリセット済み（最小実装、共有リソース使用）
+
+## 注意事項
+
+- **OSCサーバーは常に起動しておく必要があります**
+- OSCサーバーが起動していない場合、ブラウザで「Disconnected」と表示されます
+- 両方のサーバーを起動すると、ブラウザでOSCステータスが「Connected」になります
+- スクリーンショットは `screenshots/` フォルダに自動保存されます（OSCサーバーが起動している必要があります）
+- 起動時に自動的にフルスクリーン化を試みます（ブラウザのセキュリティ制約により失敗する場合があります）
+
+## トラブルシューティング
+
+- OSCサーバーが起動しない場合：`node osc-server.js` を直接実行してエラーを確認
+- ポートが使用中の場合：別のプロセスがポートを使用している可能性があります
+- WebSocket接続エラー：OSCサーバーが起動しているか確認してください
+- スクリーンショットが保存されない場合：OSCサーバーが起動しているか、`screenshots/` フォルダの権限を確認してください

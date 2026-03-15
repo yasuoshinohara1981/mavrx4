@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+
+# IDE and OS files
+.DS_Store
+.vscode/
+.idea/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Assets and binary files (optional, but good for performance)
+public/assets/
+screenshots/
+
+# Temporary files
+tmp/
+temp/
+
+# トークン爆発の主犯（GeoJSON合計〜8MB、HDRI 4.8GB）
+*.geojson
+public/nw/
+public/ShinjukuTerminal/
+public/fg.geojson
+src/assets/hdri/
+
+# Version control
+.git

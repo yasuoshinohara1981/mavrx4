@@ -10,34 +10,64 @@ GPUパーティクルシステムを使ったライブビジュアル。OSCで�
 npm install
 ```
 
-### 2. OSCサーバーを起動（別ターミナル）
+### 2. サーバー起動
+
+**一括起動（おすすめ）**:
 
 ```bash
-npm run osc-server
+npm run start
 ```
 
-OSCサーバーが起動します：
-- OSC受信ポート: `30337`（Processingと同じ）
-- WebSocketポート: `8080`
-- HTTPサーバーポート: `3001`（スクリーンショット保存用）
+OSCサーバーとVite開発サーバーが同時に起動します。
 
-### 3. 開発サーバー起動（別ターミナル）
+**別々に起動する場合**（2つのターミナルで）:
 
 ```bash
+# ターミナル1: OSCサーバー
+npm run osc-server
+
+# ターミナル2: Vite開発サーバー
 npm run dev
 ```
 
-ブラウザで `http://localhost:3000` が自動的に開きます。
+起動後のポート：
+- **Vite**: `http://localhost:3000`（ブラウザが自動で開く）
+- **OSC受信**: `30337`（Max/Processingから送信先として指定）
+- **WebSocket**: `8080`（ブラウザ↔OSCサーバー）
+- **HTTP**: `3001`（スクリーンショット保存用）
 
 ### 4. OSC送信テスト
 
-Processingから以下のようにOSCメッセージを送信：
+#### Max/MSP から送信する場合（ローカル）
+
+Maxの `udpsend` オブジェクトで以下のように設定：
+
+- **送信先ホスト**: `127.0.0.1` または `localhost`
+- **送信先ポート**: `30337`
+
+```
+[udpsend 127.0.0.1 30337]
+```
+
+または `udpreceive` の代わりに、Maxの `pack` + `udpsend` でOSCメッセージを送信：
+
+```
+[prepend /track/1]
+[pack f f f 64 127 1000]
+[udpsend 127.0.0.1 30337]
+```
+
+**対応メッセージ形式**:
+- `/track/{1-16}` + `[noteNumber, velocity, duration]` … トラックメッセージ
+- `/phase` + `[phaseValue]` … フェーズ
+- `/actual_tick` + `[tickValue]` … 進行度（96小節で1ループ）
+
+#### Processing から送信する場合
 
 ```processing
-// Processing側
 oscP5.send(
     new OscMessage("/track/1", 64.0, 127.0, 1000.0), 
-    new NetAddress("127.0.0.1", 30337)  // OSCサーバーのポート
+    new NetAddress("127.0.0.1", 30337)
 );
 ```
 
@@ -83,15 +113,18 @@ mavrx4/
 ### キーボード操作
 
 #### シーン切り替え（Ctrl + 数字）
-- **Ctrl + 1**: Scene11
-- **Ctrl + 2**: Scene12
-- **Ctrl + 3**: Scene13
-- **Ctrl + 4**: Scene14
-- **Ctrl + 5**: Scene15
-- **Ctrl + 6**: Scene16
-- **Ctrl + 7**: Scene17
-- **Ctrl + 8**: Scene18
-- **Ctrl + 9**: Scene19
+
+起動時のデフォルトは `src/main.js` の `DEFAULT_SCENE_INDEX`（現在は Scene21）。
+
+- **Ctrl + 1**: Scene21
+- **Ctrl + 2**: Scene22（未実装なら無効）
+- **Ctrl + 3**: Scene23（同上）
+- **Ctrl + 4**: Scene24（同上）
+- **Ctrl + 5**: Scene25（同上）
+- **Ctrl + 6**: Scene26（同上）
+- **Ctrl + 7**: Scene27（同上）
+- **Ctrl + 8**: Scene28（同上）
+- **Ctrl + 9**: Scene29（同上）
 - **Ctrl + 0**: Scene20
 
 #### エフェクト・トラック処理（数字キー単体）

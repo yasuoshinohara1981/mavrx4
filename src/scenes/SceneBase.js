@@ -1561,7 +1561,7 @@ export class SceneBase {
             const base64data = tempCanvas.toDataURL('image/jpeg', 0.8);
             debugLog('init', `📤 送信中... (${(base64data.length / 1024).toFixed(0)} KB)`);
             
-            fetch('http://localhost:3001/api/screenshot', {
+            fetch('http://127.0.0.1:3001/api/screenshot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename, imageData: base64data })

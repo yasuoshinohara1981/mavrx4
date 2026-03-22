@@ -166,6 +166,8 @@ export class Scene20 extends SceneBase {
         } catch (e) {
             console.error('Scene20: SkyDome/HDRI load failed:', e);
             this.selectedPureSkyConfig = { useLensFlare: true, lensFlareIntensity: 0.25 };
+            this.skyDomeLightConfig = { position: new THREE.Vector3(0, 5000, 8000), color: 0xaaccff, intensity: 0.5 };
+            this.setupShadowLight();
             this.createTentacles(null);
         }
         this.useLensFlare = this.selectedPureSkyConfig?.useLensFlare ?? true;

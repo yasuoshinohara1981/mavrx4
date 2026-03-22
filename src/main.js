@@ -18,7 +18,7 @@ import { SharedResourceManager } from './lib/SharedResourceManager.js';
 const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
 
 // デフォルトシーンのインデックス（0 = Scene01, 1 = Scene02, ...）
-const DEFAULT_SCENE_INDEX = 19;  // Scene20をデフォルトに設定
+const DEFAULT_SCENE_INDEX = 20;  // Scene21 をデフォルト
 
 // ============================================
 // 初期化
@@ -80,7 +80,7 @@ function initCamera() {
 
 function initOSC() {
     oscManager = new OSCManager({
-        wsUrl: 'ws://localhost:8080',  // WebSocketサーバーのURL
+        wsUrl: 'ws://127.0.0.1:8080',
         onMessage: (message) => {
             // シーンマネージャーにOSCメッセージを転送
             if (sceneManager) {
@@ -212,32 +212,13 @@ function handleKeyDown(e) {
         const num = parseInt(e.key);
         if (num >= 1 && num <= 9) {
             e.preventDefault();
-            // Ctrl+数字キーで対応するシーンに切り替え（11始まりにする）
-            // Ctrl+1=Scene11(index 10), Ctrl+2=Scene12(index 11), Ctrl+3=Scene13(index 12)...
-            sceneManager.switchScene(num + 9);
-            return;
-            // Ctrl+8でScene18に切り替え（index 17）
-            sceneManager.switchScene(17);
-            return;
-        } else if (e.key === '8' && isCtrlPressed) {
-            e.preventDefault();
-            // Ctrl+8でScene18に切り替え（index 17）
-            sceneManager.switchScene(17);
+            // Ctrl+1=Scene21(index 20) … Scene番号 = 20 + num（21〜29）
+            sceneManager.switchScene(num + 19);
             return;
         } else if (e.key === '0' && isCtrlPressed) {
             e.preventDefault();
-            // Ctrl+0でScene20に切り替え（index 19）
+            // Ctrl+0=Scene20（index 19）
             sceneManager.switchScene(19);
-            return;
-        } else if (e.key === '5') {
-            e.preventDefault();
-            // Ctrl+5でScene15に切り替え（index 14）
-            sceneManager.switchScene(14);
-            return;
-        } else if (e.key === '7') {
-            e.preventDefault();
-            // Ctrl+7でScene17に切り替え（index 16）
-            sceneManager.switchScene(16);
             return;
         }
         // Ctrl押下中は他の処理をスキップ（数字キーがエフェクトとして処理されないように）

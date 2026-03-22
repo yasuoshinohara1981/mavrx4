@@ -1,2 +1,5 @@
 node_modules/
 dist/
+
+# Large HDRI/EXR (GitHub 100MB limit); fetch locally or use download script
+src/assets/hdri/

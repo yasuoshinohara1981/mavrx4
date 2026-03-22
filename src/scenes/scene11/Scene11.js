@@ -15,8 +15,9 @@ import { PlayerParticle } from '../../lib/PlayerParticle.js';
 import { Scene11_CircleEffect } from './Scene11_CircleEffect.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { loadHdrCached } from '../../lib/hdrCache.js';
-import hdri from '../../assets/hdri/pure_skies/autumn_field_puresky_1k.hdr';
+// HDRIは重いためGitから除外済み。必要なら assets/hdri/ を復元してコメントを外す
+// import { loadHdrCached } from '../../lib/hdrCache.js';
+// import hdri from '../../assets/hdri/pure_skies/autumn_field_puresky_1k.hdr';
 
 export class Scene11 extends SceneTemplate {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -106,20 +107,20 @@ export class Scene11 extends SceneTemplate {
 
         await super.setup();
         
-            // 環境マップ（HDRI）を設定
-        try {
-            const envMap = await loadHdrCached(hdri);
-            this.scene.environment = envMap;
-            this.scene.environmentIntensity = 2.5; // 金属質感を強調するために強度アップ
-            
-            // 3D空間としての夕焼け空（スカイスフィア）を作成
-            this.createSkysphere();
+        // 環境マップ（HDRI）は重いためコメントアウト。assets/hdri/ を復元したら有効化
+        // try {
+        //     const envMap = await loadHdrCached(hdri);
+        //     this.scene.environment = envMap;
+        //     this.scene.environmentIntensity = 2.5;
+        // } catch (e) {
+        //     console.error('HDRI load failed:', e);
+        // }
+        
+        // 3D空間としての夕焼け空（スカイスフィア）を作成
+        this.createSkysphere();
 
-            // モノトーンの空気感を出すためにフォグをグレーに調整
-            this.scene.fog = new THREE.FogExp2(0x333333, 0.00015);
-        } catch (e) {
-            console.error('HDRI load failed:', e);
-        }
+        // モノトーンの空気感を出すためにフォグをグレーに調整
+        this.scene.fog = new THREE.FogExp2(0x333333, 0.00015);
         
         this.currentCameraIndex = 0;
         this.setupLights();

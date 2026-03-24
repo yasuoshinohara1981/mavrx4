@@ -201,24 +201,47 @@ function handleKeyDown(e) {
     
     // e.ctrlKey/e.metaKeyを直接確認（より確実な検出）
     const isCtrlPressed = e.ctrlKey || e.metaKey;
+    // Alt+Tab やフォーカス移動で Control の keyup を取り逃がすと ctrlPressed が固まり、
+    // 数字以外のキーがすべて握りつぶされる。実際の修飾キー状態で同期する。
+    if (!isCtrlPressed) {
+        ctrlPressed = false;
+    }
     
     if (!sceneManager) return;
     
     const currentScene = sceneManager.getCurrentScene();
     if (!currentScene) return;
     
-    // Ctrl + 数字キーでシーン切り替え（ctrlPressedまたはisCtrlPressedのどちらかがtrueの場合）
+    // [ ] でシーンバンク切替（1バンク=10シーン、Ctrl+数字でバンク内のスロットを選択）
+    // e.key だけだとキーボード配列・IME・修飾キーで '[' にならず、下の Ctrl 分岐で握りつぶされることがある。
+    // 物理位置は e.code（BracketLeft / BracketRight）で拾う。
+    const isBankDec =
+        e.key === '[' || e.code === 'BracketLeft';
+    const isBankInc =
+        e.key === ']' || e.code === 'BracketRight';
+    if (isBankDec || isBankInc) {
+        e.preventDefault();
+        const maxBank = sceneManager.getMaxSceneBankIndex();
+        if (isBankDec) {
+            sceneManager.sceneBankIndex = Math.max(0, sceneManager.sceneBankIndex - 1);
+        } else {
+            sceneManager.sceneBankIndex = Math.min(maxBank, sceneManager.sceneBankIndex + 1);
+        }
+        currentScene.sceneBankIndex = sceneManager.sceneBankIndex;
+        return;
+    }
+    
+    // Ctrl + 数字キーでシーン切り替え（バンク内のスロット: 1=先頭 … 9=9番目、0=10番目）
     if (ctrlPressed || isCtrlPressed) {
-        const num = parseInt(e.key);
-        if (num >= 1 && num <= 9) {
+        if (e.key >= '0' && e.key <= '9') {
             e.preventDefault();
-            // Ctrl+1=Scene21(index 20) … Scene番号 = 20 + num（21〜29）
-            sceneManager.switchScene(num + 19);
-            return;
-        } else if (e.key === '0' && isCtrlPressed) {
-            e.preventDefault();
-            // Ctrl+0=Scene20（index 19）
-            sceneManager.switchScene(19);
+            const slot = e.key === '0' ? 9 : (parseInt(e.key, 10) - 1);
+            const sceneIndex = sceneManager.sceneBankIndex * 10 + slot;
+            if (sceneIndex >= 0 && sceneIndex < 100 && sceneManager.scenes[sceneIndex]) {
+                sceneManager.switchScene(sceneIndex);
+            } else {
+                console.warn(`[Scene] 無効なスロット: bank=${sceneManager.sceneBankIndex} key=${e.key} → index=${sceneIndex}`);
+            }
             return;
         }
         // Ctrl押下中は他の処理をスキップ（数字キーがエフェクトとして処理されないように）

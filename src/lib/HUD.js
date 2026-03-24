@@ -137,7 +137,7 @@ export class HUD {
     /**
      * HUDを描画
      */
-    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = []) {
+    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = [], sceneBankIndex = 0, totalSceneCount = 21, sceneIndex = 0, maxSceneSlots = 100) {
         // 目盛りのスケール（カメラに合わせる）
         this.hudScales = hudScales;
         
@@ -177,14 +177,11 @@ export class HUD {
         // 上部のインジケータバー
         this.drawTopIndicatorBar(time, currentBar, rotationY, debugText, actualTick);
 
-        // 下部のモードバー
-        this.drawBottomModeBar(time, phase, currentBar, trackEffects, actualTick);
-
         this.drawCornerMarkers();
         this.drawCenterCrosshair();
         this.drawCenterVerticalLine();
         this.drawScaleRuler();
-        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName, sceneNumber);
+        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName);
         this.drawStatusBar(rotationX, rotationY, distance, noiseLevel, oscStatus, particleCount);
         
         // 航空機風HUD要素
@@ -195,6 +192,9 @@ export class HUD {
         if (callouts && callouts.length > 0) {
             this.drawCallouts(callouts);
         }
+
+        // 最下端・最前面：スキャン＋シーンバンク（各列スロット10個は横並び）＋SCENE
+        this.drawBottomSceneBankCluster(time, phase, currentBar, trackEffects, actualTick, sceneBankIndex, sceneIndex, sceneNumber, totalSceneCount, maxSceneSlots);
 
         this.ctx.restore();
     }
@@ -413,84 +413,186 @@ export class HUD {
     }
 
     /**
-     * 下部のモードバー（FLIR / TARGET / NAV / IR）
-     * - phase をベースにアクティブを切替（共通入力）
-     * - time でスキャン/点滅を加える
+     * Processing と同じ Y：4分割ステータスバーの上端（シーンバンクはその下の帯に描く）
      */
-    drawBottomModeBar(time = 0, phase = 0, currentBar = 0, trackEffects = null, actualTick = 0) {
+    _getStatusBarBarY() {
+        const hTotal = this.squareHeight;
+        const margin = this.margin;
+        const rulerY = hTotal - margin - 40;
+        const rulerTextY = rulerY + 8;
+        return rulerTextY + 50;
+    }
+
+    /**
+     * 4分割ステータスバーの直下〜画面下端の帯（上端＝バー下端＋余白、下端＝squareHeight 付近）
+     * ※ bandBottom に hTotal-margin を使うと margin が大きく、帯がバーより上に来てしまうので使わない
+     */
+    drawBottomSceneBankCluster(
+        time = 0,
+        phase = 0,
+        currentBar = 0,
+        trackEffects = null,
+        actualTick = 0,
+        sceneBankIndex = 0,
+        sceneIndex = 0,
+        sceneNumber = null,
+        loadedSceneCount = 21,
+        maxSceneSlots = 100
+    ) {
         const w = this.squareWidth;
         const hTotal = this.squareHeight;
         const margin = this.margin;
         const extra = 30;
         const barW = (w - margin * 2) + extra * 2;
         const x0 = margin - extra;
-        const y = hTotal * 0.93;
-        const h = 26;
-        const pad = 10;
-        const labels = ['FLIR', 'TARGET', 'NAV', 'IR'];
-        const btnW = (barW - pad * (labels.length - 1)) / labels.length;
+        const B = 10;
+        const colW = barW / B;
+        const loaded = Math.max(0, Math.floor(loadedSceneCount));
+        const maxSlots = Math.max(1, Math.min(100, Math.floor(maxSceneSlots)));
+        const idx = Number.isFinite(sceneIndex) ? Math.floor(sceneIndex) : 0;
+        const bankSel = Math.max(0, Math.min(B - 1, Math.floor(sceneBankIndex)));
 
-        // common: phase 기반（0..9）
-        const mode = (Number.isFinite(phase) ? Math.floor(phase) : 0) % labels.length;
+        const barHeight = 35;
+        const statusBarBottom = this._getStatusBarBarY() + barHeight;
+        const gapAfterStatus = 22;
+        const bottomPad = 2;
+        const minBandH = 46;
+        const bandBottom = hTotal - bottomPad;
+        let bandTop = statusBarBottom + gapAfterStatus;
+        if (bandTop > bandBottom - minBandH) {
+            bandTop = bandBottom - minBandH;
+            if (bandTop < statusBarBottom + gapAfterStatus) {
+                bandTop = statusBarBottom + gapAfterStatus;
+            }
+        }
+        if (bandTop >= bandBottom) {
+            bandTop = Math.min(statusBarBottom + gapAfterStatus, bandBottom - 4);
+            if (bandTop >= bandBottom) {
+                bandTop = bandBottom - minBandH;
+            }
+        }
 
-        // scan bar above buttons (white line + red square)
+        const innerPad = 0;
+        const innerW = colW - innerPad * 2;
+        let sq = Math.floor((innerW - 9) / 10);
+        sq = Math.max(2, Math.min(7, sq));
+        let hGap = Math.max(0, (innerW - 10 * sq) / 9);
+
+        const labelH = 13;
+        const sceneLineH = 15;
+        const gap = 5;
+        const scanBandH = 19;
+
+        const ph = Number.isFinite(phase) ? Math.floor(phase) : 0;
+        const t2 = trackEffects?.[2] ? 'INV' : '--';
+        const t3 = trackEffects?.[3] ? 'CHR' : '--';
+        const t4 = trackEffects?.[4] ? 'GLT' : '--';
+
+        // 上→下：スキャン → バンクラベル → スロット横列 → SCENE（必ず bandTop から開始）
+        let y = bandTop;
+        const scanLineY = y + 3;
+        y += scanBandH;
+
+        const bankLabelTop = y;
+        y += labelH + gap;
+
+        const slotTop = y;
+        y += sq + gap;
+
+        const sceneBaseline = bandBottom - 4;
+        if (slotTop + sq > sceneBaseline - sceneLineH) {
+            sq = Math.max(2, Math.floor(sceneBaseline - sceneLineH - gap - slotTop));
+        }
+        hGap = Math.max(0, (innerW - 10 * sq) / 9);
+
+        this.ctx.save();
+
         const maxTicks = 96 * 4 * 96;
         const hasTick = Number.isFinite(actualTick) && actualTick >= 0;
         const scan = hasTick
             ? (((actualTick % maxTicks) + maxTicks) % maxTicks) / maxTicks
             : ((time * 0.06 + currentBar * 0.02) % 1);
         const sx = x0 + barW * scan;
-        const sy = y - h - 10;
 
-        this.ctx.save();
-        this.ctx.globalAlpha = 0.70;
+        this.ctx.globalAlpha = 0.68;
         this.ctx.strokeStyle = this.hudColor;
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
-        this.ctx.moveTo(x0, sy);
-        this.ctx.lineTo(x0 + barW, sy);
+        this.ctx.moveTo(x0, scanLineY);
+        this.ctx.lineTo(x0 + barW, scanLineY);
         this.ctx.stroke();
         this.ctx.fillStyle = '#ff3333';
         this.ctx.globalAlpha = 0.95;
-        this.ctx.fillRect(sx - 5, sy - 5, 10, 10);
+        this.ctx.fillRect(sx - 4, scanLineY - 4, 8, 8);
 
-        // buttons
-        this.ctx.font = '16px monospace';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-
-        for (let i = 0; i < labels.length; i++) {
-            const bx = x0 + i * (btnW + pad);
-            const isOn = i === mode;
-
-            // frame
-            this.ctx.globalAlpha = (isOn ? 0.90 : 0.35);
-            this.ctx.strokeStyle = this.hudColor;
-            this.ctx.lineWidth = 1;
-            this.ctx.strokeRect(bx, y - h, btnW, h);
-
-            // fill (active -> subtle red tint)
-            if (isOn) {
-                this.ctx.globalAlpha = 0.20;
-                this.ctx.fillStyle = '#ff3333';
-                this.ctx.fillRect(bx, y - h, btnW, h);
-            }
-
-            // label
-            this.ctx.globalAlpha = (isOn ? 0.95 : 0.70);
-            this.ctx.fillStyle = this.hudColor;
-            this.ctx.fillText(labels[i], bx + btnW / 2, y - h / 2);
-        }
-
-        // tiny status (track toggles) - common enough
-        const t2 = trackEffects?.[2] ? 'INV' : '--';
-        const t3 = trackEffects?.[3] ? 'CHR' : '--';
-        const t4 = trackEffects?.[4] ? 'GLT' : '--';
-        this.ctx.globalAlpha = 0.55;
-        this.ctx.fillStyle = this.hudColor;
+        this.ctx.font = '10px monospace';
         this.ctx.textAlign = 'left';
         this.ctx.textBaseline = 'bottom';
-        this.ctx.fillText(`${t2} ${t3} ${t4}`, margin, y - h - 16);
+        this.ctx.globalAlpha = 0.75;
+        this.ctx.fillStyle = this.hudColor;
+        this.ctx.fillText(`PHASE ${ph}   ${t2} ${t3} ${t4}`, x0, scanLineY - 4);
+
+        this.ctx.font = '8px monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        for (let b = 0; b < B; b++) {
+            const start1 = b * 10 + 1;
+            const end1 = Math.min((b + 1) * 10, maxSlots);
+            const label = start1 === end1 ? `${start1}` : `${start1}–${end1}`;
+            const cx = x0 + b * colW + colW / 2;
+            const bx = x0 + b * colW + 0.5;
+            const bw = colW - 1;
+            const isOn = b === bankSel;
+
+            this.ctx.globalAlpha = isOn ? 0.88 : 0.35;
+            this.ctx.strokeStyle = this.hudColor;
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(bx, bankLabelTop, bw, labelH);
+
+            if (isOn) {
+                this.ctx.globalAlpha = 0.2;
+                this.ctx.fillStyle = '#ff3333';
+                this.ctx.fillRect(bx, bankLabelTop, bw, labelH);
+            }
+
+            this.ctx.globalAlpha = isOn ? 0.92 : 0.62;
+            this.ctx.fillStyle = this.hudColor;
+            this.ctx.fillText(label, cx, bankLabelTop + labelH / 2);
+        }
+
+        for (let b = 0; b < B; b++) {
+            const colLeft = x0 + b * colW + innerPad;
+            for (let slot = 0; slot < 10; slot++) {
+                const px = colLeft + slot * (sq + hGap);
+                const globalIdx = b * 10 + slot;
+                const exists = globalIdx < loaded && globalIdx < maxSlots;
+                const isActive = exists && globalIdx === idx;
+
+                if (!exists) {
+                    this.ctx.globalAlpha = 0.2;
+                    this.ctx.strokeStyle = '#ff3333';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeRect(px, slotTop, sq, sq);
+                } else if (isActive) {
+                    this.ctx.globalAlpha = 0.98;
+                    this.ctx.fillStyle = '#ff3333';
+                    this.ctx.fillRect(px, slotTop, sq, sq);
+                } else {
+                    this.ctx.globalAlpha = 0.36;
+                    this.ctx.fillStyle = '#ff3333';
+                    this.ctx.fillRect(px, slotTop, sq, sq);
+                }
+            }
+        }
+
+        if (sceneNumber !== null && sceneNumber !== undefined) {
+            this.ctx.font = '11px monospace';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'bottom';
+            this.ctx.globalAlpha = 0.95;
+            this.ctx.fillStyle = this.hudColor;
+            this.ctx.fillText(`SCENE: ${sceneNumber}`, x0, sceneBaseline);
+        }
 
         this.ctx.restore();
     }
@@ -826,7 +928,7 @@ export class HUD {
     /**
      * 情報パネルを描画
      */
-    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null, sceneNumber = null) {
+    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null) {
         const margin = this.margin;
         let x = margin + 20;
         let y = margin + 40;
@@ -842,14 +944,6 @@ export class HUD {
         this.ctx.font = `${this.fontWeight} ${this.fontSize}px ${this.fontFamily}`;
         this.ctx.fillText('SYSTEM: MAVRX4-experiment', x, y);
         y += lineHeight * 1.5;  // 間隔を空ける（SYSTEMとCLASSIFIEDの間にスペース）
-        
-        // シーン番号を表示（SYSTEMの下）
-        if (sceneNumber !== null && sceneNumber !== undefined) {
-            this.ctx.fillStyle = this.hudColor;  // 白文字
-            this.ctx.font = `${this.fontWeight} ${this.fontSize}px ${this.fontFamily}`;
-            this.ctx.fillText(`SCENE: ${sceneNumber}`, x, y);
-            y += lineHeight * 1.5;  // 間隔を空ける（SCENEと説明文の間にスペース）
-        }
         
         // 軍事システム風の説明文を追加（高速ランダマイズ）
         this.updateMilitaryInfo(frameRate, currentCameraIndex, cameraPosition, rotationX, rotationY, distance, oscStatus, particleCount);
@@ -993,9 +1087,7 @@ export class HUD {
         const barHeight = 35;
         const barWidth = (this.squareWidth - margin * 2) + extra * 2;
         const barX = margin - extra;
-        const rulerY = this.squareHeight - margin - 40;
-        const rulerTextY = rulerY + 8;
-        const barY = rulerTextY + 50;  // Processingと同じ
+        const barY = this._getStatusBarBarY();
         
         // ステータスバーの枠
         this.ctx.strokeRect(barX, barY, barWidth, barHeight);

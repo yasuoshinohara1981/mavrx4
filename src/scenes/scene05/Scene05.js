@@ -1325,7 +1325,12 @@ export class Scene05 extends SceneBase {
                     '',  // debugText
                     this.actualTick || 0,  // actualTick（OSCから受け取る値）
                     null,  // cameraModeName
-                    this.sceneNumber  // sceneNumber
+                    this.sceneNumber,  // sceneNumber
+                    [],  // callouts
+                    this.sceneBankIndex,
+                    this.totalSceneCount,
+                    this.sceneIndex,
+                    this.maxSceneSlots
                 );
             } else {
                 this.hud.clear();

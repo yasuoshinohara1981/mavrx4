@@ -26,6 +26,11 @@ import { Scene19 } from '../scenes/scene19/Scene19.js';
 import { Scene20 } from '../scenes/scene20/Scene20.js';
 import { Scene21 } from '../scenes/scene21/Scene21.js';
 
+/** シーンバンク数（[]で切替）。10バンク × 10スロット = 100シーンまでUI上指定可能 */
+export const SCENE_BANK_COUNT = 10;
+/** 最大シーンスロット数（0〜99） */
+export const MAX_SCENE_SLOTS = SCENE_BANK_COUNT * 10;
+
 export class SceneManager {
     constructor(renderer, camera, sharedResourceManager = null, options = {}) {
         this.renderer = renderer;
@@ -48,6 +53,9 @@ export class SceneManager {
         
         // 選択されたキット番号（OSCの/kit/メッセージで受け取る値）
         this.selectedKitNo = 0;
+        
+        /** Ctrl+数字のシーンバンク（0始まり）。バンク0=Scene1〜10、1=11〜20… */
+        this.sceneBankIndex = 0;
         
         // シーンを初期化
         this.initScenes();
@@ -172,12 +180,17 @@ this.createScene(this.defaultSceneIndex);
             
             // デフォルトシーンに設定
             this.currentSceneIndex = this.defaultSceneIndex;
+            this.sceneBankIndex = Math.floor(this.currentSceneIndex / 10);
         }
         
         // デフォルトシーンを設定（非同期）
         if (this.scenes[this.currentSceneIndex]) {
             // デフォルトシーンにインデックスを設定
             this.scenes[this.currentSceneIndex].sceneIndex = this.currentSceneIndex;
+            this.sceneBankIndex = Math.floor(this.currentSceneIndex / 10);
+            this.scenes[this.currentSceneIndex].sceneBankIndex = this.sceneBankIndex;
+            this.scenes[this.currentSceneIndex].totalSceneCount = this.scenes.length;
+            this.scenes[this.currentSceneIndex].maxSceneSlots = MAX_SCENE_SLOTS;
             this.scenes[this.currentSceneIndex].setup().catch(err => {
                 console.error('シーンのセットアップエラー:', err);
             });
@@ -185,6 +198,10 @@ this.createScene(this.defaultSceneIndex);
     }
     
     switchScene(index) {
+        if (index < 0 || index >= MAX_SCENE_SLOTS) {
+            console.warn(`シーンインデックス ${index} は 0〜${MAX_SCENE_SLOTS - 1} の範囲外です`);
+            return;
+        }
         // 開発モードの場合、まだ作成されていないシーンは遅延ロード
         if (!this.scenes[index]) {
             if (this.isDevelopmentMode) {
@@ -232,11 +249,15 @@ return;
         
         // シーンを切り替え
         this.currentSceneIndex = index;
+        this.sceneBankIndex = Math.floor(index / 10);
         const newScene = this.scenes[this.currentSceneIndex];
         
         if (newScene) {
             // シーンにインデックスを設定（HUD表示用）
             newScene.sceneIndex = index;
+            newScene.sceneBankIndex = this.sceneBankIndex;
+            newScene.totalSceneCount = this.scenes.length;
+            newScene.maxSceneSlots = MAX_SCENE_SLOTS;
             
             // HUDの状態をグローバル状態に合わせる（シーン切り替え時）
             newScene.showHUD = this.globalShowHUD;
@@ -350,6 +371,13 @@ this.switchScene(i);
      */
     getCurrentScene() {
         return this.scenes[this.currentSceneIndex] || null;
+    }
+    
+    /**
+     * シーンバンクの最大インデックス（0始まり）。常に 9（10バンク）まで [] で移動可能。
+     */
+    getMaxSceneBankIndex() {
+        return SCENE_BANK_COUNT - 1;
     }
 }
 

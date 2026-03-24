@@ -47,6 +47,14 @@ export class SceneBase {
         this.actualTick = 0;  // OSCの/actual_tick/メッセージで受け取る値（96小節で1ループ）
         this.kitNo = 0;  // シーン固有のキット番号（各シーンでハードコーディング）
         this.selectedKitNo = 0;  // OSCの/kit/メッセージで受け取る値（選択されたキット番号）
+        /** Ctrl+数字のシーンバンク（SceneManagerと同期） */
+        this.sceneBankIndex = 0;
+        /** 登録シーン総数（HUDのバンク表示用・実際に存在するシーン数） */
+        this.totalSceneCount = 21;
+        /** HUD上の最大スロット数（100 = 10バンク×10） */
+        this.maxSceneSlots = 100;
+        /** 0始まりのシーンインデックス（SceneManagerが切替時に設定） */
+        this.sceneIndex = 0;
         this.particleCount = 0;  // パーティクル数
         this.time = 0.0;  // 時間変数（サブクラスで設定）
         
@@ -826,7 +834,11 @@ export class SceneBase {
                     this.actualTick,  // actualTick（OSCから受け取る値）
                     null,  // cameraModeName（サブクラスで設定可能）
                     this.sceneNumber,  // sceneNumber（各シーンで設定）
-                    callouts // 2Dコールアウトデータを渡す
+                    callouts, // 2Dコールアウトデータを渡す
+                    this.sceneBankIndex,
+                    this.totalSceneCount,
+                    this.sceneIndex,
+                    this.maxSceneSlots
                 );
             } else {
                 // HUDが非表示の時はCanvasをクリア

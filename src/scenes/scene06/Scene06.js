@@ -1262,6 +1262,7 @@ export class Scene06 extends SceneBase {
             
             // グリッチエフェクトも初期化（composerが作成された後）
             await this.initGlitchShader();
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
             // エラーが発生してもcomposerは作成しておく（グリッチシェーダー用）

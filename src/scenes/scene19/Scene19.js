@@ -41,9 +41,6 @@ export class Scene19 extends SceneBase {
         this.useSkyDome = true;     // HDRIスカイドームON（有効なのは19のみ）
         this.bloomPass = null;
 
-        this.trackEffects[3] = false;
-        this.trackEffects[4] = false;
-
         this.expandSpheres = [];
         this.useGravity = false;
         this.gravityForce = new THREE.Vector3(0, -10.0, 0);

@@ -253,6 +253,7 @@ export class Scene03 extends SceneBase {
             
             // レーザースキャンエフェクトも初期化（composerが作成された後）
             await this.initLaserScanShader();
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
         }

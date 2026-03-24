@@ -78,8 +78,6 @@ export class Scene04 extends SceneBase {
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
         
-        // トラック4（グリッチエフェクト）をオフにする
-        this.trackEffects[4] = false;
     }
     
     async setup() {

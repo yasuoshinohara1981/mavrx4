@@ -1,7 +1,9 @@
 /**
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
+ * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityでヒートマップ色）
+ * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
- * 床・壁の質感は PBR コンクリート、ポストは ACES・弱 DOF・最小 bloom・軽フォグ
+ * 床・壁は PBR コンクリート、ポストは ACES・SSAO・弱 DOF・最小 bloom・軽フォグ
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -11,7 +13,10 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
+import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
+import { Scene16Particle } from '../scene16/Scene16Particle.js';
 
 export class Scene21 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -25,19 +30,79 @@ export class Scene21 extends SceneBase {
         this.studio = null;
         this.roomGroup = null;
         this.ceilingMesh = null;
-        /** 試験用：中央の発光球＋ポイントライト */
-        this.centerLightGroup = null;
+
+        this.cubeRenderTarget = null;
+        this.cubeCamera = null;
+
+        /** トラック5で生える金属片（tick ベースパス）— GPU インスタンス（1 InstancedMesh） */
+        this.shards = [];
+        /** この個数を超えたら古い順に削除（安全上限）。普段は shardLifetimeMs で消える */
+        this.maxShards = 2000;
+        /** 各破片がこの時間（ms）経過したら削除 */
+        this.shardLifetimeMs = 180000;
+        /** 寿命終盤でフェードアウトする時間（ms） */
+        this.shardFadeOutMs = 1800;
+        this.cylinderFadeOutMs = 1800;
+        this._shardOpacityAttr = null;
+        this._cylinderOpacityAttr = null;
+        this.shardGroup = null;
+        this.shardInstMesh = null;
+        /** インスタンススロットの空きスタック（0..maxShards-1） */
+        this._shardFreeSlots = [];
+        this._metalShardMaterial = null;
+        this._shardMatrixTemp = new THREE.Matrix4();
+        this._shardQuatTemp = new THREE.Quaternion();
+        this._shardScaleTemp = new THREE.Vector3();
+        this._shardPosTemp = new THREE.Vector3();
+        this._spawnWorldPosTemp = new THREE.Vector3();
+        this._lastShardPos = new THREE.Vector3(0, 550, 0);
+        this._snakeDir = new THREE.Vector3(0, 0.12, 1).normalize();
+        /** 直近スポーンしたオブジェクトのワールド座標（カメラ注視） */
+        this._spawnFocusWorld = new THREE.Vector3(0, 550, 0);
+        this._cameraFocusSmoothed = new THREE.Vector3(0, 550, 0);
+        /** OSC actual_tick ベースのスポーン（トラック5） */
+        this._lastSpawnTickTrack5 = null;
+        this._snakeIndex = 0;
+        this._shardSeed = Math.random() * 1000;
+        this._shardHeatColor = new THREE.Color();
+
+        this.pulses = [];
+        this.pulseColor = new THREE.Color(1, 0, 0);
+        this.targetPulseColor = new THREE.Color(1, 0, 0);
+        this.colorIndex = 0;
+        this.colors = [
+            new THREE.Color(1, 0, 0),
+            new THREE.Color(0, 1, 0),
+            new THREE.Color(0, 0, 1),
+            new THREE.Color(1, 1, 1),
+            new THREE.Color(1, 0, 1),
+            new THREE.Color(0, 1, 1)
+        ];
+        this.lightIntensity = 0;
+        this.targetLightIntensity = 0;
+        this.pulsePointLight = null;
+        this.fillPointLight = null;
+
         this.pmremGenerator = null;
         this._roomEnvTexture = null;
 
         this.useDOF = true;
         this.useBloom = true;
+        this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;
+        this.ssaoPass = null;
 
-        /** Scene16 と同じトラック初期状態 */
         this.trackEffects = {
-            1: false, 2: false, 3: false, 4: false, 5: false, 6: false, 7: false, 8: false, 9: false
+            1: true,
+            2: false,
+            3: false,
+            4: false,
+            5: true,
+            6: true,
+            7: true,
+            8: true,
+            9: true
         };
         this.setScreenshotText(this.title);
 
@@ -51,6 +116,185 @@ export class Scene21 extends SceneBase {
         this.roomHalfD = 5000;
         this.floorTopY = -498;
         this.ceilingY = 5500;
+
+        /** Scene16 と同様：OSC のトラック強度（6=力, 7=色相系） */
+        this.trackValues = { 6: 0, 7: 0 };
+        this.smoothTrack7Color = 0;
+        this.cableHomeY = 550;
+        this.cableBlobParticle = null;
+
+        /** Scene13 風：空間を漂うインスタンスボックス（金属片とは別） */
+        this.ambientParticleCount = 1000;
+        this.ambientInstManager = null;
+        this.ambientParticles = [];
+
+        /** トラック6：赤い細シリンダ（InstancedMesh） */
+        this.cylinderGroup = null;
+        this.cylinderInstMesh = null;
+        this.cylinders = [];
+        this.maxCylinders = 400;
+        this.cylinderLifetimeMs = 180000;
+        this._cylinderFreeSlots = [];
+        this._redCylinderMaterial = null;
+        this._cylinderMatrixTemp = new THREE.Matrix4();
+        this._cylinderQuatTemp = new THREE.Quaternion();
+        this._cylinderScaleTemp = new THREE.Vector3();
+        this._cylinderPosTemp = new THREE.Vector3();
+        this._cylinderDirTemp = new THREE.Vector3();
+        this._cylinderAxisUp = new THREE.Vector3(0, 1, 0);
+        this._lastCylinderWorldPos = new THREE.Vector3(0, 550, 0);
+        this._cylinderPathDir = new THREE.Vector3(0, 0.1, 1).normalize();
+        /** OSC actual_tick ベースのスポーン（トラック6） */
+        this._lastSpawnTickTrack6 = null;
+
+        this._jitterSide = new THREE.Vector3();
+        this._jitterUp = new THREE.Vector3();
+    }
+
+    /** 96小節ループ想定（Scene16 と同系）。actual_tick の差分で歩幅を決める */
+    static TICK_LOOP = 36864;
+    static METERS_PER_TICK_SHARD = 2.45;
+    static METERS_PER_TICK_CYLINDER = 2.45;
+    /**
+     * InstancedMesh 用：インスタンスごとの不透明度（instanceOpacity 属性 + opaque_fragment 後に乗算）
+     */
+    static _attachInstanceOpacityAttribute(geometry, count) {
+        const a = new Float32Array(count);
+        a.fill(0);
+        const attr = new THREE.InstancedBufferAttribute(a, 1);
+        attr.setUsage(THREE.DynamicDrawUsage);
+        geometry.setAttribute('instanceOpacity', attr);
+        return attr;
+    }
+
+    static _applyInstanceOpacityShader(material) {
+        material.transparent = true;
+        material.depthWrite = false;
+        material.onBeforeCompile = (shader) => {
+            shader.vertexShader = 'attribute float instanceOpacity;\nvarying float vInstanceOpacity;\n' + shader.vertexShader;
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                'vInstanceOpacity = instanceOpacity;\n#include <begin_vertex>'
+            );
+            shader.fragmentShader = 'varying float vInstanceOpacity;\n' + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <opaque_fragment>',
+                `#include <opaque_fragment>
+                gl_FragColor.rgb *= vInstanceOpacity;
+                gl_FragColor.a *= vInstanceOpacity;`
+            );
+        };
+    }
+
+    /** 寿命終盤：フェード区間で不透明度 1→0（線形） */
+    _fadeOpacity01(elapsedMs, lifeMs, fadeOutMs) {
+        const fade = Math.min(fadeOutMs, lifeMs * 0.35);
+        const t0 = Math.max(0, lifeMs - fade);
+        if (elapsedMs <= t0) return 1;
+        if (elapsedMs >= lifeMs) return 0;
+        return 1 - (elapsedMs - t0) / (lifeMs - t0);
+    }
+
+    _updateFadeOpacity() {
+        const now = performance.now();
+        if (this._shardOpacityAttr && this.shards.length) {
+            const arr = this._shardOpacityAttr.array;
+            let dirty = false;
+            for (const s of this.shards) {
+                const op = this._fadeOpacity01(now - s.spawnTime, this.shardLifetimeMs, this.shardFadeOutMs);
+                const i = s.slotIndex;
+                if (Math.abs(arr[i] - op) > 1e-4) {
+                    arr[i] = op;
+                    dirty = true;
+                }
+            }
+            if (dirty) this._shardOpacityAttr.needsUpdate = true;
+        }
+        if (this._cylinderOpacityAttr && this.cylinders.length) {
+            const arr = this._cylinderOpacityAttr.array;
+            let dirty = false;
+            for (const c of this.cylinders) {
+                const op = this._fadeOpacity01(now - c.spawnTime, this.cylinderLifetimeMs, this.cylinderFadeOutMs);
+                const i = c.slotIndex;
+                if (Math.abs(arr[i] - op) > 1e-4) {
+                    arr[i] = op;
+                    dirty = true;
+                }
+            }
+            if (dirty) this._cylinderOpacityAttr.needsUpdate = true;
+        }
+    }
+
+    /**
+     * @param {number} nowTick
+     * @param {number|null} prevTick 前回スポーン時の tick
+     * @returns {number} 同一 tick 連打は小さめステップだが詰まりすぎないよう離す
+     */
+    _tickDelta(nowTick, prevTick) {
+        const n = Math.floor(Number.isFinite(nowTick) ? nowTick : 0);
+        if (prevTick === null || prevTick === undefined) return 1;
+        let d = n - Math.floor(prevTick);
+        const loop = Scene21.TICK_LOOP;
+        if (d < -loop * 0.5) d += loop;
+        if (d > loop * 0.5) d -= loop;
+        if (d <= 0) return 1.12;
+        return d;
+    }
+
+    /**
+     * 直前スポーンからの tick 差が大きいほどランダム幅が増える
+     */
+    _applySequenceAwareJitter(pos, deltaTick, forwardDir, seedA, seedB) {
+        const gap = Math.max(0, deltaTick - 0.22);
+        const t = THREE.MathUtils.clamp(Math.log1p(gap) / Math.log1p(72), 0, 1);
+        const amp = THREE.MathUtils.lerp(14, 420, t);
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        this._jitterSide.crossVectors(worldUp, forwardDir);
+        if (this._jitterSide.lengthSq() < 1e-8) {
+            this._jitterSide.crossVectors(new THREE.Vector3(1, 0, 0), forwardDir);
+        }
+        this._jitterSide.normalize();
+        this._jitterUp.crossVectors(forwardDir, this._jitterSide);
+        this._jitterUp.normalize();
+        const a1 = (this._shardNoise(seedA, seedB, 0.11) - 0.5) * 2;
+        const a2 = (this._shardNoise(seedB, seedA, 0.22) - 0.5) * 2;
+        const a3 = (this._shardNoise(seedA * 0.31, seedB * 0.29, 0.33) - 0.5) * 2;
+        pos.addScaledVector(this._jitterSide, a1 * amp * 0.52);
+        pos.addScaledVector(this._jitterUp, a2 * amp * 0.44);
+        pos.addScaledVector(worldUp, a3 * amp * 0.26);
+    }
+
+    /**
+     * デュレーション → シリンダ長。極短と極長で長さ比が ~3.5 倍程度に収まるよう log で圧縮
+     */
+    _cylinderLengthFromDurationMs(durationMs) {
+        const d = Math.max(8, Number(durationMs) || 180);
+        const dMin = 20;
+        const dMax = 2400;
+        const tLin = THREE.MathUtils.clamp((d - dMin) / (dMax - dMin), 0, 1);
+        const tLog = THREE.MathUtils.clamp(Math.log(d / dMin) / Math.log(dMax / dMin), 0, 1);
+        /** log より線形寄り（0.85 でかなり線形に近い） */
+        const t = THREE.MathUtils.lerp(tLog, tLin, 0.85);
+        const lenMin = 140;
+        const lenMax = 540;
+        return THREE.MathUtils.lerp(lenMin, lenMax, t);
+    }
+
+    /** 床・壁タイルの目地分割（小さいほど1枚が大きく見える）。drawGroutLines と一致させる */
+    static TILE_OVERLAY_DIVISIONS = 26;
+
+    /** OSC の trackNumber が数値化できない／未設定のときは address から拾う */
+    static parseTrackNumber(trackNumber, message) {
+        if (trackNumber !== undefined && trackNumber !== null && trackNumber !== '') {
+            const num = typeof trackNumber === 'string' ? parseInt(trackNumber, 10) : Number(trackNumber);
+            if (!Number.isNaN(num)) return num;
+        }
+        const addr = message && message.address;
+        if (typeof addr === 'string') {
+            const m = addr.match(/\/track\/(\d+)/i);
+            if (m) return parseInt(m[1], 10);
+        }
+        return null;
     }
 
     /** Scene16 と同じカメラ距離 */
@@ -63,6 +307,40 @@ export class Scene21 extends SceneBase {
         cameraParticle.initializePosition?.();
     }
 
+    /**
+     * トラック5/6 で最後に生えたインスタンスの現在ワールド位置を注視点にする（グループ移動に追従）
+     */
+    _updateCameraFocusFromSpawns() {
+        let best = null;
+        if (this.shards.length) {
+            const s = this.shards[this.shards.length - 1];
+            best = { kind: 'shard', slot: s.slotIndex, t: s.spawnTime };
+        }
+        if (this.cylinders.length) {
+            const c = this.cylinders[this.cylinders.length - 1];
+            if (!best || c.spawnTime >= best.t) {
+                best = { kind: 'cylinder', slot: c.slotIndex, t: c.spawnTime };
+            }
+        }
+        if (!best) {
+            if (this.cableBlobParticle) {
+                this._spawnFocusWorld.copy(this.cableBlobParticle.position);
+            }
+            return;
+        }
+        if (best.kind === 'shard' && this.shardInstMesh && this.shardGroup) {
+            this.shardInstMesh.getMatrixAt(best.slot, this._shardMatrixTemp);
+            this._shardPosTemp.setFromMatrixPosition(this._shardMatrixTemp);
+            this.shardGroup.localToWorld(this._shardPosTemp);
+            this._spawnFocusWorld.copy(this._shardPosTemp);
+        } else if (best.kind === 'cylinder' && this.cylinderInstMesh && this.cylinderGroup) {
+            this.cylinderInstMesh.getMatrixAt(best.slot, this._cylinderMatrixTemp);
+            this._cylinderPosTemp.setFromMatrixPosition(this._cylinderMatrixTemp);
+            this.cylinderGroup.localToWorld(this._cylinderPosTemp);
+            this._spawnFocusWorld.copy(this._cylinderPosTemp);
+        }
+    }
+
     updateCamera() {
         if (this.cameraParticles[this.currentCameraIndex]) {
             const cp = this.cameraParticles[this.currentCameraIndex];
@@ -72,7 +350,11 @@ export class Scene21 extends SceneBase {
                 cameraPos.normalize().multiplyScalar(cp.minDistance);
             }
             this.camera.position.copy(cameraPos);
-            this.camera.lookAt(0, 400, 0);
+            this.camera.lookAt(
+                this._cameraFocusSmoothed.x,
+                this._cameraFocusSmoothed.y,
+                this._cameraFocusSmoothed.z
+            );
             this.camera.matrixWorldNeedsUpdate = false;
         }
     }
@@ -148,23 +430,65 @@ export class Scene21 extends SceneBase {
                 const nx = x * 0.018;
                 const ny = y * 0.018;
 
-                const h =
-                    fbm(nx, ny, 5) * 0.55 +
-                    fbm(nx * 2.2 + 10, ny * 2.1 - 4, 4) * 0.28 +
-                    Math.sin(u * 40 + v * 12) * 0.04;
+                // ドメインウェアプ三段：ノイズで座標を歪ませ、さらにその歪みを歪める
+                const w1x = fbm(ny * 0.88 + 12.3, nx * 0.62 + 4.1, 3) * 0.44;
+                const w1y = fbm(nx * 0.88 + 2.7, ny * 0.62 + 8.9, 3) * 0.44;
+                const qx = nx + w1x;
+                const qy = ny + w1y;
+                const w2x = fbm(qy * 0.58 + 1.1, qx * 0.51 + 6.0, 4) * 0.52;
+                const w2y = fbm(qx * 0.58 + 7.1, qy * 0.51 + 2.3, 4) * 0.52;
+                const wx = qx + w2x;
+                const wy = qy + w2y;
+                const w3x = fbm(wy * 0.72 + 3.0, wx * 0.66 + 0.4, 3) * 0.26;
+                const w3y = fbm(wx * 0.72 + 5.0, wy * 0.66 + 8.0, 3) * 0.26;
+                const warpX = wx + w3x;
+                const warpY = wy + w3y;
+
+                const nMod = 0.55 + 0.9 * fbm(nx * 0.36 + 9.5, ny * 0.34 - 2.0, 4);
+                const coarse = fbm(warpX, warpY, 5) * 0.52 * nMod;
+                const mid =
+                    fbm(warpX * 2.2 + 10, warpY * 2.1 - 4, 4) *
+                    0.28 *
+                    (0.75 + 0.5 * fbm(nx * 0.2, ny * 0.19, 2));
+                const ripple =
+                    Math.sin(u * 40 + v * 12) * 0.04 * (0.65 + 0.7 * fbm(nx * 0.45, ny * 0.42, 2));
+                const patch = fbm(nx * 0.52 + 1.9, ny * 0.5 - 0.7, 4) * 0.22;
+                const patchMod = patch * (0.45 + 0.55 * fbm(warpX * 3.8, warpY * 3.8, 2));
+                const grain = fbm(nx * 8.5 + 30, ny * 8.1 - 11, 3) * 0.058;
+                const micro = fbm(wx * 18, wy * 17, 2) * 0.032;
+                const h = coarse + mid + ripple + patchMod + grain + micro;
                 heightData[y * size + x] = h;
 
+                const rEnvelop = fbm(nx * 0.38 + 2.1, ny * 0.36 + 1.0, 3);
+                const macroRough = fbm(
+                    nx * (0.46 + 0.15 * rEnvelop) + 19.2,
+                    ny * (0.44 + 0.12 * rEnvelop) + 6.8,
+                    4
+                );
                 const rVar =
-                    fbm(nx * 1.7 + 50, ny * 1.6 - 20, 5) * 0.55 +
-                    fbm(nx * 5.1, ny * 4.8, 3) * 0.35;
-                roughData[y * size + x] = THREE.MathUtils.clamp(0.38 + rVar * 0.58, 0, 1);
+                    fbm(nx * 1.7 + 50 + macroRough * 0.85, ny * 1.6 - 20, 5) * 0.55 +
+                    fbm(nx * 5.1, ny * 4.8, 3) * 0.35 * (0.45 + 0.55 * fbm(nx * 0.9, ny * 0.85, 2)) +
+                    fbm(nx * 12 + 3, ny * 11.5 - 5, 2) * 0.14;
+                const rMicro = fbm(nx * 38 + 4, ny * 37, 2) * 0.14;
+                roughData[y * size + x] = THREE.MathUtils.clamp(
+                    0.1 + rVar * 0.58 + macroRough * 0.42 + rMicro * 0.65,
+                    0,
+                    1
+                );
 
                 const cx = u - 0.5;
                 const cy = v - 0.5;
                 const edge = 1 - Math.min(1, Math.sqrt(cx * cx + cy * cy) * 1.85);
                 const contact = Math.pow(Math.max(0, edge), 1.35);
                 const stain = fbm(nx * 0.8 + 100, ny * 0.7, 3);
-                aoData[y * size + x] = THREE.MathUtils.clamp(0.52 + contact * 0.28 + stain * 0.08, 0, 1);
+                const aoGrain = (fbm(nx * 2.4, ny * 2.2, 3) - 0.5) * 0.11;
+                const aoNested =
+                    (fbm(nx * 6.5, ny * 6.2, 3) - 0.5) * 0.09 * (0.4 + 0.6 * fbm(nx * 0.9, ny * 0.85, 2));
+                aoData[y * size + x] = THREE.MathUtils.clamp(
+                    0.52 + contact * 0.28 + stain * 0.08 + aoGrain + aoNested,
+                    0,
+                    1
+                );
             }
         }
 
@@ -186,8 +510,25 @@ export class Scene21 extends SceneBase {
                 const hxm = x > 0 ? heightData[y * size + x - 1] : h;
                 const hy = y < size - 1 ? heightData[(y + 1) * size + x] : h;
                 const hym = y > 0 ? heightData[(y - 1) * size + x] : h;
-                const dx = (hxm - hx) * 4.2;
-                const dy = (hym - hy) * 4.2;
+                let dx = (hxm - hx) * 4.2;
+                let dy = (hym - hy) * 4.2;
+                const nxP = x * 0.018;
+                const nyP = y * 0.018;
+                const px = nxP + (fbm(nyP * 2.35, nxP * 2.15 + 1.7, 2) - 0.5) * 0.52;
+                const py = nyP + (fbm(nxP * 2.35, nyP * 2.15 + 4.2, 2) - 0.5) * 0.52;
+                const det = (fbm(px * 14 + 40, py * 13.5, 3) - 0.5) * 0.5;
+                const det2 = (fbm(px * 28 + 7, py * 27, 2) - 0.5) * 0.2;
+                const det3 = (fbm(px * 52 + 3, py * 50, 2) - 0.5) * 0.12;
+                dx += det + det2 + det3;
+                dy += (fbm(px * 14.2 + 2, py * 13.7 + 55, 3) - 0.5) * 0.5;
+                dy += (fbm(px * 28.1 + 90, py * 27.2, 2) - 0.5) * 0.2;
+                dy += (fbm(px * 52 + 20, py * 50 + 10, 2) - 0.5) * 0.12;
+                const dLen = Math.sqrt(dx * dx + dy * dy);
+                if (dLen > 0.92) {
+                    const s = 0.92 / dLen;
+                    dx *= s;
+                    dy *= s;
+                }
                 const nz = Math.sqrt(Math.max(0.0001, 1 - dx * dx - dy * dy));
                 const nx = dx * 0.5 + 0.5;
                 const ny = dy * 0.5 + 0.5;
@@ -204,7 +545,12 @@ export class Scene21 extends SceneBase {
                 const wear = fbm(x * 0.09 + 20, y * 0.11, 3);
                 pixCol.copy(baseCol).lerp(cold, blot * 0.35);
                 pixCol.lerp(stainCol, drip * 0.12 * wear);
-                pixCol.multiplyScalar(0.96 + h * 0.14);
+                const toneNest =
+                    0.9 +
+                    0.2 *
+                        fbm(x * 0.022 + 5.1, y * 0.021 - 2.4, 3) *
+                        (0.45 + 0.55 * fbm(x * 0.075 + 1.2, y * 0.071 + 8.0, 2));
+                pixCol.multiplyScalar((0.96 + h * 0.14) * toneNest);
                 const speck = rnd(x * 0.37, y * 0.41);
                 if (speck < 0.0009) {
                     pixCol.multiplyScalar(0.86 + speck * 14);
@@ -232,6 +578,14 @@ export class Scene21 extends SceneBase {
         }
 
         aCtx.putImageData(aImg, 0, 0);
+        // StudioBox 床と同じ目地・赤十字・目盛りのみをコンクリート albedo に合成（質感は維持）
+        const tileDiv = Scene21.TILE_OVERLAY_DIVISIONS;
+        aCtx.save();
+        aCtx.globalCompositeOperation = 'multiply';
+        StudioBox.drawGroutLines(aCtx, size, { strokeStyle: '#8e8e8e', divisions: tileDiv });
+        aCtx.restore();
+        StudioBox.drawRedCrossesAndLabels(aCtx, size, tileDiv);
+
         hCtx.putImageData(nImg, 0, 0);
         rCtx.putImageData(rImg, 0, 0);
         aoCtx.putImageData(aoImg, 0, 0);
@@ -280,7 +634,8 @@ export class Scene21 extends SceneBase {
     }
 
     buildRoom(textures) {
-        const repeat = 2.8;
+        /** 小さいほどテクスチャ1周がワールドで広がり、タイル1枚が大きく見える */
+        const repeat = 1.55;
         ['map', 'normalMap', 'roughnessMap', 'aoMap'].forEach((k) => {
             const t = textures[k];
             if (t) {
@@ -293,7 +648,7 @@ export class Scene21 extends SceneBase {
             color: 0xe8eaee,
             map: textures.map,
             normalMap: textures.normalMap,
-            normalScale: new THREE.Vector2(0.55, 0.55),
+            normalScale: new THREE.Vector2(0.44, 0.44),
             roughnessMap: textures.roughnessMap,
             roughness: 0.9,
             metalness: 0,
@@ -354,45 +709,526 @@ export class Scene21 extends SceneBase {
         this.scene.add(this.roomGroup);
     }
 
+    _shardNoise(x, y, z) {
+        const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+        return n - Math.floor(n);
+    }
+
+    /** 0–127 以外に OSC が 0–1 float を送る場合も正規化 */
+    normalizeMidiVelocity(v) {
+        if (v === undefined || v === null) return 127;
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 127;
+        if (n >= 0 && n <= 1) return Math.round(n * 127);
+        return THREE.MathUtils.clamp(Math.round(n), 0, 127);
+    }
+
+    /** ベロシティをヒートマップ（青→シアン→黄→赤）— ディフューズでも分かるよう強め */
+    velocityHeatmapToColor(velocity, target) {
+        const t = THREE.MathUtils.clamp(velocity / 127, 0, 1);
+        if (t < 0.33) {
+            const u = t / 0.33;
+            target.setRGB(0.08 + 0.1 * u, 0.2 + 0.6 * u, 0.95);
+        } else if (t < 0.66) {
+            const u = (t - 0.33) / 0.33;
+            target.setRGB(0.1 + 0.85 * u, 0.75 + 0.25 * u, 0.95 * (1 - u * 0.85));
+        } else {
+            const u = (t - 0.66) / 0.34;
+            target.setRGB(0.95, 0.95 * (1 - u * 0.55), 0.12 * (1 - u));
+        }
+    }
+
+    /** 部屋内のノイズベース目標座標（金属片の「生える場所」のひとつ） */
+    sampleNoisePosition() {
+        const s = this._shardSeed + this._snakeIndex * 0.019;
+        const u = this._shardNoise(s * 0.002, 2.3, 4.1) * 2 - 1;
+        const v = this._shardNoise(1.1, s * 0.002, 2.3) * 2 - 1;
+        const w = this._shardNoise(1.1, 2.3, s * 0.002) * 2 - 1;
+        const hw = this.roomHalfW * 0.58;
+        const hd = this.roomHalfD * 0.58;
+        const ymin = this.floorTopY + 140;
+        const ymax = this.ceilingY * 0.44;
+        return new THREE.Vector3(u * hw, ymin + (w * 0.5 + 0.5) * (ymax - ymin), v * hd);
+    }
+
     /**
-     * 部屋中央に発光球（エミッシブ＋弱い加算グロー）と実光源として PointLight
+     * トラック5：位置は actual_tick 差分×定数。進行方向はノイズでねじる。
+     * durationMs: デュレーション（ms）でスケール。velocity: ヒートマップ色。
      */
-    createCenterLightSphere() {
-        this.centerLightGroup = new THREE.Group();
-        const radius = 180;
-        const geo = new THREE.SphereGeometry(radius, 48, 48);
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0x1a2028,
-            emissive: 0x66ccff,
-            emissiveIntensity: 6.5,
-            metalness: 0.15,
-            roughness: 0.35,
-            envMap: this.scene.environment,
-            envMapIntensity: 1.0
-        });
-        const sphere = new THREE.Mesh(geo, mat);
-        sphere.castShadow = false;
-        sphere.receiveShadow = false;
-        this.centerLightGroup.add(sphere);
+    spawnMetalShardFromTrack5(velocity, durationMs = 180) {
+        if (!this.shardGroup || !this._metalShardMaterial || !this.shardInstMesh) return;
 
-        const glow = new THREE.Mesh(
-            new THREE.SphereGeometry(radius * 1.4, 32, 32),
-            new THREE.MeshBasicMaterial({
-                color: 0x99eeff,
-                transparent: true,
-                opacity: 0.2,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false
-            })
+        const vMidi = this.normalizeMidiVelocity(velocity);
+
+        const tick = Math.floor(this.actualTick ?? 0);
+        const deltaTick = this._tickDelta(tick, this._lastSpawnTickTrack5);
+        this._lastSpawnTickTrack5 = tick;
+
+        const si = this._snakeIndex;
+        const worldUp = new THREE.Vector3(0, 1, 0);
+        let side = new THREE.Vector3().crossVectors(worldUp, this._snakeDir);
+        if (side.lengthSq() < 1e-8) {
+            side.crossVectors(new THREE.Vector3(1, 0, 0), this._snakeDir);
+        }
+        side.normalize();
+        this._snakeDir.applyAxisAngle(worldUp, (this._shardNoise(si * 0.31, 1.2, 3.4) - 0.5) * 0.44);
+        this._snakeDir.applyAxisAngle(side, (this._shardNoise(2.1, si * 0.29, 4.4) - 0.5) * 0.38);
+        this._snakeDir.normalize();
+
+        const stepLen = deltaTick * Scene21.METERS_PER_TICK_SHARD;
+        const newPos = this._spawnWorldPosTemp;
+        newPos.copy(this._lastShardPos).addScaledVector(this._snakeDir, stepLen);
+        this._applySequenceAwareJitter(newPos, deltaTick, this._snakeDir, si + tick * 0.0007, si * 1.7);
+
+        newPos.x = THREE.MathUtils.clamp(newPos.x, -this.roomHalfW + 140, this.roomHalfW - 140);
+        newPos.z = THREE.MathUtils.clamp(newPos.z, -this.roomHalfD + 140, this.roomHalfD - 140);
+        newPos.y = THREE.MathUtils.clamp(newPos.y, this.floorTopY + 90, this.ceilingY * 0.46);
+
+        const fwd = this._snakeDir.clone().normalize();
+        const qSnake = new THREE.Quaternion();
+        const zAxis = new THREE.Vector3(0, 0, 1);
+        if (Math.abs(zAxis.dot(fwd)) > 0.998) {
+            qSnake.setFromAxisAngle(new THREE.Vector3(1, 0, 0), fwd.z < 0 ? Math.PI : 0);
+        } else {
+            qSnake.setFromUnitVectors(zAxis, fwd);
+        }
+        const rapid = 0.72;
+        const roll = (this._shardNoise(si, 7.1, 0.3) - 0.5) * Math.PI * (0.88 + rapid * 0.45);
+        const qRoll = new THREE.Quaternion().setFromAxisAngle(fwd, roll);
+        const nx = (this._shardNoise(si, 4.2, 1.1) - 0.5) * (1.15 + rapid * 0.35);
+        const ny = (this._shardNoise(si, 5.3, 2.2) - 0.5) * (1.15 + rapid * 0.35);
+        const nz = (this._shardNoise(si, 6.4, 3.3) - 0.5) * (0.95 + rapid * 0.45);
+        const qN = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(nx * Math.PI * 0.55, ny * Math.PI * 0.55, nz * Math.PI * 0.55, 'YXZ')
         );
-        this.centerLightGroup.add(glow);
+        const qFinal = qSnake.clone().multiply(qRoll).multiply(qN);
 
-        const pl = new THREE.PointLight(0xaaddff, 20.0, 10000, 1.45);
-        pl.castShadow = false;
-        this.centerLightGroup.add(pl);
+        this._lastShardPos.copy(newPos);
+        this._snakeIndex++;
 
-        this.centerLightGroup.position.set(0, 400, 0);
-        this.scene.add(this.centerLightGroup);
+        const dur = Math.max(1, Number(durationMs) || 180);
+        const durN = THREE.MathUtils.clamp(dur / 750, 0.06, 1.65);
+        const r =
+            (18 + 118 * durN) *
+            (0.94 + 0.06 * this._shardNoise(si * 0.7, 0.2, 0.1));
+
+        const slotIndex = this._allocShardSlot();
+        this.velocityHeatmapToColor(vMidi, this._shardHeatColor);
+        /** インスタンス色：旧エミッシブ込みの見え方に寄せて明るさブースト */
+        const glow = 0.42 + (vMidi / 127) * 1.05;
+        this._shardHeatColor.multiplyScalar(1.0 + glow * 0.32);
+        this._shardHeatColor.r = Math.min(1, this._shardHeatColor.r);
+        this._shardHeatColor.g = Math.min(1, this._shardHeatColor.g);
+        this._shardHeatColor.b = Math.min(1, this._shardHeatColor.b);
+        this.shardInstMesh.setColorAt(slotIndex, this._shardHeatColor);
+        if (this.shardInstMesh.instanceColor) {
+            this.shardInstMesh.instanceColor.needsUpdate = true;
+        }
+
+        this._shardPosTemp.copy(newPos);
+        this.shardGroup.updateMatrixWorld(true);
+        this.shardGroup.worldToLocal(this._shardPosTemp);
+        this._shardScaleTemp.set(r, r, r);
+        this._shardMatrixTemp.compose(this._shardPosTemp, qFinal, this._shardScaleTemp);
+        this.shardInstMesh.setMatrixAt(slotIndex, this._shardMatrixTemp);
+        this.shardInstMesh.instanceMatrix.needsUpdate = true;
+        if (this._shardOpacityAttr) {
+            this._shardOpacityAttr.array[slotIndex] = 1;
+            this._shardOpacityAttr.needsUpdate = true;
+        }
+
+        this.shards.push({ slotIndex, spawnTime: performance.now() });
+    }
+
+    /** 空きスロットを取得（上限時は最古を再利用） */
+    _allocShardSlot() {
+        if (this.shards.length >= this.maxShards) {
+            const old = this.shards.shift();
+            this._clearShardSlot(old.slotIndex);
+            return old.slotIndex;
+        }
+        return this._shardFreeSlots.pop();
+    }
+
+    /** 非表示：スケール0（ドローコスト抑制） */
+    _clearShardSlot(slotIndex) {
+        if (!this.shardInstMesh || slotIndex < 0 || slotIndex >= this.maxShards) return;
+        this._shardPosTemp.set(0, -1e6, 0);
+        this._shardQuatTemp.identity();
+        this._shardScaleTemp.set(0, 0, 0);
+        this._shardMatrixTemp.compose(this._shardPosTemp, this._shardQuatTemp, this._shardScaleTemp);
+        this.shardInstMesh.setMatrixAt(slotIndex, this._shardMatrixTemp);
+        if (this._shardOpacityAttr) {
+            this._shardOpacityAttr.array[slotIndex] = 0;
+            this._shardOpacityAttr.needsUpdate = true;
+        }
+    }
+
+    /** 寿命超えの破片を削除（毎フレーム） */
+    pruneExpiredShards() {
+        if (!this.shards.length || !this.shardGroup) return;
+        const now = performance.now();
+        const life = this.shardLifetimeMs;
+        let matrixDirty = false;
+        for (let i = this.shards.length - 1; i >= 0; i--) {
+            const s = this.shards[i];
+            if (now - s.spawnTime > life) {
+                this._clearShardSlot(s.slotIndex);
+                this._shardFreeSlots.push(s.slotIndex);
+                this.shards.splice(i, 1);
+                matrixDirty = true;
+            }
+        }
+        while (this.shards.length > this.maxShards) {
+            const old = this.shards.shift();
+            this._clearShardSlot(old.slotIndex);
+            this._shardFreeSlots.push(old.slotIndex);
+            matrixDirty = true;
+        }
+        if (matrixDirty && this.shardInstMesh) {
+            this.shardInstMesh.instanceMatrix.needsUpdate = true;
+        }
+    }
+
+    initMetalShardsSystem() {
+        this.shardGroup = new THREE.Group();
+        this.shardGroup.position.set(0, 0, 0);
+        this.scene.add(this.shardGroup);
+
+        const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
+        /** 共有1マテ（個体差は instanceColor）。metalness/env が強いと instanceColor が反射に負けてグレーに見えるので控えめ */
+        this._metalShardMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.18,
+            roughness: 0.52,
+            envMap: envTex,
+            envMapIntensity: 0.42,
+            emissive: 0x000000,
+            emissiveIntensity: 0,
+            opacity: 1
+        });
+        Scene21._applyInstanceOpacityShader(this._metalShardMaterial);
+
+        const shardGeo = new THREE.TetrahedronGeometry(1, 0);
+        this._shardOpacityAttr = Scene21._attachInstanceOpacityAttribute(shardGeo, this.maxShards);
+        this.shardInstMesh = new THREE.InstancedMesh(shardGeo, this._metalShardMaterial, this.maxShards);
+        this.shardInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.shardInstMesh.frustumCulled = false;
+        this.shardInstMesh.castShadow = true;
+        this.shardInstMesh.receiveShadow = true;
+        this.shardGroup.add(this.shardInstMesh);
+
+        this._shardFreeSlots = [];
+        for (let i = this.maxShards - 1; i >= 0; i--) {
+            this._shardFreeSlots.push(i);
+        }
+        for (let i = 0; i < this.maxShards; i++) {
+            this._clearShardSlot(i);
+        }
+        this.shardInstMesh.instanceMatrix.needsUpdate = true;
+
+        const hideColor = new THREE.Color(0x000000);
+        for (let i = 0; i < this.maxShards; i++) {
+            this.shardInstMesh.setColorAt(i, hideColor);
+        }
+        if (this.shardInstMesh.instanceColor) {
+            this.shardInstMesh.instanceColor.needsUpdate = true;
+        }
+    }
+
+    initRedCylinderSystem() {
+        this.cylinderGroup = new THREE.Group();
+        this.cylinderGroup.position.set(0, 0, 0);
+        this.scene.add(this.cylinderGroup);
+
+        /** 赤く見えること優先：env 反射でグレー化しない（拡散＋エミッシブ中心） */
+        this._redCylinderMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.75,
+            metalness: 0,
+            roughness: 0.48,
+            fog: false,
+            opacity: 1
+        });
+        Scene21._applyInstanceOpacityShader(this._redCylinderMaterial);
+
+        const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1);
+        this._cylinderOpacityAttr = Scene21._attachInstanceOpacityAttribute(cylGeo, this.maxCylinders);
+        this.cylinderInstMesh = new THREE.InstancedMesh(cylGeo, this._redCylinderMaterial, this.maxCylinders);
+        this.cylinderInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.cylinderInstMesh.frustumCulled = false;
+        this.cylinderInstMesh.castShadow = true;
+        this.cylinderInstMesh.receiveShadow = true;
+        this.cylinderGroup.add(this.cylinderInstMesh);
+
+        this._cylinderFreeSlots = [];
+        for (let i = this.maxCylinders - 1; i >= 0; i--) {
+            this._cylinderFreeSlots.push(i);
+        }
+        for (let i = 0; i < this.maxCylinders; i++) {
+            this._clearCylinderSlot(i);
+        }
+        this.cylinderInstMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    /**
+     * トラック6：赤いシリンダ。位置はトラック5と同系の tick パス＋ジッター。
+     * デュレーション→長さ（緩いマッピング）、ベロシティ→半径。noteNumber は向きのばらつき用（args[0]）
+     */
+    spawnRedCylinderFromTrack6(velocity, durationMs = 180, noteNumber = 64) {
+        if (!this.cylinderGroup || !this.cylinderInstMesh || !this._redCylinderMaterial) return;
+
+        const vMidi = this.normalizeMidiVelocity(velocity);
+        const dur = Math.max(1, Number(durationMs) || 180);
+        const length = THREE.MathUtils.clamp(this._cylinderLengthFromDurationMs(dur), 110, 720);
+        const radius = THREE.MathUtils.clamp(0.48 + (vMidi / 127) * 15.2, 0.28, 18);
+
+        const slotIndex = this._allocCylinderSlot();
+
+        const tick = Math.floor(this.actualTick ?? 0);
+        const deltaTick = this._tickDelta(tick, this._lastSpawnTickTrack6);
+        this._lastSpawnTickTrack6 = tick;
+
+        const ci = this.cylinders.length;
+        const wu = new THREE.Vector3(0, 1, 0);
+        let cside = new THREE.Vector3().crossVectors(wu, this._cylinderPathDir);
+        if (cside.lengthSq() < 1e-8) {
+            cside.crossVectors(new THREE.Vector3(1, 0, 0), this._cylinderPathDir);
+        }
+        cside.normalize();
+        this._cylinderPathDir.applyAxisAngle(wu, (this._shardNoise(ci * 0.27, 1.1, 3.2) - 0.5) * 0.46);
+        this._cylinderPathDir.applyAxisAngle(cside, (this._shardNoise(2.2, ci * 0.23, 4.0) - 0.5) * 0.4);
+        this._cylinderPathDir.normalize();
+
+        if (this.cylinders.length === 0) {
+            this._lastCylinderWorldPos.copy(this._lastShardPos);
+        }
+        const stepLen = deltaTick * Scene21.METERS_PER_TICK_CYLINDER;
+        this._cylinderPosTemp.copy(this._lastCylinderWorldPos).addScaledVector(this._cylinderPathDir, stepLen);
+        this._applySequenceAwareJitter(this._cylinderPosTemp, deltaTick, this._cylinderPathDir, ci * 2.1 + tick * 0.0005, ci * 1.3 + 9.2);
+        this._cylinderPosTemp.x = THREE.MathUtils.clamp(
+            this._cylinderPosTemp.x,
+            -this.roomHalfW + 200,
+            this.roomHalfW - 200
+        );
+        this._cylinderPosTemp.z = THREE.MathUtils.clamp(
+            this._cylinderPosTemp.z,
+            -this.roomHalfD + 200,
+            this.roomHalfD - 200
+        );
+        this._cylinderPosTemp.y = THREE.MathUtils.clamp(
+            this._cylinderPosTemp.y,
+            this.floorTopY + 120,
+            this.ceilingY * 0.46
+        );
+        this._lastCylinderWorldPos.copy(this._cylinderPosTemp);
+
+        const u = Math.random() * Math.PI * 2;
+        const v = Math.acos(2 * Math.random() - 1);
+        this._cylinderDirTemp.set(
+            Math.sin(v) * Math.cos(u),
+            Math.cos(v),
+            Math.sin(v) * Math.sin(u)
+        );
+        if (Math.abs(this._cylinderDirTemp.dot(this._cylinderAxisUp)) > 0.998) {
+            this._cylinderDirTemp.x += 0.002;
+            this._cylinderDirTemp.normalize();
+        }
+        const n = Number(noteNumber);
+        const nJ = Number.isFinite(n) ? n : 64;
+        this._cylinderDirTemp.applyAxisAngle(wu, (this._shardNoise(nJ * 0.07, ci * 0.13, 0.9) - 0.5) * 0.55);
+        this._cylinderDirTemp.normalize();
+        this._cylinderQuatTemp.setFromUnitVectors(this._cylinderAxisUp, this._cylinderDirTemp);
+        this.cylinderGroup.updateMatrixWorld(true);
+        this.cylinderGroup.worldToLocal(this._cylinderPosTemp);
+
+        this._cylinderScaleTemp.set(radius, length, radius);
+        this._cylinderMatrixTemp.compose(this._cylinderPosTemp, this._cylinderQuatTemp, this._cylinderScaleTemp);
+        this.cylinderInstMesh.setMatrixAt(slotIndex, this._cylinderMatrixTemp);
+        this.cylinderInstMesh.instanceMatrix.needsUpdate = true;
+        if (this._cylinderOpacityAttr) {
+            this._cylinderOpacityAttr.array[slotIndex] = 1;
+            this._cylinderOpacityAttr.needsUpdate = true;
+        }
+
+        this.cylinders.push({ slotIndex, spawnTime: performance.now() });
+    }
+
+    _allocCylinderSlot() {
+        if (this.cylinders.length >= this.maxCylinders) {
+            const old = this.cylinders.shift();
+            this._clearCylinderSlot(old.slotIndex);
+            return old.slotIndex;
+        }
+        return this._cylinderFreeSlots.pop();
+    }
+
+    _clearCylinderSlot(slotIndex) {
+        if (!this.cylinderInstMesh || slotIndex < 0 || slotIndex >= this.maxCylinders) return;
+        this._cylinderPosTemp.set(0, -1e6, 0);
+        this._cylinderQuatTemp.identity();
+        this._cylinderScaleTemp.set(0, 0, 0);
+        this._cylinderMatrixTemp.compose(this._cylinderPosTemp, this._cylinderQuatTemp, this._cylinderScaleTemp);
+        this.cylinderInstMesh.setMatrixAt(slotIndex, this._cylinderMatrixTemp);
+        if (this._cylinderOpacityAttr) {
+            this._cylinderOpacityAttr.array[slotIndex] = 0;
+            this._cylinderOpacityAttr.needsUpdate = true;
+        }
+    }
+
+    pruneExpiredCylinders() {
+        if (!this.cylinders.length || !this.cylinderGroup) return;
+        const now = performance.now();
+        const life = this.cylinderLifetimeMs;
+        let matrixDirty = false;
+        for (let i = this.cylinders.length - 1; i >= 0; i--) {
+            const c = this.cylinders[i];
+            if (now - c.spawnTime > life) {
+                this._clearCylinderSlot(c.slotIndex);
+                this._cylinderFreeSlots.push(c.slotIndex);
+                this.cylinders.splice(i, 1);
+                matrixDirty = true;
+            }
+        }
+        while (this.cylinders.length > this.maxCylinders) {
+            const old = this.cylinders.shift();
+            this._clearCylinderSlot(old.slotIndex);
+            this._cylinderFreeSlots.push(old.slotIndex);
+            matrixDirty = true;
+        }
+        if (matrixDirty && this.cylinderInstMesh) {
+            this.cylinderInstMesh.instanceMatrix.needsUpdate = true;
+        }
+    }
+
+    /**
+     * Scene13 風：金属片とは別レイヤーで漂うインスタンスボックス（約1000個）
+     */
+    createAmbientFloatingParticles() {
+        const count = this.ambientParticleCount;
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xb4c0d0,
+            metalness: 0.2,
+            roughness: 0.48,
+            envMap: envTex,
+            envMapIntensity: 0.62
+        });
+
+        this.ambientInstManager = new InstancedMeshManager(this.scene, boxGeo, mat, count);
+        const mainMesh = this.ambientInstManager.getMainMesh();
+        mainMesh.castShadow = false;
+        mainMesh.receiveShadow = false;
+        mainMesh.renderOrder = -2;
+
+        const bx = this.roomHalfW - 480;
+        const bz = this.roomHalfD - 480;
+        const yMin = this.floorTopY + 220;
+        const yMax = this.ceilingY * 0.4;
+
+        this.ambientParticles = [];
+        for (let i = 0; i < count; i++) {
+            const x = (Math.random() * 2 - 1) * bx;
+            const z = (Math.random() * 2 - 1) * bz;
+            const y = yMin + Math.random() * (yMax - yMin);
+            const position = new THREE.Vector3(x, y, z);
+            const velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 92,
+                (Math.random() - 0.5) * 58,
+                (Math.random() - 0.5) * 92
+            );
+            const rotation = new THREE.Euler(
+                Math.random() * Math.PI * 2,
+                Math.random() * Math.PI * 2,
+                Math.random() * Math.PI * 2
+            );
+            const angVel = new THREE.Vector3(
+                (Math.random() - 0.5) * 1.9,
+                (Math.random() - 0.5) * 1.9,
+                (Math.random() - 0.5) * 1.9
+            );
+            const sr = 0.55 + Math.random() * 2.6;
+            const scale = new THREE.Vector3(
+                sr * (0.32 + Math.random() * 1.55),
+                sr * (0.32 + Math.random() * 1.55),
+                sr * (0.32 + Math.random() * 1.55)
+            );
+            const phase = Math.random() * Math.PI * 2;
+            this.ambientParticles.push({
+                position,
+                velocity,
+                rotation,
+                angVel,
+                scale,
+                phase
+            });
+            this.ambientInstManager.setMatrixAt(i, position, rotation, scale);
+        }
+        this.ambientInstManager.markNeedsUpdate();
+    }
+
+    _updateAmbientParticles(deltaTime) {
+        if (!this.ambientInstManager || !this.ambientParticles.length) return;
+        const bx = this.roomHalfW - 420;
+        const bz = this.roomHalfD - 420;
+        const yMin = this.floorTopY + 200;
+        const yMax = this.ceilingY * 0.41;
+        const t = this.time;
+        const dt = deltaTime;
+
+        for (let i = 0; i < this.ambientParticles.length; i++) {
+            const ap = this.ambientParticles[i];
+            const ph = ap.phase;
+            ap.velocity.x += (Math.sin(t * 0.62 + ph * 1.1) * 38 + (Math.sin(t * 1.28 + i * 0.07) - 0.5) * 16) * dt;
+            ap.velocity.y += (Math.cos(t * 0.48 + ph * 0.9) * 26 + (Math.cos(t * 0.88 + i * 0.05) - 0.5) * 12) * dt;
+            ap.velocity.z += (Math.sin(t * 0.55 + ph * 1.3 + 1.4) * 38 + (Math.sin(t * 1.08 + i * 0.09) - 0.5) * 16) * dt;
+            ap.velocity.multiplyScalar(0.9989);
+            if (ap.velocity.length() > 210) ap.velocity.normalize().multiplyScalar(210);
+
+            ap.position.addScaledVector(ap.velocity, dt);
+
+            if (ap.position.x > bx) {
+                ap.position.x = bx;
+                ap.velocity.x *= -0.72;
+            } else if (ap.position.x < -bx) {
+                ap.position.x = -bx;
+                ap.velocity.x *= -0.72;
+            }
+            if (ap.position.z > bz) {
+                ap.position.z = bz;
+                ap.velocity.z *= -0.72;
+            } else if (ap.position.z < -bz) {
+                ap.position.z = -bz;
+                ap.velocity.z *= -0.72;
+            }
+            if (ap.position.y > yMax) {
+                ap.position.y = yMax;
+                ap.velocity.y *= -0.68;
+            } else if (ap.position.y < yMin) {
+                ap.position.y = yMin;
+                ap.velocity.y *= -0.68;
+            }
+
+            ap.rotation.x += ap.angVel.x * dt;
+            ap.rotation.y += ap.angVel.y * dt;
+            ap.rotation.z += ap.angVel.z * dt;
+
+            this.ambientInstManager.setMatrixAt(i, ap.position, ap.rotation, ap.scale);
+        }
+        this.ambientInstManager.markNeedsUpdate();
+    }
+
+    triggerPulse(velocity = 127) {
+        const speed = 0.3 + (velocity / 127.0) * 1.0;
+        this.pulses.push({ progress: 0.0, speed });
+        const flashIntensity = (velocity / 127.0) * 2.8;
+        if (this.pulsePointLight) {
+            this.pulsePointLight.intensity = flashIntensity;
+            this.pulsePointLight.color.copy(this.pulseColor);
+        }
+        this.targetLightIntensity = flashIntensity * 2.4;
     }
 
     setupEnvironment() {
@@ -435,10 +1271,15 @@ export class Scene21 extends SceneBase {
         fillLight.castShadow = false;
         this.scene.add(fillLight);
 
-        const pointLight = new THREE.PointLight(0xffffff, 3.4, 10000);
-        pointLight.position.set(0, 1000, 0);
-        pointLight.castShadow = false;
-        this.scene.add(pointLight);
+        this.fillPointLight = new THREE.PointLight(0xf0f2f5, 1.8, 12000);
+        this.fillPointLight.position.set(0, 2200, 0);
+        this.fillPointLight.castShadow = false;
+        this.scene.add(this.fillPointLight);
+
+        this.pulsePointLight = new THREE.PointLight(0xffffff, 0, 14000, 1.2);
+        this.pulsePointLight.position.set(0, 550, 0);
+        this.pulsePointLight.castShadow = false;
+        this.scene.add(this.pulsePointLight);
     }
 
     async setup() {
@@ -465,6 +1306,14 @@ export class Scene21 extends SceneBase {
 
         this.setupEnvironment();
 
+        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, {
+            generateMipmaps: true,
+            minFilter: THREE.LinearMipmapLinearFilter
+        });
+        this.cubeCamera = new THREE.CubeCamera(10, 12000, this.cubeRenderTarget);
+        this.cubeCamera.position.set(0, 600, 0);
+        this.scene.add(this.cubeCamera);
+
         this.studio = new StudioBox(this.scene, {
             envMap: this._roomEnvTexture,
             envMapIntensity: 1.0,
@@ -474,9 +1323,6 @@ export class Scene21 extends SceneBase {
         if (this.studio.studioBox) {
             this.studio.studioBox.visible = false;
         }
-        if (this.studio.studioFloor) {
-            this.studio.studioFloor.visible = false;
-        }
 
         const textures = this.generateConcretePBRTextures(1024);
         this.buildRoom(textures);
@@ -484,9 +1330,26 @@ export class Scene21 extends SceneBase {
         const sharedConcrete = this.roomGroup.children[0].material;
         this.applyEnvMapToMaterials(this.scene.environment, sharedConcrete, sharedConcrete);
 
-        this.createCenterLightSphere();
-
         this.setupLights();
+
+        this.cableBlobParticle = new Scene16Particle(0, this.cableHomeY, 0);
+        this.cableBlobParticle.maxSpeed = 7.0;
+        this.cableBlobParticle.maxForce = 1.5;
+        this.cableBlobParticle.friction = 0.015;
+
+        this.initMetalShardsSystem();
+        this.initRedCylinderSystem();
+        this.createAmbientFloatingParticles();
+        if (this.cableBlobParticle && this.shardGroup) {
+            this.shardGroup.position.copy(this.cableBlobParticle.position);
+        }
+        if (this.cableBlobParticle && this.cylinderGroup) {
+            this.cylinderGroup.position.copy(this.cableBlobParticle.position);
+        }
+        if (this.cableBlobParticle) {
+            this._spawnFocusWorld.copy(this.cableBlobParticle.position);
+            this._cameraFocusSmoothed.copy(this._spawnFocusWorld);
+        }
 
         if (this.calloutSystem) {
             this.calloutSystem.setScene(this.scene);
@@ -494,15 +1357,105 @@ export class Scene21 extends SceneBase {
 
         this.setupCameraParticleDistances();
         this.initPostProcessing();
-        this.setParticleCount(10);
+        this.setParticleCount(this.maxShards + 8 + this.ambientParticleCount + this.maxCylinders);
         this.initialized = true;
     }
 
     onUpdate(deltaTime) {
         if (!this.initialized) return;
         this.time += deltaTime;
+
+        this._updateFadeOpacity();
+        this.pruneExpiredShards();
+        this.pruneExpiredCylinders();
+        this._updateAmbientParticles(deltaTime);
+
+        const targetTrack7 = this.trackEffects[7] ? this.trackValues[7] || 0 : 0;
+        const colorLerpSpeed = targetTrack7 > 0 ? 3.0 : 0.35;
+        this.smoothTrack7Color += (targetTrack7 - this.smoothTrack7Color) * deltaTime * colorLerpSpeed;
+        const t7 = this.smoothTrack7Color;
+
+        if (this.trackEffects[7] && t7 > 0.02) {
+            const hue = (t7 * 0.82 + this.time * 0.16) % 1;
+            this.targetPulseColor.setHSL(hue, 0.9, 0.52);
+        } else {
+            this.targetPulseColor.copy(this.colors[this.colorIndex]);
+        }
+
+        this.pulseColor.lerp(this.targetPulseColor, 0.5);
+
+        this.lightIntensity += (this.targetLightIntensity - this.lightIntensity) * 0.15;
+        if (this.pulsePointLight) {
+            this.pulsePointLight.intensity = this.lightIntensity;
+            this.pulsePointLight.color.copy(this.pulseColor);
+            if (this.shardGroup) {
+                this.pulsePointLight.position.copy(this.shardGroup.position);
+            }
+        }
+        this.targetLightIntensity += (0.0 - this.targetLightIntensity) * 0.1;
+
+        for (let i = this.pulses.length - 1; i >= 0; i--) {
+            const p = this.pulses[i];
+            p.progress += deltaTime * p.speed;
+            if (p.progress > 1.2) {
+                this.pulses.splice(i, 1);
+            }
+        }
+
+        if (this.cubeCamera && Math.floor(this.time * 60) % 8 === 0) {
+            this.cubeCamera.update(this.renderer, this.scene);
+        }
+
+        if (this.cableBlobParticle && this.shardGroup) {
+            const home = new THREE.Vector3(0, this.cableHomeY, 0);
+            const distToHome = this.cableBlobParticle.position.distanceTo(home);
+            const maxRadius = 950;
+            if (distToHome > maxRadius) {
+                const pullStrength = (distToHome - maxRadius) * 0.11;
+                const steer = home.clone().sub(this.cableBlobParticle.position).normalize().multiplyScalar(pullStrength);
+                this.cableBlobParticle.addForce(steer);
+            }
+            if (this.cableBlobParticle.velocity.length() < 0.55) {
+                const gentleForce = new THREE.Vector3(
+                    Math.random() - 0.5,
+                    Math.random() - 0.5,
+                    Math.random() - 0.5
+                )
+                    .normalize()
+                    .multiplyScalar(0.32);
+                this.cableBlobParticle.addForce(gentleForce);
+            }
+            this.cableBlobParticle.update(deltaTime);
+            this.shardGroup.position.copy(this.cableBlobParticle.position);
+            if (this.cylinderGroup) {
+                this.cylinderGroup.position.copy(this.cableBlobParticle.position);
+            }
+
+            const heartbeat = Math.pow(Math.sin(this.time * 1.0), 8.0);
+            const baseScale = 1.0 + Math.sin(this.time * 0.055) * 0.045;
+            const scale = baseScale + heartbeat * 0.035;
+            this.shardGroup.scale.setScalar(scale);
+
+            this.shardGroup.rotation.y += deltaTime * 0.1;
+            this.shardGroup.rotation.x += deltaTime * 0.055;
+            this.shardGroup.rotation.z = Math.sin(this.time * 0.38) * 0.14;
+        }
+
+        if (this.cubeCamera && this.shardGroup) {
+            const p = this.shardGroup.position;
+            this.cubeCamera.position.set(p.x, 600 + p.y * 0.25, p.z);
+        }
+
+        this._updateCameraFocusFromSpawns();
+        {
+            const a = 1 - Math.exp(-Math.min(deltaTime, 0.12) * 5.2);
+            this._cameraFocusSmoothed.lerp(this._spawnFocusWorld, a);
+        }
         this.updateCamera();
-        this.updateAutoFocus([this.roomGroup, this.centerLightGroup]);
+        const focusTargets = [this.roomGroup, this.shardGroup];
+        if (this.cylinderGroup) focusTargets.push(this.cylinderGroup);
+        if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
+        this.updateAutoFocus(focusTargets);
 
         if (this.calloutSystem) {
             this.calloutSystem.update(deltaTime, this.time, this.camera, {
@@ -513,10 +1466,58 @@ export class Scene21 extends SceneBase {
         }
     }
 
+    handleTrackNumber(trackNumber, message) {
+        const tn = Scene21.parseTrackNumber(trackNumber, message);
+        if (tn === null) return;
+
+        const args = message.args || [];
+        const velocity = args[1] !== undefined ? args[1] : 127;
+        const value = velocity / 127.0;
+
+        if (tn === 5) {
+            /** args[2]: デュレーション（ms）。未指定は 180 */
+            if (velocity > 0) {
+                const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
+                const durationMs = Number.isFinite(durRaw) ? durRaw : 180;
+                this.spawnMetalShardFromTrack5(velocity, durationMs);
+            }
+        } else if (tn === 6) {
+            this.trackValues[6] = value;
+            if (velocity > 0) {
+                const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
+                const durationMs = Number.isFinite(durRaw) ? durRaw : 180;
+                const noteRaw = args[0] !== undefined ? Number(args[0]) : 64;
+                const noteNumber = Number.isFinite(noteRaw) ? noteRaw : 64;
+                this.spawnRedCylinderFromTrack6(velocity, durationMs, noteNumber);
+            }
+        } else if (tn === 7) {
+            this.trackValues[7] = value;
+            if (velocity > 0) {
+                this.colorIndex = (this.colorIndex + 1) % this.colors.length;
+            }
+        }
+    }
+
+    toggleEffect(trackNumber) {
+        if (trackNumber === 7) {
+            this.colorIndex = (this.colorIndex + 1) % this.colors.length;
+            this.targetPulseColor.copy(this.colors[this.colorIndex]);
+            this.pulseColor.copy(this.targetPulseColor);
+        }
+        super.toggleEffect(trackNumber);
+    }
+
     initPostProcessing() {
         if (!this.composer) {
             this.composer = new EffectComposer(this.renderer);
             this.composer.addPass(new RenderPass(this.scene, this.camera));
+        }
+        if (this.useSSAO && !this.ssaoPass) {
+            this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
+            this.ssaoPass.kernelRadius = 8;
+            this.ssaoPass.minDistance = 0.005;
+            this.ssaoPass.maxDistance = 0.12;
+            this.composer.addPass(this.ssaoPass);
         }
         if (this.useBloom) {
             this.bloomPass = new UnrealBloomPass(
@@ -537,6 +1538,13 @@ export class Scene21 extends SceneBase {
         this.addFilmGrainIfEnabled(0.22, true);
     }
 
+    onResize() {
+        super.onResize();
+        if (this.ssaoPass && typeof this.ssaoPass.setSize === 'function') {
+            this.ssaoPass.setSize(window.innerWidth, window.innerHeight);
+        }
+    }
+
     render() {
         this.renderer.setClearColor(0x1a1f28);
         super.render();
@@ -546,22 +1554,57 @@ export class Scene21 extends SceneBase {
         this.initialized = false;
         this.scene.fog = null;
 
+        if (this.ssaoPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.ssaoPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.ssaoPass.enabled = false;
+            this.ssaoPass = null;
+        }
+
         if (this.studio) {
             this.studio.dispose();
             this.studio = null;
         }
 
-        if (this.centerLightGroup) {
-            this.scene.remove(this.centerLightGroup);
-            this.centerLightGroup.traverse((o) => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material) {
-                    const m = o.material;
-                    if (Array.isArray(m)) m.forEach((x) => x.dispose());
-                    else m.dispose();
-                }
-            });
-            this.centerLightGroup = null;
+        if (this.shardGroup) {
+            this.scene.remove(this.shardGroup);
+            this.shards = [];
+            this._shardFreeSlots = [];
+            if (this.shardInstMesh) {
+                this.shardInstMesh.dispose();
+                this.shardInstMesh = null;
+            }
+            this._metalShardMaterial = null;
+            this.shardGroup = null;
+        }
+
+        if (this.cylinderGroup) {
+            this.scene.remove(this.cylinderGroup);
+            this.cylinders = [];
+            this._cylinderFreeSlots = [];
+            if (this.cylinderInstMesh) {
+                this.cylinderInstMesh.dispose();
+                this.cylinderInstMesh = null;
+            }
+            this._redCylinderMaterial = null;
+            this.cylinderGroup = null;
+        }
+
+        if (this.ambientInstManager) {
+            this.ambientInstManager.dispose();
+            this.ambientInstManager = null;
+        }
+        this.ambientParticles = [];
+
+        if (this.cubeCamera) {
+            this.scene.remove(this.cubeCamera);
+            this.cubeCamera = null;
+        }
+        if (this.cubeRenderTarget) {
+            this.cubeRenderTarget.dispose();
+            this.cubeRenderTarget = null;
         }
 
         if (this.roomGroup) {

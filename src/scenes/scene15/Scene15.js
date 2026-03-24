@@ -93,9 +93,8 @@ export class Scene15 extends SceneBase {
         // レーザースキャンエフェクト管理
         this.scanners = [];
 
-        // 全てのエフェクトをデフォルトでオフに設定
         this.trackEffects = {
-            1: true, 2: true, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
+            1: true, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true, 8: true, 9: true
         };
 
         this.setScreenshotText(this.title);

@@ -126,7 +126,7 @@ export class SceneBase {
         this.screenshotExecuting = false;  // スクリーンショット実行中フラグ
         
         // エフェクト状態管理（トラック1-9のオン/オフ）
-        // デフォルト：3と4以外はオン
+        // デフォルト：すべてオン（シーン側で上書き可）
         this.trackEffects = {
             1: true,   // カメラ切り替え（表示のみ、実際の切り替えは別処理）
             2: true,   // 色反転
@@ -427,7 +427,7 @@ export class SceneBase {
             console.error('SceneBase.setup: initChromaticAberration呼び出しエラー:', err);
         }
         
-        // エフェクトの初期状態を設定（全てオフ）
+        // エフェクトの初期状態（trackEffects に同期。色収差/グリッチは非同期初期化後に再同期）
         this.initializeEffectStates();
         
         // サブクラスで実装
@@ -446,43 +446,52 @@ export class SceneBase {
     }
     
     /**
-     * エフェクトの初期状態を設定（デフォルトは全てオフ）
+     * trackEffects[2–4] を色反転・色収差・グリッチのパスに反映する
+     * （initChromaticAberration 完了後にも呼ぶ）
+     */
+    applyTrackEffectsToPostPasses() {
+        if (this.colorInversion && this.colorInversion.initialized) {
+            const on = !!this.trackEffects[2];
+            this.colorInversion.setEnabled(on);
+            this.colorInversion.endTime = 0;
+            if (this.colorInversion.inversionPass) {
+                this.colorInversion.inversionPass.enabled = on;
+            }
+        }
+
+        if (this.chromaticAberrationPass) {
+            const on = !!this.trackEffects[3];
+            this.chromaticAberrationPass.enabled = on;
+            if (!on) {
+                this.chromaticAberrationAmount = 0.0;
+                this.chromaticAberrationEndTime = 0;
+                this.chromaticAberrationKeyPressed = false;
+            }
+        }
+
+        if (this.glitchPass) {
+            const on = !!this.trackEffects[4];
+            this.glitchPass.enabled = on;
+            if (!on) {
+                this.glitchAmount = 0.0;
+                this.glitchEndTime = 0;
+                this.glitchKeyPressed = false;
+            }
+        }
+    }
+
+    /**
+     * エフェクトの初期状態を trackEffects に合わせて適用（デフォルトは全トラックON）
      */
     initializeEffectStates() {
         debugLog('effect', 'initializeEffectStates: 開始');
-        
-        // トラック2: 色反転エフェクト（デフォルトはオフ）
-        if (this.colorInversion) {
-            debugLog('effect', '色反転エフェクトをオフ');
-            this.colorInversion.setEnabled(false);
-            // 確実にオフにするため、もう一度確認
-            if (this.colorInversion.inversionPass) {
-                this.colorInversion.inversionPass.enabled = false;
-            }
+        this.applyTrackEffectsToPostPasses();
+        if (!this.chromaticAberrationPass) {
+            debugLog('effect', 'chromaticAberrationPassは未初期化（非同期後に再同期）');
         }
-        
-        // トラック3: 色収差エフェクト（デフォルトはオフ）
-        if (this.chromaticAberrationPass) {
-            debugLog('effect', '色収差エフェクトをオフ');
-            this.chromaticAberrationPass.enabled = false;
-            this.chromaticAberrationAmount = 0.0;
-            this.chromaticAberrationEndTime = 0;
-            this.chromaticAberrationKeyPressed = false;
-        } else {
-            console.warn('initializeEffectStates: chromaticAberrationPassがnull');
+        if (!this.glitchPass) {
+            debugLog('effect', 'glitchPassは未初期化（非同期後に再同期）');
         }
-        
-        // トラック4: グリッチエフェクト（デフォルトはオフ）
-        if (this.glitchPass) {
-            debugLog('effect', 'グリッチエフェクトをオフ');
-            this.glitchPass.enabled = false;
-            this.glitchAmount = 0.0;
-            this.glitchEndTime = 0;
-            this.glitchKeyPressed = false;
-        } else {
-            console.warn('initializeEffectStates: glitchPassがnull');
-        }
-        
         debugLog('effect', 'initializeEffectStates完了');
     }
     
@@ -531,6 +540,7 @@ export class SceneBase {
             
             // グリッチエフェクトも初期化（composerが作成された後）
             await this.initGlitchShader();
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
         }

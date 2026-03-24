@@ -1820,6 +1820,7 @@ this._debugLogged = true;
             
             // グリッチエフェクトも初期化（composerが作成された後）
             await this.initGlitchShader();
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             // エラーログは削除（デバッグ時のみ必要）
         }

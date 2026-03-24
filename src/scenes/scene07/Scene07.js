@@ -1092,6 +1092,7 @@ const canvas = this.generateGlowTexture();
             
             // グリッチエフェクトも初期化（composerが作成された後）
             await this.initGlitchShader();
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
         }

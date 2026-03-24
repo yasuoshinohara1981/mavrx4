@@ -134,6 +134,84 @@ export class StudioBox {
     }
 
     /**
+     * 目地グリッドのみ（StudioBox タイルと同じ 50 分割・同寸法）
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} size キャンバス一辺
+     * @param {{ divisions?: number, strokeStyle?: string, lineWidth?: number }} [options]
+     */
+    static drawGroutLines(ctx, size, options = {}) {
+        const divisions = options.divisions ?? 50;
+        const step = size / divisions;
+        ctx.strokeStyle = options.strokeStyle ?? '#808080';
+        ctx.lineWidth = options.lineWidth ?? 0.5;
+        ctx.beginPath();
+        for (let i = 0; i <= divisions; i++) {
+            ctx.moveTo(i * step, 0);
+            ctx.lineTo(i * step, size);
+            ctx.moveTo(0, i * step);
+            ctx.lineTo(size, i * step);
+        }
+        ctx.stroke();
+    }
+
+    /**
+     * 赤い十字と目盛りテキスト（床タイル用）。canvas サイズに応じてスケールする。
+     * @param {CanvasRenderingContext2D} ctx
+     * @param {number} size キャンバス一辺
+     * @param {number} [divisions=50] 目地分割数（drawGroutLines と同じにすること）
+     */
+    static drawRedCrossesAndLabels(ctx, size, divisions = 50) {
+        const scale = size / 2048;
+        const step = size / divisions;
+        const labelMax = 256;
+        const centerIdx = divisions / 2;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const fontPx = Math.max(5, Math.round(8 * scale));
+        ctx.font = `500 ${fontPx}px "Inter", "Roboto", sans-serif`;
+        const cs = 5 * scale;
+        const textOff = 12 * scale;
+        const lineW = Math.max(0.5, 1.0 * scale);
+
+        for (let i = 0; i <= divisions; i += 2) {
+            const tx = i * step;
+            const tyCenter = centerIdx * step;
+            const labelVal = Math.abs((i - centerIdx) * (labelMax / centerIdx));
+
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
+            ctx.lineWidth = lineW;
+
+            ctx.beginPath();
+            ctx.moveTo(tx - cs, tyCenter);
+            ctx.lineTo(tx + cs, tyCenter);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(tx, tyCenter - cs);
+            ctx.lineTo(tx, tyCenter + cs);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            ctx.fillText(String(Math.round(labelVal)), tx, tyCenter + textOff);
+
+            const tz = i * step;
+            const txCenter = centerIdx * step;
+
+            if (i !== centerIdx) {
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
+                ctx.beginPath();
+                ctx.moveTo(txCenter - cs, tz);
+                ctx.lineTo(txCenter + cs, tz);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(txCenter, tz - cs);
+                ctx.lineTo(txCenter, tz + cs);
+                ctx.stroke();
+                ctx.fillText(String(Math.round(labelVal)), txCenter + textOff, tz);
+            }
+        }
+    }
+
+    /**
      * タイル用のテクスチャを生成
      */
     generateTileTexture(isWall = false) {
@@ -148,9 +226,6 @@ export class StudioBox {
         ctx.fillRect(0, 0, size, size);
 
         // 2. タイルの本体を描画
-        const divisions = 50; 
-        const step = size / divisions;
-        
         ctx.fillStyle = '#d0d0d0'; 
         ctx.fillRect(0, 0, size, size);
 
@@ -165,66 +240,11 @@ export class StudioBox {
         }
 
         // 目地の線を細く描画
-        ctx.strokeStyle = '#808080'; // #c0c0c0 -> #808080 (もう少し黒く)
-        ctx.lineWidth = 0.5; 
-        ctx.beginPath();
-        for (let i = 0; i <= divisions; i++) {
-            ctx.moveTo(i * step, 0);
-            ctx.lineTo(i * step, size);
-            ctx.moveTo(0, i * step);
-            ctx.lineTo(size, i * step);
-        }
-        ctx.stroke();
+        StudioBox.drawGroutLines(ctx, size);
 
         // 3. 赤い十字と目盛りテキスト（床のみ）
         if (!isWall) {
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            const labelMax = 256;
-            const centerIdx = divisions / 2;
-            
-            ctx.font = '500 8px "Inter", "Roboto", sans-serif'; // bold 12px -> 500 8px
-
-            // 目地の数に合わせてループを回す
-            // 2目盛りごとに十字とラベルを表示（50 / 2 = 25箇所）
-            // これで空間的な間隔（400ユニットごと）を維持する
-            for (let i = 0; i <= divisions; i += 2) {
-                const tx = i * step;
-                const tyCenter = centerIdx * step; // 中心（0座標）
-                const labelVal = Math.abs((i - centerIdx) * (labelMax / centerIdx));
-
-                // 赤い十字
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'; // 0.6 -> 0.9
-                ctx.lineWidth = 1.0; // 0.5 -> 1.0
-                const cs = 5; // 3 -> 5
-                
-                // X軸上の十字
-                ctx.beginPath();
-                ctx.moveTo(tx - cs, tyCenter); ctx.lineTo(tx + cs, tyCenter);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(tx, tyCenter - cs); ctx.lineTo(tx, tyCenter + cs);
-                ctx.stroke();
-
-                // X軸上のテキスト
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'; // 0.7 -> 0.3 (薄く)
-                ctx.fillText(Math.round(labelVal), tx, tyCenter + 12); // +15 -> +12 (少し近づける)
-
-                // Z軸上のラベルと十字
-                const tz = i * step;
-                const txCenter = centerIdx * step;
-                
-                if (i !== centerIdx) { // 中心（0,0）は既に描画済みなのでスキップ
-                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'; // 0.6 -> 0.9
-                    ctx.beginPath();
-                    ctx.moveTo(txCenter - cs, tz); ctx.lineTo(txCenter + cs, tz);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.moveTo(txCenter, tz - cs); ctx.lineTo(txCenter, tz + cs);
-                    ctx.stroke();
-                    ctx.fillText(Math.round(labelVal), txCenter + 12, tz); // +15 -> +12
-                }
-            }
+            StudioBox.drawRedCrossesAndLabels(ctx, size);
         }
 
         const map = new THREE.CanvasTexture(canvas);
@@ -252,16 +272,7 @@ export class StudioBox {
         }
 
         // 目地を細い線で描画（黒/グレーで低くする）
-        bCtx.strokeStyle = '#404040'; 
-        bCtx.lineWidth = 0.5; 
-        bCtx.beginPath();
-        for (let i = 0; i <= divisions; i++) {
-            bCtx.moveTo(i * step, 0);
-            bCtx.lineTo(i * step, size);
-            bCtx.moveTo(0, i * step);
-            bCtx.lineTo(size, i * step);
-        }
-        bCtx.stroke();
+        StudioBox.drawGroutLines(bCtx, size, { strokeStyle: '#404040' });
 
         const bumpMap = new THREE.CanvasTexture(bCanvas);
         bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;

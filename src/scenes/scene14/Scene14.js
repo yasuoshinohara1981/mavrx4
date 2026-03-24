@@ -54,17 +54,16 @@ export class Scene14 extends SceneBase {
         this.bloomPass = null;
         this.ssaoPass = null;
 
-        // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
         this.trackEffects = {
-            1: false, // カメラランダマイズ
-            2: false, // 色反転
-            3: false, // 色収差
-            4: false, // グリッチ
-            5: false, // 未割り当て
-            6: false, // 未割り当て
-            7: false, // 未割り当て
-            8: false, // 未割り当て
-            9: false  // 未割り当て
+            1: true,
+            2: true,
+            3: true,
+            4: true,
+            5: true,
+            6: true,
+            7: true,
+            8: true,
+            9: true
         };
 
         // モード管理（超能力・サイキックモード！）

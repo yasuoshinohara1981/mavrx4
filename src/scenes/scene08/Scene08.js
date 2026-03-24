@@ -1049,6 +1049,7 @@ export class Scene08 extends SceneBase {
             this.composer.addPass(this.bloomPass);
             
             await this.initGlitchShader();
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
         }

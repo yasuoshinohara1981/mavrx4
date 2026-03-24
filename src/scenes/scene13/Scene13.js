@@ -52,10 +52,8 @@ export class Scene13 extends SceneBase {
         this.bloomPass = null;
         this.ssaoPass = null;
 
-        // 全てのエフェクトをデフォルトでオフに設定（Phaseで解放）
-        // トラック1（カメラランダマイズ）だけはデフォルトでオンにするやで！😎
         for (let i = 1; i <= 9; i++) {
-            this.trackEffects[i] = (i === 1);
+            this.trackEffects[i] = true;
         }
 
         // トラック6用エフェクト管理

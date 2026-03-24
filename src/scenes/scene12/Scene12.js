@@ -55,10 +55,6 @@ export class Scene12 extends SceneBase {
         this.bloomPass = null;
         this.ssaoPass = null;
 
-        // トラック3,4(色収差、グリッチ)をデフォルトオフに設定
-        this.trackEffects[3] = false;
-        this.trackEffects[4] = false;
-
         // トラック6用エフェクト管理
         this.expandSpheres = []; 
         

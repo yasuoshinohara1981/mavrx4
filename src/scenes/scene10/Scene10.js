@@ -58,10 +58,7 @@ export class Scene10 extends SceneBase {
         // スクリーンショット用テキスト
         this.setScreenshotText(this.title);
         
-        // トラック4（グリッチエフェクト）をオフにする
-        this.trackEffects[4] = false;
-        // トラック8（レーザースキャンエフェクト）をオフにする
-        this.trackEffects[8] = false;
+        // デフォルトは全トラックON（グリッチ・レーザー含む）
         
         // 2Dテキストエフェクト用（トラック6）- Canvas 2Dで実装（軍事風情報表示）
         this.textEffectActive = false;
@@ -242,25 +239,28 @@ this.initializeParticleData();
             console.error('[Scene10] initChromaticAberrationエラー:', err);
         }
         
-        // initChromaticAberration()の後でcolorInversionPassを確実に無効にする
-        // (super.setup()のinitializeEffectStates()はcolorInversionPass作成前に呼ばれるため)
+        this.applyTrackEffectsToPostPasses();
+    }
+
+    /**
+     * Scene10 は composer 上の colorInversionPass で色反転（ColorInversion クラスは使わない）
+     */
+    applyTrackEffectsToPostPasses() {
+        super.applyTrackEffectsToPostPasses();
         if (this.colorInversionPass) {
-            this.colorInversionPass.enabled = false;
+            this.colorInversionPass.enabled = !!this.trackEffects[2];
+        }
+        if (this.colorInversion && this.colorInversion.initialized) {
+            this.colorInversion.setEnabled(false);
+            if (this.colorInversion.inversionPass) {
+                this.colorInversion.inversionPass.enabled = false;
+            }
         }
     }
-    
-    /**
-     * エフェクトの初期状態を設定（デフォルトは全てオフ）
-     * Scene10独自のcolorInversionPassも無効にする
-     */
-    initializeEffectStates() {
-        // 親クラスのinitializeEffectStatesを呼ぶ
-        super.initializeEffectStates();
-        
-        // Scene10独自のcolorInversionPassを無効にする
-        if (this.colorInversionPass) {
-            this.colorInversionPass.enabled = false;
-        }
+
+    toggleEffect(trackNumber) {
+        super.toggleEffect(trackNumber);
+        this.applyTrackEffectsToPostPasses();
     }
     
     /**
@@ -368,6 +368,7 @@ this.initializeParticleData();
             } else {
                 debugLog('colorInversion', 'colorInversionPassは既に存在します');
             }
+            this.applyTrackEffectsToPostPasses();
         } catch (err) {
             console.error('色収差シェーダーの読み込みに失敗:', err);
         }

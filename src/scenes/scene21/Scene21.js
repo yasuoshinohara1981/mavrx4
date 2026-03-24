@@ -2,6 +2,7 @@
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
  * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityでヒートマップ色）
  * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター
+ * トラック9：画面中心（視線前方）から Scene12 風質感のスフィアを物理演算でスポーン
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
  * 床・壁は PBR コンクリート、ポストは ACES・SSAO・弱 DOF・最小 bloom・軽フォグ
  */
@@ -149,6 +150,21 @@ export class Scene21 extends SceneBase {
 
         this._jitterSide = new THREE.Vector3();
         this._jitterUp = new THREE.Vector3();
+
+        /** トラック9：画面中心スポーンの物理スフィア（Scene12 風 flesh 質感） */
+        this.track9SphereGroup = null;
+        this.track9Spheres = [];
+        this.maxTrack9Spheres = 80;
+        this.track9SharedGeo = null;
+        this._track9SphereMaterial = null;
+        this._track9FleshTextures = null;
+        this.track9PhysicsGrid = new Map();
+        this.track9GridSize = 240;
+        this._track9Gravity = new THREE.Vector3(0, -38, 0);
+        this._track9SpawnPos = new THREE.Vector3();
+        this._track9CamDir = new THREE.Vector3();
+        this._track9Diff = new THREE.Vector3();
+        this._track9SubSteps = 2;
     }
 
     /** 96小節ループ想定（Scene16 と同系）。actual_tick の差分で歩幅を決める */
@@ -619,6 +635,82 @@ export class Scene21 extends SceneBase {
         aoMap.needsUpdate = true;
 
         return { map, normalMap, roughnessMap, aoMap };
+    }
+
+    /** Scene12 と同系：エイリアンっぽい肉質テクスチャ（カラー＋バンプ） */
+    generateFleshTextures() {
+        const size = 512;
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = size;
+        colorCanvas.height = size;
+        const cCtx = colorCanvas.getContext('2d');
+        cCtx.fillStyle = '#888888';
+        cCtx.fillRect(0, 0, size, size);
+        for (let i = 0; i < 100; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = 20 + Math.random() * 60;
+            const grad = cCtx.createRadialGradient(x, y, 0, x, y, r);
+            const grayVal = 120 + Math.random() * 80;
+            grad.addColorStop(0, `rgba(${grayVal}, ${grayVal}, ${grayVal}, 0.5)`);
+            grad.addColorStop(1, 'rgba(136, 136, 136, 0)');
+            cCtx.fillStyle = grad;
+            cCtx.beginPath();
+            cCtx.arc(x, y, r, 0, Math.PI * 2);
+            cCtx.fill();
+        }
+        cCtx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
+        for (let i = 0; i < 30; i++) {
+            cCtx.lineWidth = 0.8 + Math.random() * 2.0;
+            let x = Math.random() * size;
+            let y = Math.random() * size;
+            cCtx.beginPath();
+            cCtx.moveTo(x, y);
+            let angle = Math.random() * Math.PI * 2;
+            for (let j = 0; j < 40; j++) {
+                angle += (Math.random() - 0.5) * 1.2;
+                x += Math.cos(angle) * 8;
+                y += Math.sin(angle) * 8;
+                cCtx.lineTo(x, y);
+            }
+            cCtx.stroke();
+        }
+        const bumpCanvas = document.createElement('canvas');
+        bumpCanvas.width = size;
+        bumpCanvas.height = size;
+        const bCtx = bumpCanvas.getContext('2d');
+        bCtx.fillStyle = '#808080';
+        bCtx.fillRect(0, 0, size, size);
+        for (let i = 0; i < 500; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = 1 + Math.random() * 3;
+            const isBump = Math.random() > 0.5;
+            bCtx.fillStyle = isBump ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
+            bCtx.beginPath();
+            bCtx.arc(x, y, r, 0, Math.PI * 2);
+            bCtx.fill();
+        }
+        for (let i = 0; i < 50; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = 10 + Math.random() * 30;
+            const grad = bCtx.createRadialGradient(x, y, 0, x, y, r);
+            const val = Math.random() > 0.5 ? 255 : 0;
+            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.4)`);
+            grad.addColorStop(1, 'rgba(128, 128, 128, 0)');
+            bCtx.fillStyle = grad;
+            bCtx.beginPath();
+            bCtx.arc(x, y, r, 0, Math.PI * 2);
+            bCtx.fill();
+        }
+        const colorTex = new THREE.CanvasTexture(colorCanvas);
+        colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
+        colorTex.colorSpace = THREE.SRGBColorSpace;
+        const bumpTex = new THREE.CanvasTexture(bumpCanvas);
+        bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
+        bumpTex.colorSpace = THREE.LinearSRGBColorSpace;
+        return { map: colorTex, bumpMap: bumpTex };
     }
 
     applyEnvMapToMaterials(envMap, wallMat, floorMat) {
@@ -1169,6 +1261,209 @@ export class Scene21 extends SceneBase {
         this.ambientInstManager.markNeedsUpdate();
     }
 
+    /** トラック9用：Scene12 風マテリアル＋共有球ジオメ */
+    initTrack9SpawnSpheres() {
+        this.track9SphereGroup = new THREE.Group();
+        this.scene.add(this.track9SphereGroup);
+        this._track9FleshTextures = this.generateFleshTextures();
+        const env = this.scene.environment;
+        this._track9SphereMaterial = new THREE.MeshStandardMaterial({
+            map: this._track9FleshTextures.map,
+            bumpMap: this._track9FleshTextures.bumpMap,
+            bumpScale: 3.0,
+            metalness: 0.4,
+            roughness: 0.2,
+            emissive: 0x000000,
+            envMap: env,
+            envMapIntensity: 0.95
+        });
+        this.track9SharedGeo = new THREE.SphereGeometry(1, 28, 28);
+    }
+
+    /**
+     * 画面の中心＝カメラ視線上の点付近にスフィアを出す。velocity で半径と初速。
+     */
+    spawnTrack9SphereFromScreenCenter(velocity) {
+        if (!this.track9SphereGroup || !this.track9SharedGeo || !this._track9SphereMaterial || !this.camera) return;
+
+        const vMidi = this.normalizeMidiVelocity(velocity);
+        const radius = THREE.MathUtils.clamp(22 + (vMidi / 127) * 76, 16, 102);
+
+        this.camera.getWorldDirection(this._track9CamDir);
+        const depth = 1050;
+        this._track9SpawnPos.copy(this.camera.position).addScaledVector(this._track9CamDir, depth);
+        this._track9SpawnPos.x += (Math.random() - 0.5) * 28;
+        this._track9SpawnPos.y += (Math.random() - 0.5) * 28;
+        this._track9SpawnPos.z += (Math.random() - 0.5) * 28;
+
+        const mesh = new THREE.Mesh(this.track9SharedGeo, this._track9SphereMaterial);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        const position = this._track9SpawnPos.clone();
+        const vel = new THREE.Vector3(
+            (Math.random() - 0.5),
+            (Math.random() - 0.5),
+            (Math.random() - 0.5)
+        );
+        if (vel.lengthSq() < 1e-6) vel.set(0.3, 0.5, -0.2);
+        vel.normalize();
+        const speed = 125 + (vMidi / 127) * 340;
+        vel.multiplyScalar(speed);
+
+        const angularVelocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 2.8,
+            (Math.random() - 0.5) * 2.8,
+            (Math.random() - 0.5) * 2.8
+        );
+
+        mesh.rotation.set(
+            Math.random() * Math.PI * 2,
+            Math.random() * Math.PI * 2,
+            Math.random() * Math.PI * 2
+        );
+        mesh.position.copy(position);
+        mesh.scale.setScalar(radius);
+
+        this.track9SphereGroup.add(mesh);
+        this.track9Spheres.push({
+            mesh,
+            position,
+            velocity: vel,
+            radius,
+            angularVelocity
+        });
+
+        while (this.track9Spheres.length > this.maxTrack9Spheres) {
+            const old = this.track9Spheres.shift();
+            this.track9SphereGroup.remove(old.mesh);
+        }
+    }
+
+    _updateTrack9SpherePhysics(deltaTime) {
+        if (!this.track9Spheres.length) return;
+        const sub = this._track9SubSteps;
+        const dt = deltaTime / sub;
+        const grav = this._track9Gravity;
+        const diff = this._track9Diff;
+        const margin = 140;
+
+        for (let s = 0; s < sub; s++) {
+            this.track9PhysicsGrid.clear();
+            this.track9Spheres.forEach((sp, i) => {
+                const gx = Math.floor(sp.position.x / this.track9GridSize);
+                const gy = Math.floor(sp.position.y / this.track9GridSize);
+                const gz = Math.floor(sp.position.z / this.track9GridSize);
+                const key = (gx + 120) + (gy + 120) * 240 + (gz + 120) * 240 * 240;
+                if (!this.track9PhysicsGrid.has(key)) this.track9PhysicsGrid.set(key, []);
+                this.track9PhysicsGrid.get(key).push(i);
+            });
+
+            this.track9Spheres.forEach((sp) => {
+                sp.velocity.addScaledVector(grav, dt);
+                sp.position.addScaledVector(sp.velocity, dt);
+                sp.velocity.multiplyScalar(0.997);
+
+                const r = sp.radius;
+                const x0 = -this.roomHalfW + margin + r;
+                const x1 = this.roomHalfW - margin - r;
+                const z0 = -this.roomHalfD + margin + r;
+                const z1 = this.roomHalfD - margin - r;
+                const y0 = this.floorTopY + 90 + r;
+                const y1 = this.ceilingY * 0.46 - r;
+
+                if (sp.position.x < x0) {
+                    sp.position.x = x0;
+                    sp.velocity.x *= -0.5;
+                } else if (sp.position.x > x1) {
+                    sp.position.x = x1;
+                    sp.velocity.x *= -0.5;
+                }
+                if (sp.position.z < z0) {
+                    sp.position.z = z0;
+                    sp.velocity.z *= -0.5;
+                } else if (sp.position.z > z1) {
+                    sp.position.z = z1;
+                    sp.velocity.z *= -0.5;
+                }
+                if (sp.position.y < y0) {
+                    sp.position.y = y0;
+                    sp.velocity.y *= -0.52;
+                    const roll = 0.08 / Math.max(r * 0.04, 0.5);
+                    sp.angularVelocity.z += -sp.velocity.x * roll * dt;
+                    sp.angularVelocity.x += sp.velocity.z * roll * dt;
+                    sp.velocity.x *= 0.96;
+                    sp.velocity.z *= 0.96;
+                } else if (sp.position.y > y1) {
+                    sp.position.y = y1;
+                    sp.velocity.y *= -0.48;
+                }
+            });
+
+            this.track9Spheres.forEach((a, i) => {
+                const gx = Math.floor(a.position.x / this.track9GridSize);
+                const gy = Math.floor(a.position.y / this.track9GridSize);
+                const gz = Math.floor(a.position.z / this.track9GridSize);
+                for (let ox = -1; ox <= 1; ox++) {
+                    for (let oy = -1; oy <= 1; oy++) {
+                        for (let oz = -1; oz <= 1; oz++) {
+                            const key = (gx + ox + 120) + (gy + oy + 120) * 240 + (gz + oz + 120) * 240 * 240;
+                            const neighbors = this.track9PhysicsGrid.get(key);
+                            if (!neighbors) continue;
+                            neighbors.forEach((j) => {
+                                if (i >= j) return;
+                                const b = this.track9Spheres[j];
+                                diff.subVectors(a.position, b.position);
+                                const distSq = diff.lengthSq();
+                                const minD = a.radius + b.radius;
+                                if (distSq >= minD * minD || distSq < 1e-10) return;
+                                const dist = Math.sqrt(distSq);
+                                const overlap = (minD - dist) * 0.55;
+                                const nx = diff.x / dist;
+                                const ny = diff.y / dist;
+                                const nz = diff.z / dist;
+                                a.position.x += nx * overlap * 0.5;
+                                a.position.y += ny * overlap * 0.5;
+                                a.position.z += nz * overlap * 0.5;
+                                b.position.x -= nx * overlap * 0.5;
+                                b.position.y -= ny * overlap * 0.5;
+                                b.position.z -= nz * overlap * 0.5;
+                                const rvx = a.velocity.x - b.velocity.x;
+                                const rvy = a.velocity.y - b.velocity.y;
+                                const rvz = a.velocity.z - b.velocity.z;
+                                const dot = rvx * nx + rvy * ny + rvz * nz;
+                                if (dot < 0) {
+                                    const imp = -(1 + 0.65) * dot * 0.5;
+                                    const ix = nx * imp;
+                                    const iy = ny * imp;
+                                    const iz = nz * imp;
+                                    a.velocity.x += ix;
+                                    a.velocity.y += iy;
+                                    a.velocity.z += iz;
+                                    b.velocity.x -= ix;
+                                    b.velocity.y -= iy;
+                                    b.velocity.z -= iz;
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+
+            this.track9Spheres.forEach((sp) => {
+                sp.angularVelocity.multiplyScalar(0.994);
+                sp.mesh.rotation.x += sp.angularVelocity.x * dt;
+                sp.mesh.rotation.y += sp.angularVelocity.y * dt;
+                sp.mesh.rotation.z += sp.angularVelocity.z * dt;
+            });
+        }
+
+        this.track9Spheres.forEach((sp) => {
+            sp.mesh.position.copy(sp.position);
+            sp.mesh.scale.setScalar(sp.radius);
+        });
+    }
+
     _updateAmbientParticles(deltaTime) {
         if (!this.ambientInstManager || !this.ambientParticles.length) return;
         const bx = this.roomHalfW - 420;
@@ -1340,6 +1635,7 @@ export class Scene21 extends SceneBase {
         this.initMetalShardsSystem();
         this.initRedCylinderSystem();
         this.createAmbientFloatingParticles();
+        this.initTrack9SpawnSpheres();
         if (this.cableBlobParticle && this.shardGroup) {
             this.shardGroup.position.copy(this.cableBlobParticle.position);
         }
@@ -1357,7 +1653,7 @@ export class Scene21 extends SceneBase {
 
         this.setupCameraParticleDistances();
         this.initPostProcessing();
-        this.setParticleCount(this.maxShards + 8 + this.ambientParticleCount + this.maxCylinders);
+        this.setParticleCount(this.maxShards + 8 + this.ambientParticleCount + this.maxCylinders + this.maxTrack9Spheres);
         this.initialized = true;
     }
 
@@ -1369,6 +1665,7 @@ export class Scene21 extends SceneBase {
         this.pruneExpiredShards();
         this.pruneExpiredCylinders();
         this._updateAmbientParticles(deltaTime);
+        this._updateTrack9SpherePhysics(deltaTime);
 
         const targetTrack7 = this.trackEffects[7] ? this.trackValues[7] || 0 : 0;
         const colorLerpSpeed = targetTrack7 > 0 ? 3.0 : 0.35;
@@ -1454,6 +1751,7 @@ export class Scene21 extends SceneBase {
         this.updateCamera();
         const focusTargets = [this.roomGroup, this.shardGroup];
         if (this.cylinderGroup) focusTargets.push(this.cylinderGroup);
+        if (this.track9SphereGroup) focusTargets.push(this.track9SphereGroup);
         if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
         this.updateAutoFocus(focusTargets);
 
@@ -1494,6 +1792,10 @@ export class Scene21 extends SceneBase {
             this.trackValues[7] = value;
             if (velocity > 0) {
                 this.colorIndex = (this.colorIndex + 1) % this.colors.length;
+            }
+        } else if (tn === 9) {
+            if (velocity > 0) {
+                this.spawnTrack9SphereFromScreenCenter(velocity);
             }
         }
     }
@@ -1597,6 +1899,23 @@ export class Scene21 extends SceneBase {
             this.ambientInstManager = null;
         }
         this.ambientParticles = [];
+
+        if (this.track9SphereGroup) {
+            this.scene.remove(this.track9SphereGroup);
+            this.track9Spheres = [];
+            if (this.track9SharedGeo) {
+                this.track9SharedGeo.dispose();
+                this.track9SharedGeo = null;
+            }
+            if (this._track9SphereMaterial) {
+                if (this._track9SphereMaterial.map) this._track9SphereMaterial.map.dispose();
+                if (this._track9SphereMaterial.bumpMap) this._track9SphereMaterial.bumpMap.dispose();
+                this._track9SphereMaterial.dispose();
+                this._track9SphereMaterial = null;
+            }
+            this._track9FleshTextures = null;
+            this.track9SphereGroup = null;
+        }
 
         if (this.cubeCamera) {
             this.scene.remove(this.cubeCamera);

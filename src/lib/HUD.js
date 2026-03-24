@@ -20,6 +20,12 @@ export const HUD_POSITION_MODE = {
     HIDDEN: 3
 };
 
+/** 4分割ステータスバーの高さ（px）。drawStatusBar とシーンバンク帯の基準で共通 */
+const HUD_STATUS_BAR_HEIGHT = 22;
+
+/** 4分割バーだけを上へ（px）。シーンバンクの帯位置は _getStatusBarBarY()+高さのまま（隙間だけ広がる） */
+const HUD_STATUS_BAR_LIFT_PX = 10;
+
 export class HUD {
     constructor() {
         this.showHUD = true;  // HUD表示フラグ
@@ -452,11 +458,11 @@ export class HUD {
         const idx = Number.isFinite(sceneIndex) ? Math.floor(sceneIndex) : 0;
         const bankSel = Math.max(0, Math.min(B - 1, Math.floor(sceneBankIndex)));
 
-        const barHeight = 35;
+        const barHeight = HUD_STATUS_BAR_HEIGHT;
         const statusBarBottom = this._getStatusBarBarY() + barHeight;
-        const gapAfterStatus = 22;
-        const bottomPad = 2;
-        const minBandH = 46;
+        const gapAfterStatus = 14;
+        const bottomPad = 0;
+        const minBandH = 72;
         const bandBottom = hTotal - bottomPad;
         let bandTop = statusBarBottom + gapAfterStatus;
         if (bandTop > bandBottom - minBandH) {
@@ -478,10 +484,10 @@ export class HUD {
         sq = Math.max(2, Math.min(7, sq));
         let hGap = Math.max(0, (innerW - 10 * sq) / 9);
 
-        const labelH = 13;
-        const sceneLineH = 15;
-        const gap = 5;
-        const scanBandH = 19;
+        const labelH = 14;
+        const sceneLineH = 20;
+        const gap = 8;
+        const scanBandH = 26;
 
         const ph = Number.isFinite(phase) ? Math.floor(phase) : 0;
         const t2 = trackEffects?.[2] ? 'INV' : '--';
@@ -499,7 +505,7 @@ export class HUD {
         const slotTop = y;
         y += sq + gap;
 
-        const sceneBaseline = bandBottom - 4;
+        const sceneBaseline = bandBottom - 3;
         if (slotTop + sq > sceneBaseline - sceneLineH) {
             sq = Math.max(2, Math.floor(sceneBaseline - sceneLineH - gap - slotTop));
         }
@@ -536,9 +542,7 @@ export class HUD {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         for (let b = 0; b < B; b++) {
-            const start1 = b * 10 + 1;
-            const end1 = Math.min((b + 1) * 10, maxSlots);
-            const label = start1 === end1 ? `${start1}` : `${start1}–${end1}`;
+            const label = String(b + 1);
             const cx = x0 + b * colW + colW / 2;
             const bx = x0 + b * colW + 0.5;
             const bw = colW - 1;
@@ -1084,10 +1088,10 @@ export class HUD {
         
         const margin = this.margin;
         const extra = 30; // コーナーマーカーより少し外側に出す量
-        const barHeight = 35;
+        const barHeight = HUD_STATUS_BAR_HEIGHT;
         const barWidth = (this.squareWidth - margin * 2) + extra * 2;
         const barX = margin - extra;
-        const barY = this._getStatusBarBarY();
+        const barY = this._getStatusBarBarY() - HUD_STATUS_BAR_LIFT_PX;
         
         // ステータスバーの枠
         this.ctx.strokeRect(barX, barY, barWidth, barHeight);

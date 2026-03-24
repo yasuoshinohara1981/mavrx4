@@ -1,5 +1,5 @@
 /**
- * Scene21Particle: Scene21 用（将来のパーティクル用・Scene18Particle と同型）
+ * Scene21Particle: Scene21 コンクリート空間用（カメラパーティクル周辺のオフセット）
  */
 
 import { Particle } from '../../lib/Particle.js';
@@ -15,7 +15,7 @@ export class Scene21Particle extends Particle {
 
         const tOffsetTheta = Math.random() * Math.PI * 2;
         const tOffsetPhi = Math.acos(2 * Math.random() - 1);
-        const tOffsetR = Math.pow(Math.random(), 0.5) * 250;
+        const tOffsetR = Math.pow(Math.random(), 0.5) * 420;
         this.targetOffset = new THREE.Vector3(
             tOffsetR * Math.sin(tOffsetPhi) * Math.cos(tOffsetTheta),
             tOffsetR * Math.sin(tOffsetPhi) * Math.sin(tOffsetTheta),

@@ -25,7 +25,7 @@ import { Scene16Particle } from '../scene16/Scene16Particle.js';
 export class Scene21 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Concrete Room';
+        this.title = 'Xenomist';
         this.initialized = false;
         this.sceneNumber = 21;
         this.kitNo = 21;
@@ -45,7 +45,7 @@ export class Scene21 extends SceneBase {
         /** トラック5金属片・トラック6シリンダのサイズ倍率（比率を保ったまま拡大） */
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
-        this.sceneLightingScale = 0.4;
+        this.sceneLightingScale = 0.14;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -137,10 +137,20 @@ export class Scene21 extends SceneBase {
         this.cableHomeY = 550;
         this.cableBlobParticle = null;
 
-        /** Scene13 風：空間を漂うインスタンスボックス（金属片とは別） */
-        this.ambientParticleCount = 1000;
+        /** Scene13 風：空間を漂うインスタンスボックス（金属片とは別・プール） */
+        this.ambientParticleCount = 2000;
         this.ambientInstManager = null;
         this.ambientParticles = [];
+        /** 破片・シリンダ・トラック9スポーンに同期して出し、寿命で消す */
+        this.ambientParticleLifetimeMs = 11000;
+        this.ambientParticleFadeOutMs = 1400;
+        this.ambientParticlesPerShard = 4;
+        this.ambientParticlesPerCylinder = 5;
+        this.ambientParticlesPerTrack9 = 7;
+        this._ambientFreeSlots = [];
+        this._ambientLiving = [];
+        this._ambientHidePos = new THREE.Vector3(0, -1e6, 0);
+        this._ambientIdRot = new THREE.Euler(0, 0, 0);
 
         /** トラック6：赤い細シリンダ（InstancedMesh） */
         this.cylinderGroup = null;
@@ -496,7 +506,11 @@ float cylinderSurfH( vec3 v ) {
         }
     }
 
-    generateConcretePBRTextures(size = 1024) {
+    /**
+     * @param {number} size キャンバス解像度
+     * @param {number} [maxAnisotropy=8] 斜め視点で目地がミップで消えにくいよう大きめ推奨
+     */
+    generateConcretePBRTextures(size = 1024, maxAnisotropy = 8) {
         const albedoCanvas = document.createElement('canvas');
         albedoCanvas.width = size;
         albedoCanvas.height = size;
@@ -708,43 +722,57 @@ float cylinderSurfH( vec3 v ) {
         const tileDiv = Scene21.TILE_OVERLAY_DIVISIONS;
         aCtx.save();
         aCtx.globalCompositeOperation = 'multiply';
-        StudioBox.drawGroutLines(aCtx, size, { strokeStyle: '#8e8e8e', divisions: tileDiv });
+        /** 既定 0.5px だと斜めから見たときミップで潰れやすいので太めに */
+        StudioBox.drawGroutLines(aCtx, size, {
+            strokeStyle: '#6f757c',
+            divisions: tileDiv,
+            lineWidth: 1.65
+        });
         aCtx.restore();
         StudioBox.drawRedCrossesAndLabels(aCtx, size, tileDiv);
+
+        /** 壁は床より掠り角になりやすく目地が薄く見えるので、同じ目地を一段だけ濃く乗せた albedo */
+        const wallAlbedoCanvas = document.createElement('canvas');
+        wallAlbedoCanvas.width = size;
+        wallAlbedoCanvas.height = size;
+        const wallACtx = wallAlbedoCanvas.getContext('2d');
+        wallACtx.drawImage(albedoCanvas, 0, 0);
+        wallACtx.save();
+        wallACtx.globalCompositeOperation = 'multiply';
+        StudioBox.drawGroutLines(wallACtx, size, {
+            strokeStyle: '#5a6169',
+            divisions: tileDiv,
+            lineWidth: 1.2
+        });
+        wallACtx.restore();
 
         hCtx.putImageData(nImg, 0, 0);
         rCtx.putImageData(rImg, 0, 0);
         aoCtx.putImageData(aoImg, 0, 0);
 
-        const wrap = (canvasTex) => {
+        const wrap = (canvasTex, linearColor = false) => {
             canvasTex.wrapS = canvasTex.wrapT = THREE.RepeatWrapping;
-            canvasTex.colorSpace = THREE.SRGBColorSpace;
-            canvasTex.anisotropy = 8;
+            canvasTex.colorSpace = linearColor ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
+            canvasTex.anisotropy = maxAnisotropy;
             canvasTex.needsUpdate = true;
         };
 
         const map = new THREE.CanvasTexture(albedoCanvas);
-        wrap(map);
+        wrap(map, false);
+
+        const wallMap = new THREE.CanvasTexture(wallAlbedoCanvas);
+        wrap(wallMap, false);
 
         const normalMap = new THREE.CanvasTexture(hCanvas);
-        normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
-        normalMap.colorSpace = THREE.LinearSRGBColorSpace;
-        normalMap.anisotropy = 8;
-        normalMap.needsUpdate = true;
+        wrap(normalMap, true);
 
         const roughnessMap = new THREE.CanvasTexture(roughCanvas);
-        roughnessMap.wrapS = roughnessMap.wrapT = THREE.RepeatWrapping;
-        roughnessMap.colorSpace = THREE.LinearSRGBColorSpace;
-        roughnessMap.anisotropy = 8;
-        roughnessMap.needsUpdate = true;
+        wrap(roughnessMap, true);
 
         const aoMap = new THREE.CanvasTexture(aoCanvas);
-        aoMap.wrapS = aoMap.wrapT = THREE.RepeatWrapping;
-        aoMap.colorSpace = THREE.LinearSRGBColorSpace;
-        aoMap.anisotropy = 8;
-        aoMap.needsUpdate = true;
+        wrap(aoMap, true);
 
-        return { map, normalMap, roughnessMap, aoMap };
+        return { map, wallMap, normalMap, roughnessMap, aoMap };
     }
 
     /** Scene12 と同系：肉質テクスチャ（カラー＋バンプ）。トラック9スフィア用。 */
@@ -838,15 +866,15 @@ float cylinderSurfH( vec3 v ) {
     buildRoom(textures) {
         /** 小さいほどテクスチャ1周がワールドで広がり、タイル1枚が大きく見える */
         const repeat = 1.55;
-        ['map', 'normalMap', 'roughnessMap', 'aoMap'].forEach((k) => {
+        ['map', 'wallMap', 'normalMap', 'roughnessMap', 'aoMap'].forEach((k) => {
             const t = textures[k];
             if (t) {
                 t.repeat.set(repeat, repeat);
             }
         });
 
-        /** 壁・床で同一（見た目の明るさを揃える） */
-        const concreteMat = new THREE.MeshStandardMaterial({
+        /** 床用。壁は正面から見えて法線が弱く見えるので別マテで凹凸を強める。壁は目地を一段濃くした wallMap */
+        const floorConcreteMat = new THREE.MeshStandardMaterial({
             color: 0xe8eaee,
             map: textures.map,
             normalMap: textures.normalMap,
@@ -858,6 +886,10 @@ float cylinderSurfH( vec3 v ) {
             aoMapIntensity: 0.5,
             envMapIntensity: 0.95 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1))
         });
+        const wallConcreteMat = floorConcreteMat.clone();
+        wallConcreteMat.map = textures.wallMap || textures.map;
+        wallConcreteMat.normalScale = new THREE.Vector2(0.64, 0.64);
+        wallConcreteMat.roughness = 0.86;
 
         this.roomGroup = new THREE.Group();
         const hw = this.roomHalfW;
@@ -870,7 +902,7 @@ float cylinderSurfH( vec3 v ) {
 
         const floorGeo = new THREE.BoxGeometry(hw * 2, slab, hd * 2, 1, 1, 1);
         this.ensureUv2(floorGeo);
-        const floor = new THREE.Mesh(floorGeo, concreteMat);
+        const floor = new THREE.Mesh(floorGeo, floorConcreteMat);
         floor.position.set(0, floorTopY - slab * 0.5, 0);
         floor.receiveShadow = true;
         floor.castShadow = false;
@@ -879,7 +911,7 @@ float cylinderSurfH( vec3 v ) {
         const mkWall = (w, height, d, px, py, pz) => {
             const geo = new THREE.BoxGeometry(w, height, d, 1, 1, 1);
             this.ensureUv2(geo);
-            const mesh = new THREE.Mesh(geo, concreteMat);
+            const mesh = new THREE.Mesh(geo, wallConcreteMat);
             mesh.position.set(px, py, pz);
             mesh.receiveShadow = true;
             mesh.castShadow = true;
@@ -1032,6 +1064,7 @@ float cylinderSurfH( vec3 v ) {
         }
 
         this.shards.push({ slotIndex, spawnTime: performance.now() });
+        this._spawnAmbientParticlesBurst(newPos, this.ambientParticlesPerShard);
     }
 
     /** 空きスロットを取得（上限時は最古を再利用） */
@@ -1135,14 +1168,15 @@ float cylinderSurfH( vec3 v ) {
         this.cylinderGroup.position.set(0, 0, 0);
         this.scene.add(this.cylinderGroup);
 
-        /** レーザーより弱い赤。朱寄りを避けワインレッド系の暗色＋弱エミッシブ */
+        /** レーザーより弱い赤。一般的な赤寄り＋弱エミッシブ（ブルームは控えめ） */
         this._redCylinderMaterial = new THREE.MeshStandardMaterial({
-            color: 0x481c26,
-            emissive: 0x0f0608,
-            emissiveIntensity: 0.26,
+            color: 0xae2028,
+            emissive: 0x160608,
+            emissiveIntensity: 0.3,
             metalness: 0,
-            roughness: 0.58,
-            fog: false,
+            roughness: 0.52,
+            /** フォグ無効だと壁・床と霞のかかり方が違い、浮いて見えやすい */
+            fog: true,
             opacity: 1
         });
         Scene21._applyRedCylinderShader(this._redCylinderMaterial);
@@ -1248,6 +1282,7 @@ float cylinderSurfH( vec3 v ) {
         }
 
         this.cylinders.push({ slotIndex, spawnTime: performance.now() });
+        this._spawnAmbientParticlesBurst(this._lastCylinderWorldPos, this.ambientParticlesPerCylinder);
     }
 
     _allocCylinderSlot() {
@@ -1298,18 +1333,23 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * Scene13 風：金属片とは別レイヤーで漂うインスタンスボックス（約1000個）
+     * 金属片とは別レイヤーのインスタンスボックス（プール）。初期は全非表示、スポーン時に割当。
      */
     createAmbientFloatingParticles() {
         const count = this.ambientParticleCount;
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
+        const L = this.sceneLightingScale ?? 1;
+        /** 部屋が暗くても環境反射でキラつくよう金属寄り＋エミッシブ弱め（ブルームに少し乗る） */
         const mat = new THREE.MeshStandardMaterial({
-            color: 0xb4c0d0,
-            metalness: 0.2,
-            roughness: 0.48,
+            color: 0xd4dae4,
+            metalness: 0.88,
+            roughness: 0.2,
             envMap: envTex,
-            envMapIntensity: 0.62 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1))
+            envMapIntensity: THREE.MathUtils.lerp(1.35, 0.95, L),
+            emissive: 0xb8c4d0,
+            emissiveIntensity: 0.055,
+            fog: true
         });
 
         this.ambientInstManager = new InstancedMeshManager(this.scene, boxGeo, mat, count);
@@ -1318,50 +1358,83 @@ float cylinderSurfH( vec3 v ) {
         mainMesh.receiveShadow = false;
         mainMesh.renderOrder = -2;
 
-        const bx = this.roomHalfW - 480;
-        const bz = this.roomHalfD - 480;
-        const yMin = this.floorTopY + 220;
-        const yMax = this.ceilingY * 0.4;
-
         this.ambientParticles = [];
+        this._ambientLiving = [];
+        this._ambientFreeSlots = [];
         for (let i = 0; i < count; i++) {
-            const x = (Math.random() * 2 - 1) * bx;
-            const z = (Math.random() * 2 - 1) * bz;
-            const y = yMin + Math.random() * (yMax - yMin);
-            const position = new THREE.Vector3(x, y, z);
-            const velocity = new THREE.Vector3(
-                (Math.random() - 0.5) * 92,
-                (Math.random() - 0.5) * 58,
-                (Math.random() - 0.5) * 92
+            this.ambientParticles.push({
+                position: new THREE.Vector3(),
+                velocity: new THREE.Vector3(),
+                rotation: new THREE.Euler(),
+                angVel: new THREE.Vector3(),
+                scale: new THREE.Vector3(),
+                baseScale: new THREE.Vector3(),
+                phase: 0,
+                spawnTime: null
+            });
+            this._ambientFreeSlots.push(i);
+        }
+        for (let i = 0; i < count; i++) {
+            this._clearAmbientParticleSlot(i);
+        }
+        this.ambientInstManager.markNeedsUpdate();
+    }
+
+    _clearAmbientParticleSlot(slotIndex) {
+        if (!this.ambientInstManager || slotIndex < 0 || slotIndex >= this.ambientParticleCount) return;
+        const ap = this.ambientParticles[slotIndex];
+        ap.spawnTime = null;
+        ap.scale.set(0, 0, 0);
+        this.ambientInstManager.setMatrixAt(slotIndex, this._ambientHidePos, this._ambientIdRot, ap.scale);
+    }
+
+    /** ワールド座標付近にバースト（空きスロットが尽きるまで） */
+    _spawnAmbientParticlesBurst(worldPos, burstCount) {
+        if (!this.ambientInstManager || !burstCount || !this._ambientFreeSlots.length) return;
+        const n = Math.min(Math.floor(burstCount), this._ambientFreeSlots.length);
+        const bx = this.roomHalfW - 420;
+        const bz = this.roomHalfD - 420;
+        const yMin = this.floorTopY + 200;
+        const yMax = this.ceilingY * 0.41;
+        for (let k = 0; k < n; k++) {
+            const i = this._ambientFreeSlots.pop();
+            const ap = this.ambientParticles[i];
+            const jr = 38 + Math.random() * 220;
+            const th = Math.random() * Math.PI * 2;
+            const ph = Math.acos(2 * Math.random() - 1);
+            const jx = jr * Math.sin(ph) * Math.cos(th);
+            const jy = jr * Math.cos(ph) * 0.82;
+            const jz = jr * Math.sin(ph) * Math.sin(th);
+            ap.position.set(worldPos.x + jx, worldPos.y + jy, worldPos.z + jz);
+            ap.position.x = THREE.MathUtils.clamp(ap.position.x, -bx, bx);
+            ap.position.z = THREE.MathUtils.clamp(ap.position.z, -bz, bz);
+            ap.position.y = THREE.MathUtils.clamp(ap.position.y, yMin, yMax);
+            ap.velocity.set(
+                (Math.random() - 0.5) * 150,
+                (Math.random() - 0.5) * 95,
+                (Math.random() - 0.5) * 150
             );
-            const rotation = new THREE.Euler(
+            ap.rotation.set(
                 Math.random() * Math.PI * 2,
                 Math.random() * Math.PI * 2,
                 Math.random() * Math.PI * 2
             );
-            const angVel = new THREE.Vector3(
+            ap.angVel.set(
                 (Math.random() - 0.5) * 1.9,
                 (Math.random() - 0.5) * 1.9,
                 (Math.random() - 0.5) * 1.9
             );
             const sr = 0.55 + Math.random() * 2.6;
-            const scale = new THREE.Vector3(
-                sr * (0.32 + Math.random() * 1.55),
-                sr * (0.32 + Math.random() * 1.55),
-                sr * (0.32 + Math.random() * 1.55)
+            ap.baseScale.set(
+                sr * (0.32 + Math.random() * 1.55) * 0.32,
+                sr * (0.32 + Math.random() * 1.55) * 0.32,
+                sr * (0.32 + Math.random() * 1.55) * 0.32
             );
-            const phase = Math.random() * Math.PI * 2;
-            this.ambientParticles.push({
-                position,
-                velocity,
-                rotation,
-                angVel,
-                scale,
-                phase
-            });
-            this.ambientInstManager.setMatrixAt(i, position, rotation, scale);
+            ap.scale.copy(ap.baseScale);
+            ap.phase = Math.random() * Math.PI * 2;
+            ap.spawnTime = performance.now();
+            this._ambientLiving.push(i);
         }
-        this.ambientInstManager.markNeedsUpdate();
     }
 
     /** トラック9：generateFleshTextures の map/bump ＋ color でチャコール寄せ */
@@ -1441,6 +1514,7 @@ float cylinderSurfH( vec3 v ) {
             birthAge: 0,
             angularVelocity
         });
+        this._spawnAmbientParticlesBurst(position, this.ambientParticlesPerTrack9);
 
         while (this.track9Spheres.length > this.maxTrack9Spheres) {
             const old = this.track9Spheres.shift();
@@ -1588,9 +1662,27 @@ float cylinderSurfH( vec3 v ) {
         const yMax = this.ceilingY * 0.41;
         const t = this.time;
         const dt = deltaTime;
+        const now = performance.now();
+        const life = this.ambientParticleLifetimeMs;
+        const fadeMs = this.ambientParticleFadeOutMs;
 
-        for (let i = 0; i < this.ambientParticles.length; i++) {
+        for (let j = this._ambientLiving.length - 1; j >= 0; j--) {
+            const i = this._ambientLiving[j];
             const ap = this.ambientParticles[i];
+            if (ap.spawnTime == null) {
+                this._ambientLiving.splice(j, 1);
+                continue;
+            }
+            const age = now - ap.spawnTime;
+            if (age >= life) {
+                this._clearAmbientParticleSlot(i);
+                this._ambientFreeSlots.push(i);
+                this._ambientLiving.splice(j, 1);
+                continue;
+            }
+            const fadeOp = this._fadeOpacity01(age, life, fadeMs);
+            ap.scale.copy(ap.baseScale).multiplyScalar(fadeOp);
+
             const ph = ap.phase;
             ap.velocity.x += (Math.sin(t * 0.62 + ph * 1.1) * 38 + (Math.sin(t * 1.28 + i * 0.07) - 0.5) * 16) * dt;
             ap.velocity.y += (Math.cos(t * 0.48 + ph * 0.9) * 26 + (Math.cos(t * 0.88 + i * 0.05) - 0.5) * 12) * dt;
@@ -1712,12 +1804,12 @@ float cylinderSurfH( vec3 v ) {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         const Lexp = this.sceneLightingScale ?? 1;
-        this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.78, 1.32, Lexp);
+        this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        /** 密度で霞の量、色で遠方の明るさ。白い色＋濃いと飽和するので、濃い霞は色を暗めにする */
-        this.scene.background = new THREE.Color(0x141414);
-        this.scene.fog = new THREE.FogExp2(0x5e5e5e, 0.00029);
+        /** 薄めの霞＋白寄りグレー。密度は控えめ（飽和しにくい） */
+        this.scene.background = new THREE.Color(0x151820);
+        this.scene.fog = new THREE.FogExp2(0xd2d6dc, 0.00017);
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -1748,11 +1840,13 @@ float cylinderSurfH( vec3 v ) {
             this.studio.studioBox.visible = false;
         }
 
-        const textures = this.generateConcretePBRTextures(1024);
+        const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+        const textures = this.generateConcretePBRTextures(1024, maxAniso);
         this.buildRoom(textures);
 
-        const sharedConcrete = this.roomGroup.children[0].material;
-        this.applyEnvMapToMaterials(this.scene.environment, sharedConcrete, sharedConcrete);
+        const floorMat = this.roomGroup.children[0].material;
+        const wallMat = this.roomGroup.children[1].material;
+        this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
 
         this.setupLights();
 
@@ -1930,9 +2024,9 @@ float cylinderSurfH( vec3 v ) {
         });
 
         this.promoTextGroup = new THREE.Group();
-        const lines = ['Mathym', 'New E.P.', 'Out NOW'];
-        const size = 248;
-        const extrudeHeight = 56;
+        const lines = [this.title];
+        const size = 400;
+        const extrudeHeight = 92;
         let yCursor = 0;
         const lineGap = 72;
 
@@ -1943,8 +2037,8 @@ float cylinderSurfH( vec3 v ) {
                 height: extrudeHeight,
                 curveSegments: 10,
                 bevelEnabled: true,
-                bevelThickness: 6,
-                bevelSize: 2.4,
+                bevelThickness: 9,
+                bevelSize: 3.8,
                 bevelOffset: 0,
                 bevelSegments: 2
             });
@@ -1980,7 +2074,7 @@ float cylinderSurfH( vec3 v ) {
             emissiveIntensity: 32,
             metalness: 0,
             roughness: 0.22,
-            fog: false,
+            fog: true,
             side: THREE.DoubleSide
         });
         const geo = new THREE.PlaneGeometry(1, 1);
@@ -2143,7 +2237,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     render() {
-        this.renderer.setClearColor(0x141414);
+        this.renderer.setClearColor(0x151820);
         super.render();
     }
 
@@ -2203,6 +2297,8 @@ float cylinderSurfH( vec3 v ) {
             this.ambientInstManager = null;
         }
         this.ambientParticles = [];
+        this._ambientLiving = [];
+        this._ambientFreeSlots = [];
 
         if (this.track9SphereGroup) {
             this.scene.remove(this.track9SphereGroup);
@@ -2264,15 +2360,18 @@ float cylinderSurfH( vec3 v ) {
         if (this.roomGroup) {
             this.scene.remove(this.roomGroup);
             const seenMats = new Set();
+            const seenTex = new Set();
             this.roomGroup.traverse((o) => {
                 if (o.geometry) o.geometry.dispose();
                 if (o.material && !seenMats.has(o.material)) {
                     seenMats.add(o.material);
                     const m = o.material;
-                    if (m.map) m.map.dispose();
-                    if (m.normalMap) m.normalMap.dispose();
-                    if (m.roughnessMap) m.roughnessMap.dispose();
-                    if (m.aoMap) m.aoMap.dispose();
+                    for (const t of [m.map, m.normalMap, m.roughnessMap, m.aoMap]) {
+                        if (t && !seenTex.has(t)) {
+                            seenTex.add(t);
+                            t.dispose();
+                        }
+                    }
                     m.dispose();
                 }
             });

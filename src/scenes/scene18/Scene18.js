@@ -11,7 +11,10 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
+import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 
 export class Scene18 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -46,11 +49,19 @@ export class Scene18 extends SceneBase {
         // 撮影用スタジオ
         this.studio = null;
         
-        // エフェクト設定
-        this.useDOF = true; 
-        this.useBloom = true; 
-        this.useFilmGrain = true;     // フィルムグレインON
+        // エフェクト設定（Scene21 同系：SSAO・OutputPass・控えめ DOF でミニチュア感を抑える）
+        this.useDOF = true;
+        this.useBloom = true;
+        this.useFilmGrain = true;
+        this.useSSAO = true;
         this.bloomPass = null;
+        this.ssaoPass = null;
+        this.outputPass = null;
+
+        /** 空間を漂うインスタンスボックス（2000） */
+        this.ambientParticleCount = 2000;
+        this.ambientInstManager = null;
+        this.ambientParticles = [];
 
         // ストロボエフェクト管理
         this.strobeActive = false;
@@ -184,15 +195,22 @@ export class Scene18 extends SceneBase {
         await super.setup();
 
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.0; // 少し明るく
+        this.renderer.toneMappingExposure = 1.0;
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+        /** 奥行きと霞（Scene21 同型に近い指数フォグ） */
+        this.scene.background = new THREE.Color(0x151820);
+        this.scene.fog = new THREE.FogExp2(0x1e2838, 0.000095);
 
         // 初期位置も十分に離す
-        this.camera.position.set(0, 5000, 10000); 
+        this.camera.position.set(0, 5000, 10000);
         this.camera.lookAt(0, this.coreCenterY, 0);
         if (this.camera.fov !== 60) {
             this.camera.fov = 60;
-            this.camera.updateProjectionMatrix();
         }
+        this.camera.near = 12;
+        this.camera.far = 12000;
+        this.camera.updateProjectionMatrix();
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -217,9 +235,141 @@ export class Scene18 extends SceneBase {
         this.createEntranceUnit(); // 先に入口ユニットを作って位置を確定させる！
         this.createCables(); // ケーブルは後から作って入口を避ける！
         this.createStabilizerPipes(); // 安定パイプを追加！
+        this.createAmbientFloatingParticles();
         this.initPostProcessing();
-        this.setParticleCount(this.cableCount); // HUDのOBJECTSにケーブル本数を表示！
+        this.setParticleCount(this.cableCount + this.ambientParticleCount);
         this.initialized = true;
+    }
+
+    /**
+     * Scene21 同系：金属ダストが空間を漂うインスタンスボックス
+     */
+    createAmbientFloatingParticles() {
+        const count = this.ambientParticleCount;
+        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+        const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xc4ccd6,
+            metalness: 0.88,
+            roughness: 0.22,
+            envMap: envTex,
+            envMapIntensity: 1.15,
+            emissive: 0x3a4552,
+            emissiveIntensity: 0.05,
+            fog: true
+        });
+
+        this.ambientInstManager = new InstancedMeshManager(this.scene, boxGeo, mat, count);
+        const mainMesh = this.ambientInstManager.getMainMesh();
+        mainMesh.castShadow = false;
+        mainMesh.receiveShadow = false;
+        mainMesh.renderOrder = -2;
+
+        const room = 4500;
+        const bx = room - 380;
+        const bz = room - 380;
+        const yMin = 220;
+        const yMax = 5200;
+
+        this.ambientParticles = [];
+        for (let i = 0; i < count; i++) {
+            const x = (Math.random() * 2 - 1) * bx;
+            const z = (Math.random() * 2 - 1) * bz;
+            const y = yMin + Math.random() * (yMax - yMin);
+            const position = new THREE.Vector3(x, y, z);
+            const velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 92,
+                (Math.random() - 0.5) * 58,
+                (Math.random() - 0.5) * 92
+            );
+            const rotation = new THREE.Euler(
+                Math.random() * Math.PI * 2,
+                Math.random() * Math.PI * 2,
+                Math.random() * Math.PI * 2
+            );
+            const angVel = new THREE.Vector3(
+                (Math.random() - 0.5) * 1.9,
+                (Math.random() - 0.5) * 1.9,
+                (Math.random() - 0.5) * 1.9
+            );
+            const sr = 0.55 + Math.random() * 2.6;
+            const scale = new THREE.Vector3(
+                sr * (0.32 + Math.random() * 1.55),
+                sr * (0.32 + Math.random() * 1.55),
+                sr * (0.32 + Math.random() * 1.55)
+            );
+            scale.multiplyScalar(0.32);
+            const phase = Math.random() * Math.PI * 2;
+            this.ambientParticles.push({
+                position,
+                velocity,
+                rotation,
+                angVel,
+                scale,
+                phase
+            });
+            this.ambientInstManager.setMatrixAt(i, position, rotation, scale);
+        }
+        this.ambientInstManager.markNeedsUpdate();
+    }
+
+    _updateAmbientParticles(deltaTime) {
+        if (!this.ambientInstManager || !this.ambientParticles.length) return;
+        const room = 4500;
+        const bx = room - 340;
+        const bz = room - 340;
+        const yMin = 200;
+        const yMax = 5300;
+        const t = this.time;
+        const dt = deltaTime;
+
+        for (let i = 0; i < this.ambientParticles.length; i++) {
+            const ap = this.ambientParticles[i];
+            const ph = ap.phase;
+            ap.velocity.x += (Math.sin(t * 0.62 + ph * 1.1) * 38 + (Math.sin(t * 1.28 + i * 0.07) - 0.5) * 16) * dt;
+            ap.velocity.y += (Math.cos(t * 0.48 + ph * 0.9) * 26 + (Math.cos(t * 0.88 + i * 0.05) - 0.5) * 12) * dt;
+            ap.velocity.z += (Math.sin(t * 0.55 + ph * 1.3 + 1.4) * 38 + (Math.sin(t * 1.08 + i * 0.09) - 0.5) * 16) * dt;
+            ap.velocity.multiplyScalar(0.9989);
+            if (ap.velocity.length() > 210) ap.velocity.normalize().multiplyScalar(210);
+
+            ap.position.addScaledVector(ap.velocity, dt);
+
+            if (ap.position.x > bx) {
+                ap.position.x = bx;
+                ap.velocity.x *= -0.72;
+            } else if (ap.position.x < -bx) {
+                ap.position.x = -bx;
+                ap.velocity.x *= -0.72;
+            }
+            if (ap.position.z > bz) {
+                ap.position.z = bz;
+                ap.velocity.z *= -0.72;
+            } else if (ap.position.z < -bz) {
+                ap.position.z = -bz;
+                ap.velocity.z *= -0.72;
+            }
+            if (ap.position.y > yMax) {
+                ap.position.y = yMax;
+                ap.velocity.y *= -0.68;
+            } else if (ap.position.y < yMin) {
+                ap.position.y = yMin;
+                ap.velocity.y *= -0.68;
+            }
+
+            ap.rotation.x += ap.angVel.x * dt;
+            ap.rotation.y += ap.angVel.y * dt;
+            ap.rotation.z += ap.angVel.z * dt;
+
+            this.ambientInstManager.setMatrixAt(i, ap.position, ap.rotation, ap.scale);
+        }
+        this.ambientInstManager.markNeedsUpdate();
+    }
+
+    onResize() {
+        super.onResize();
+        if (this.ssaoPass && typeof this.ssaoPass.setSize === 'function') {
+            this.ssaoPass.setSize(window.innerWidth, window.innerHeight);
+        }
     }
 
     setupLights() {
@@ -1516,7 +1666,9 @@ export class Scene18 extends SceneBase {
         if (this.cubeCamera && Math.floor(this.time * 60) % 8 === 0) {
             this.cubeCamera.update(this.renderer, this.scene);
         }
-        
+
+        this._updateAmbientParticles(deltaTime);
+
         this.updateAutoFocus();
 
         // --- 2Dコールアウトの更新（共通システムを使用） ---
@@ -1575,18 +1727,34 @@ export class Scene18 extends SceneBase {
             this.composer = new EffectComposer(this.renderer);
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
-        if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth / 4, window.innerHeight / 4), 0.2, 0.05, 0.9);
+        if (this.useSSAO && !this.ssaoPass) {
+            this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
+            this.ssaoPass.kernelRadius = 8;
+            this.ssaoPass.minDistance = 0.005;
+            this.ssaoPass.maxDistance = 0.12;
+            this.composer.addPass(this.ssaoPass);
+        }
+        if (this.useBloom && !this.bloomPass) {
+            this.bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
+                0.14,
+                0.68,
+                0.64
+            );
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
             this.initDOF({
-                focus: 2500,
-                aperture: 0.00001,
-                maxblur: 0.005
+                focus: 2000,
+                aperture: 0.0000045,
+                maxblur: 0.0028
             });
         }
-        this.addFilmGrainIfEnabled(0.35, false);
+        if (!this.outputPass) {
+            this.outputPass = new OutputPass();
+            this.composer.addPass(this.outputPass);
+        }
+        this.addFilmGrainIfEnabled(0.22, false);
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -1673,13 +1841,38 @@ export class Scene18 extends SceneBase {
             const isWhite = Math.floor(performance.now() / 32) % 2 === 0;
             this.renderer.setClearColor(isWhite ? 0xffffff : 0x000000);
         } else {
-            this.renderer.setClearColor(0x000000);
+            this.renderer.setClearColor(0x151820);
         }
         super.render();
     }
 
     dispose() {
         this.initialized = false;
+        this.scene.fog = null;
+
+        if (this.ssaoPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.ssaoPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.ssaoPass.enabled = false;
+            this.ssaoPass = null;
+        }
+        if (this.outputPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.outputPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.outputPass.dispose();
+            this.outputPass = null;
+        }
+
+        if (this.ambientInstManager) {
+            this.ambientInstManager.dispose();
+            this.ambientInstManager = null;
+        }
+        this.ambientParticles = [];
+
         if (this.studio) this.studio.dispose();
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         if (this.centralSphere) {

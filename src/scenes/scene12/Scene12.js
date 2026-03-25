@@ -1,6 +1,6 @@
 /**
  * Scene12: 新規シーン（テンプレートベース）
- */
+ */     
 
 import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';

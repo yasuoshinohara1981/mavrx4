@@ -1,10 +1,10 @@
 /**
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
- * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityでヒートマップ色）
+ * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター
- * トラック9：ワールド（部屋）中心付近から Scene12 風質感のスフィアを物理演算でスポーン（カメラ注視点ではない）
+ * トラック9：部屋中心付近からスフィア（flesh テクスチャ＋チャコール寄せ color）を物理演算でスポーン
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
- * 床・壁は PBR コンクリート、ポストは ACES・SSAO・ごく弱い DOF（ミニチュア感回避）・最小 bloom・軽フォグ
+ * 床・壁は PBR コンクリート、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -15,6 +15,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import { StudioBox } from '../../lib/StudioBox.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene16Particle } from '../scene16/Scene16Particle.js';
@@ -39,6 +42,10 @@ export class Scene21 extends SceneBase {
         this.shards = [];
         /** この個数を超えたら古い順に削除（安全上限）。普段は shardLifetimeMs で消える */
         this.maxShards = 2000;
+        /** トラック5金属片・トラック6シリンダのサイズ倍率（比率を保ったまま拡大） */
+        this.shardCylinderVisualScale = 1.5;
+        /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
+        this.sceneLightingScale = 0.4;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -66,6 +73,10 @@ export class Scene21 extends SceneBase {
         this._snakeIndex = 0;
         this._shardSeed = Math.random() * 1000;
         this._shardHeatColor = new THREE.Color();
+        /** ニュートラルグレー（R 偏重を避け赤みを出さない） */
+        this._shardMetalDark = new THREE.Color(0x5a5a5a);
+        this._shardMetalMid = new THREE.Color(0x9e9e9e);
+        this._shardMetalBright = new THREE.Color(0xd0d0d0);
 
         this.pulses = [];
         this.pulseColor = new THREE.Color(1, 0, 0);
@@ -93,6 +104,8 @@ export class Scene21 extends SceneBase {
         this.useFilmGrain = true;
         this.bloomPass = null;
         this.ssaoPass = null;
+        /** composer では最後に必須：renderer.toneMapping / 出力色空間を画面に適用 */
+        this.outputPass = null;
 
         this.trackEffects = {
             1: true,
@@ -151,7 +164,7 @@ export class Scene21 extends SceneBase {
         this._jitterSide = new THREE.Vector3();
         this._jitterUp = new THREE.Vector3();
 
-        /** トラック9：画面中心スポーンの物理スフィア（Scene12 風 flesh 質感） */
+        /** トラック9：ワールド中心付近スポーンの物理スフィア（チャコール調） */
         this.track9SphereGroup = null;
         this.track9Spheres = [];
         this.maxTrack9Spheres = 80;
@@ -168,6 +181,18 @@ export class Scene21 extends SceneBase {
         this._track9SubSteps = 2;
         /** スポーン直後、半径が 0→目標まで伸びる時間（秒） */
         this._track9BirthGrowSec = 0.42;
+
+        /** 3D プロモテキスト（部屋内・壁面固定） */
+        this.promoTextGroup = null;
+        /** 南壁テキストを白く浮かせる補助スポット */
+        this.promoWallFillLight = null;
+        this.promoWallLightTarget = null;
+        /** 壁周りレーザースキャン（1 小節＝TICK_LOOP/96 tick で一周） */
+        this.laserScanMesh = null;
+        this._laserScanMaterial = null;
+        this._wallCenterY = this.floorTopY + (this.ceilingY - this.floorTopY) * 0.5;
+        this._laserHalfW = this.roomHalfW - 240;
+        this._laserHalfD = this.roomHalfD - 240;
     }
 
     /** 96小節ループ想定（Scene16 と同系）。actual_tick の差分で歩幅を決める */
@@ -196,6 +221,74 @@ export class Scene21 extends SceneBase {
                 'vInstanceOpacity = instanceOpacity;\n#include <begin_vertex>'
             );
             shader.fragmentShader = 'varying float vInstanceOpacity;\n' + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <opaque_fragment>',
+                `#include <opaque_fragment>
+                gl_FragColor.rgb *= vInstanceOpacity;
+                gl_FragColor.a *= vInstanceOpacity;`
+            );
+        };
+    }
+
+    /**
+     * 赤シリンダ専用：インスタンス不透明度＋ビュー空間でプロシージャルな法線摂動（画像テクスチャなし）
+     */
+    static _applyRedCylinderShader(material) {
+        material.transparent = true;
+        material.depthWrite = false;
+        material.onBeforeCompile = (shader) => {
+            shader.vertexShader =
+                'attribute float instanceOpacity;\nvarying float vInstanceOpacity;\nvarying vec3 vCylinderWPos;\n' + shader.vertexShader;
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                'vInstanceOpacity = instanceOpacity;\n#include <begin_vertex>'
+            );
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <worldpos_vertex>',
+                `#include <worldpos_vertex>
+#if defined( USE_ENVMAP ) || defined( DISTANCE ) || defined ( USE_SHADOWMAP ) || defined ( USE_TRANSMISSION ) || NUM_SPOT_LIGHT_COORDS > 0
+    vCylinderWPos = worldPosition.xyz;
+#else
+    {
+        vec4 wp = vec4( transformed, 1.0 );
+        #ifdef USE_INSTANCING
+        wp = instanceMatrix * wp;
+        #endif
+        wp = modelMatrix * wp;
+        vCylinderWPos = wp.xyz;
+    }
+#endif
+`
+            );
+            shader.fragmentShader =
+                'varying float vInstanceOpacity;\nvarying vec3 vCylinderWPos;\n' + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <common>',
+                `#include <common>
+float cylinderSurfH( vec3 v ) {
+    float t = 0.0035;
+    float h = sin( v.x * t * 1.7 + v.y * t * 2.1 ) * cos( v.z * t * 1.9 );
+    h += sin( dot( v * ( t * 2.3 ), vec3( 1.1, 0.7, 2.3 ) ) ) * 0.38;
+    h += sin( dot( v * ( t * 14.0 ), vec3( 1.7, 2.1, 0.9 ) ) ) * 0.12;
+    h += sin( dot( v * ( t * 41.0 ), vec3( 0.9, 1.3, 1.7 ) ) ) * 0.045;
+    return h;
+}
+`
+            );
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <normal_fragment_maps>',
+                `#include <normal_fragment_maps>
+{
+    vec3 vp = ( viewMatrix * vec4( vCylinderWPos, 1.0 ) ).xyz;
+    float e = 1.35;
+    float dx = cylinderSurfH( vp + vec3( e, 0.0, 0.0 ) ) - cylinderSurfH( vp - vec3( e, 0.0, 0.0 ) );
+    float dy = cylinderSurfH( vp + vec3( 0.0, e, 0.0 ) ) - cylinderSurfH( vp - vec3( 0.0, e, 0.0 ) );
+    float dz = cylinderSurfH( vp + vec3( 0.0, 0.0, e ) ) - cylinderSurfH( vp - vec3( 0.0, 0.0, e ) );
+    vec3 grad = vec3( dx, dy, dz );
+    normal = normalize( normal - grad * 0.1 );
+}
+`
+            );
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <opaque_fragment>',
                 `#include <opaque_fragment>
@@ -654,7 +747,7 @@ export class Scene21 extends SceneBase {
         return { map, normalMap, roughnessMap, aoMap };
     }
 
-    /** Scene12 と同系：エイリアンっぽい肉質テクスチャ（カラー＋バンプ） */
+    /** Scene12 と同系：肉質テクスチャ（カラー＋バンプ）。トラック9スフィア用。 */
     generateFleshTextures() {
         const size = 512;
         const colorCanvas = document.createElement('canvas');
@@ -763,7 +856,7 @@ export class Scene21 extends SceneBase {
             metalness: 0,
             aoMap: textures.aoMap,
             aoMapIntensity: 0.5,
-            envMapIntensity: 0.95
+            envMapIntensity: 0.95 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1))
         });
 
         this.roomGroup = new THREE.Group();
@@ -806,7 +899,7 @@ export class Scene21 extends SceneBase {
             roughness: 0.8,
             metalness: 0,
             emissive: 0xffffff,
-            emissiveIntensity: 8.5,
+            emissiveIntensity: 8.5 * (this.sceneLightingScale ?? 1),
             envMapIntensity: 1.0
         });
         this.ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
@@ -832,19 +925,15 @@ export class Scene21 extends SceneBase {
         return THREE.MathUtils.clamp(Math.round(n), 0, 127);
     }
 
-    /** ベロシティをヒートマップ（青→シアン→黄→赤）— ディフューズでも分かるよう強め */
-    velocityHeatmapToColor(velocity, target) {
+    /** ベロシティでスチール〜シルバーの金属トーン（暗→明） */
+    velocityToMetalShardColor(velocity, target, seedForVariation = 0) {
         const t = THREE.MathUtils.clamp(velocity / 127, 0, 1);
-        if (t < 0.33) {
-            const u = t / 0.33;
-            target.setRGB(0.08 + 0.1 * u, 0.2 + 0.6 * u, 0.95);
-        } else if (t < 0.66) {
-            const u = (t - 0.33) / 0.33;
-            target.setRGB(0.1 + 0.85 * u, 0.75 + 0.25 * u, 0.95 * (1 - u * 0.85));
-        } else {
-            const u = (t - 0.66) / 0.34;
-            target.setRGB(0.95, 0.95 * (1 - u * 0.55), 0.12 * (1 - u));
-        }
+        if (t < 0.5) target.copy(this._shardMetalDark).lerp(this._shardMetalMid, t / 0.5);
+        else target.copy(this._shardMetalMid).lerp(this._shardMetalBright, (t - 0.5) / 0.5);
+        const n = (this._shardNoise(seedForVariation * 0.41, 2.1, 0.7) - 0.5) * 0.07;
+        target.r = THREE.MathUtils.clamp(target.r + n, 0.08, 1);
+        target.g = THREE.MathUtils.clamp(target.g + n, 0.08, 1);
+        target.b = THREE.MathUtils.clamp(target.b + n, 0.08, 1);
     }
 
     /** 部屋内のノイズベース目標座標（金属片の「生える場所」のひとつ） */
@@ -862,7 +951,7 @@ export class Scene21 extends SceneBase {
 
     /**
      * トラック5：位置は actual_tick 差分×定数。進行方向はノイズでねじる。
-     * durationMs: デュレーション（ms）でスケール。velocity: ヒートマップ色。
+     * durationMs: デュレーション（ms）でスケール。velocity: 金属色の明るさ。
      */
     spawnMetalShardFromTrack5(velocity, durationMs = 180) {
         if (!this.shardGroup || !this._metalShardMaterial || !this.shardInstMesh) return;
@@ -917,18 +1006,14 @@ export class Scene21 extends SceneBase {
 
         const dur = Math.max(1, Number(durationMs) || 180);
         const durN = THREE.MathUtils.clamp(dur / 750, 0.06, 1.65);
+        const s = this.shardCylinderVisualScale ?? 1;
         const r =
             (18 + 118 * durN) *
-            (0.94 + 0.06 * this._shardNoise(si * 0.7, 0.2, 0.1));
+            (0.94 + 0.06 * this._shardNoise(si * 0.7, 0.2, 0.1)) *
+            s;
 
         const slotIndex = this._allocShardSlot();
-        this.velocityHeatmapToColor(vMidi, this._shardHeatColor);
-        /** インスタンス色：旧エミッシブ込みの見え方に寄せて明るさブースト */
-        const glow = 0.42 + (vMidi / 127) * 1.05;
-        this._shardHeatColor.multiplyScalar(1.0 + glow * 0.32);
-        this._shardHeatColor.r = Math.min(1, this._shardHeatColor.r);
-        this._shardHeatColor.g = Math.min(1, this._shardHeatColor.g);
-        this._shardHeatColor.b = Math.min(1, this._shardHeatColor.b);
+        this.velocityToMetalShardColor(vMidi, this._shardHeatColor, si);
         this.shardInstMesh.setColorAt(slotIndex, this._shardHeatColor);
         if (this.shardInstMesh.instanceColor) {
             this.shardInstMesh.instanceColor.needsUpdate = true;
@@ -1005,13 +1090,13 @@ export class Scene21 extends SceneBase {
         this.scene.add(this.shardGroup);
 
         const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
-        /** 共有1マテ（個体差は instanceColor）。metalness/env が強いと instanceColor が反射に負けてグレーに見えるので控えめ */
+        /** 共有1マテ（個体差は instanceColor）。金属色用に metalness 高め */
         this._metalShardMaterial = new THREE.MeshStandardMaterial({
             color: 0xffffff,
-            metalness: 0.18,
-            roughness: 0.52,
+            metalness: 0.88,
+            roughness: 0.32,
             envMap: envTex,
-            envMapIntensity: 0.42,
+            envMapIntensity: 0.92 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
             emissive: 0x000000,
             emissiveIntensity: 0,
             opacity: 1
@@ -1050,19 +1135,19 @@ export class Scene21 extends SceneBase {
         this.cylinderGroup.position.set(0, 0, 0);
         this.scene.add(this.cylinderGroup);
 
-        /** 赤く見えること優先：env 反射でグレー化しない（拡散＋エミッシブ中心） */
+        /** レーザーより弱い赤。朱寄りを避けワインレッド系の暗色＋弱エミッシブ */
         this._redCylinderMaterial = new THREE.MeshStandardMaterial({
-            color: 0xff0000,
-            emissive: 0xff0000,
-            emissiveIntensity: 0.75,
+            color: 0x481c26,
+            emissive: 0x0f0608,
+            emissiveIntensity: 0.26,
             metalness: 0,
-            roughness: 0.48,
+            roughness: 0.58,
             fog: false,
             opacity: 1
         });
-        Scene21._applyInstanceOpacityShader(this._redCylinderMaterial);
+        Scene21._applyRedCylinderShader(this._redCylinderMaterial);
 
-        const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1);
+        const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 28, 6);
         this._cylinderOpacityAttr = Scene21._attachInstanceOpacityAttribute(cylGeo, this.maxCylinders);
         this.cylinderInstMesh = new THREE.InstancedMesh(cylGeo, this._redCylinderMaterial, this.maxCylinders);
         this.cylinderInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1090,8 +1175,9 @@ export class Scene21 extends SceneBase {
 
         const vMidi = this.normalizeMidiVelocity(velocity);
         const dur = Math.max(1, Number(durationMs) || 180);
-        const length = THREE.MathUtils.clamp(this._cylinderLengthFromDurationMs(dur), 110, 720);
-        const radius = THREE.MathUtils.clamp(0.48 + (vMidi / 127) * 15.2, 0.28, 18);
+        const s = this.shardCylinderVisualScale ?? 1;
+        const length = THREE.MathUtils.clamp(this._cylinderLengthFromDurationMs(dur), 110, 720) * s;
+        const radius = THREE.MathUtils.clamp(0.48 + (vMidi / 127) * 15.2, 0.28, 18) * s;
 
         const slotIndex = this._allocCylinderSlot();
 
@@ -1223,7 +1309,7 @@ export class Scene21 extends SceneBase {
             metalness: 0.2,
             roughness: 0.48,
             envMap: envTex,
-            envMapIntensity: 0.62
+            envMapIntensity: 0.62 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1))
         });
 
         this.ambientInstManager = new InstancedMeshManager(this.scene, boxGeo, mat, count);
@@ -1278,7 +1364,7 @@ export class Scene21 extends SceneBase {
         this.ambientInstManager.markNeedsUpdate();
     }
 
-    /** トラック9用：Scene12 風マテリアル＋共有球ジオメ */
+    /** トラック9：generateFleshTextures の map/bump ＋ color でチャコール寄せ */
     initTrack9SpawnSpheres() {
         this.track9SphereGroup = new THREE.Group();
         this.scene.add(this.track9SphereGroup);
@@ -1288,11 +1374,13 @@ export class Scene21 extends SceneBase {
             map: this._track9FleshTextures.map,
             bumpMap: this._track9FleshTextures.bumpMap,
             bumpScale: 3.0,
-            metalness: 0.4,
-            roughness: 0.2,
-            emissive: 0x000000,
+            color: 0x4a4e55,
+            metalness: 0.22,
+            roughness: 0.52,
             envMap: env,
-            envMapIntensity: 0.95
+            envMapIntensity: 0.52 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
+            emissive: 0x0a0b0c,
+            emissiveIntensity: 0.22
         });
         this.track9SharedGeo = new THREE.SphereGeometry(1, 28, 28);
     }
@@ -1562,15 +1650,16 @@ export class Scene21 extends SceneBase {
         this.scene.environment = this._roomEnvTexture;
     }
 
-    /** Scene16 と同じ（半球・環境・平行光＋ポイント） */
+    /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
     setupLights() {
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf4f6f8, 1.05);
+        const L = this.sceneLightingScale ?? 1;
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf4f6f8, 0.72 * L);
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(0xf5f6f8, 0.95);
+        const ambientLight = new THREE.AmbientLight(0xf5f6f8, 0.58 * L);
         this.scene.add(ambientLight);
 
-        const keyLight = new THREE.DirectionalLight(0xffffff, 2.75);
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.05 * L);
         keyLight.position.set(2000, 5000, 2000);
         keyLight.castShadow = true;
 
@@ -1589,12 +1678,12 @@ export class Scene21 extends SceneBase {
 
         this.scene.add(keyLight);
 
-        const fillLight = new THREE.DirectionalLight(0xe8eef5, 1.35);
+        const fillLight = new THREE.DirectionalLight(0xe8eef5, 0.72 * L);
         fillLight.position.set(-3500, 2800, -2200);
         fillLight.castShadow = false;
         this.scene.add(fillLight);
 
-        this.fillPointLight = new THREE.PointLight(0xf0f2f5, 1.8, 12000);
+        this.fillPointLight = new THREE.PointLight(0xf0f2f5, 0.82 * L, 12000);
         this.fillPointLight.position.set(0, 2200, 0);
         this.fillPointLight.castShadow = false;
         this.scene.add(this.fillPointLight);
@@ -1603,6 +1692,16 @@ export class Scene21 extends SceneBase {
         this.pulsePointLight.position.set(0, 550, 0);
         this.pulsePointLight.castShadow = false;
         this.scene.add(this.pulsePointLight);
+
+        const wallTextZ = -this.roomHalfD + 72;
+        this.promoWallLightTarget = new THREE.Object3D();
+        this.promoWallLightTarget.position.set(0, this._wallCenterY, wallTextZ);
+        this.scene.add(this.promoWallLightTarget);
+        this.promoWallFillLight = new THREE.SpotLight(0xf2f6fb, 0.78 * L, 22000, Math.PI / 2.6, 0.42, 1.15);
+        this.promoWallFillLight.position.set(0, this._wallCenterY + 1100, 0);
+        this.promoWallFillLight.castShadow = false;
+        this.promoWallFillLight.target = this.promoWallLightTarget;
+        this.scene.add(this.promoWallFillLight);
     }
 
     async setup() {
@@ -1612,12 +1711,13 @@ export class Scene21 extends SceneBase {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.45;
+        const Lexp = this.sceneLightingScale ?? 1;
+        this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.78, 1.32, Lexp);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        /** 青みのあるスモーク（冷たい実験室の霞） */
-        this.scene.background = new THREE.Color(0x283440);
-        this.scene.fog = new THREE.FogExp2(0xb8cce8, 0.00028);
+        /** 密度で霞の量、色で遠方の明るさ。白い色＋濃いと飽和するので、濃い霞は色を暗めにする */
+        this.scene.background = new THREE.Color(0x141414);
+        this.scene.fog = new THREE.FogExp2(0x5e5e5e, 0.00029);
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -1642,7 +1742,7 @@ export class Scene21 extends SceneBase {
             envMap: this._roomEnvTexture,
             envMapIntensity: 1.0,
             useFloorTile: false,
-            lightIntensity: 22.0
+            lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
         });
         if (this.studio.studioBox) {
             this.studio.studioBox.visible = false;
@@ -1683,6 +1783,8 @@ export class Scene21 extends SceneBase {
         this.setupCameraParticleDistances();
         this.initPostProcessing();
         this.setParticleCount(this.maxShards + 8 + this.ambientParticleCount + this.maxCylinders + this.maxTrack9Spheres);
+        await this._initPromoText3D();
+        this._initLaserScan();
         this.initialized = true;
     }
 
@@ -1797,6 +1899,159 @@ export class Scene21 extends SceneBase {
                 margin: 200
             });
         }
+
+        this._updatePromoTextAndLaser();
+    }
+
+    /**
+     * 金属調 3D テキスト（南壁・部屋内固定）＋壁レーザー（1 小節で一周）
+     */
+    async _initPromoText3D() {
+        if (this.promoTextGroup) return;
+        const fontHref = new URL('../../../node_modules/three/examples/fonts/helvetiker_regular.typeface.json', import.meta.url).href;
+        const loader = new FontLoader();
+        let font;
+        try {
+            font = await new Promise((resolve, reject) => loader.load(fontHref, resolve, undefined, reject));
+        } catch (e) {
+            console.warn('Scene21: promo font load failed', e);
+            return;
+        }
+
+        const env = this.scene.environment;
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xd4dae4,
+            metalness: 0.94,
+            roughness: 0.2,
+            envMap: env,
+            envMapIntensity: 1.15,
+            emissive: 0x2a3038,
+            emissiveIntensity: 0.16
+        });
+
+        this.promoTextGroup = new THREE.Group();
+        const lines = ['Mathym', 'New E.P.', 'Out NOW'];
+        const size = 248;
+        const extrudeHeight = 56;
+        let yCursor = 0;
+        const lineGap = 72;
+
+        for (let i = 0; i < lines.length; i++) {
+            const geo = new TextGeometry(lines[i], {
+                font,
+                size,
+                height: extrudeHeight,
+                curveSegments: 10,
+                bevelEnabled: true,
+                bevelThickness: 6,
+                bevelSize: 2.4,
+                bevelOffset: 0,
+                bevelSegments: 2
+            });
+            geo.computeBoundingBox();
+            const bx = geo.boundingBox;
+            const cx = -(bx.max.x + bx.min.x) * 0.5;
+            const cy = -(bx.max.y + bx.min.y) * 0.5;
+            const cz = -(bx.max.z + bx.min.z) * 0.5;
+            geo.translate(cx, cy, cz);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = yCursor;
+            yCursor -= size + lineGap;
+            this.promoTextGroup.add(mesh);
+        }
+
+        this.promoTextGroup.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(this.promoTextGroup);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        const hd = this.roomHalfD;
+        const zFromWall = 72;
+        const zPos = -hd + zFromWall;
+        this.promoTextGroup.position.set(-center.x, this._wallCenterY - center.y, zPos - center.z);
+        this.promoTextGroup.rotation.y = 0;
+        this.scene.add(this.promoTextGroup);
+    }
+
+    _initLaserScan() {
+        if (this.laserScanMesh) return;
+        this._laserScanMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff0a0a,
+            emissive: 0xff0033,
+            emissiveIntensity: 32,
+            metalness: 0,
+            roughness: 0.22,
+            fog: false,
+            side: THREE.DoubleSide
+        });
+        const geo = new THREE.PlaneGeometry(1, 1);
+        this.laserScanMesh = new THREE.Mesh(geo, this._laserScanMaterial);
+        this.laserScanMesh.frustumCulled = false;
+        this.laserScanMesh.renderOrder = 2;
+        this.scene.add(this.laserScanMesh);
+    }
+
+    _laserMeasurePhase() {
+        const tpm = Scene21.TICK_LOOP / 96;
+        if (this.actualTick != null && Number.isFinite(Number(this.actualTick))) {
+            const t = Number(this.actualTick);
+            const mod = ((Math.floor(t) % tpm) + tpm) % tpm;
+            return mod / tpm;
+        }
+        const beat = this.time * 0.52;
+        return beat - Math.floor(beat);
+    }
+
+    _updatePromoTextAndLaser() {
+        if (!this.laserScanMesh) return;
+
+        const hw = this.roomHalfW;
+        const hd = this.roomHalfD;
+        const inset = 44;
+        const iw = hw - inset;
+        const id = hd - inset;
+        const edgeX = 2 * iw;
+        const edgeZ = 2 * id;
+        const P = 2 * edgeX + 2 * edgeZ;
+        const phase = this._laserMeasurePhase();
+        const s = phase * P;
+        const beamW = Math.min(2200, edgeX * 0.48, edgeZ * 0.48);
+        const y = this._wallCenterY;
+
+        let x;
+        let z;
+        let rotY;
+        let segLen;
+
+        if (s < edgeX) {
+            x = -iw + s;
+            z = -id;
+            rotY = 0;
+            segLen = edgeX;
+        } else if (s < edgeX + edgeZ) {
+            const u = s - edgeX;
+            x = iw;
+            z = -id + u;
+            rotY = Math.PI / 2;
+            segLen = edgeZ;
+        } else if (s < edgeX + edgeZ + edgeX) {
+            const u = s - edgeX - edgeZ;
+            x = iw - u;
+            z = id;
+            rotY = Math.PI;
+            segLen = edgeX;
+        } else {
+            const u = s - edgeX - edgeZ - edgeX;
+            x = -iw;
+            z = id - u;
+            rotY = -Math.PI / 2;
+            segLen = edgeZ;
+        }
+
+        const w = Math.min(beamW, segLen * 0.98);
+        const h = 56;
+        this.laserScanMesh.scale.set(w, h, 1);
+        this.laserScanMesh.position.set(x, y, z);
+        this.laserScanMesh.rotation.set(0, rotY, 0);
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -1860,8 +2115,8 @@ export class Scene21 extends SceneBase {
             this.bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
                 0.14,
-                0.72,
-                0.68
+                0.68,
+                0.64
             );
             this.composer.addPass(this.bloomPass);
         }
@@ -1873,7 +2128,11 @@ export class Scene21 extends SceneBase {
                 maxblur: 0.0028
             });
         }
-        this.addFilmGrainIfEnabled(0.22, true);
+        if (!this.outputPass) {
+            this.outputPass = new OutputPass();
+            this.composer.addPass(this.outputPass);
+        }
+        this.addFilmGrainIfEnabled(0.22, false);
     }
 
     onResize() {
@@ -1884,7 +2143,7 @@ export class Scene21 extends SceneBase {
     }
 
     render() {
-        this.renderer.setClearColor(0x283440);
+        this.renderer.setClearColor(0x141414);
         super.render();
     }
 
@@ -1899,6 +2158,15 @@ export class Scene21 extends SceneBase {
             }
             this.ssaoPass.enabled = false;
             this.ssaoPass = null;
+        }
+
+        if (this.outputPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.outputPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.outputPass.dispose();
+            this.outputPass = null;
         }
 
         if (this.studio) {
@@ -1951,6 +2219,37 @@ export class Scene21 extends SceneBase {
             }
             this._track9FleshTextures = null;
             this.track9SphereGroup = null;
+        }
+
+        if (this.promoWallFillLight) {
+            this.scene.remove(this.promoWallFillLight);
+            this.promoWallFillLight.dispose();
+            this.promoWallFillLight = null;
+        }
+        if (this.promoWallLightTarget) {
+            this.scene.remove(this.promoWallLightTarget);
+            this.promoWallLightTarget = null;
+        }
+
+        if (this.promoTextGroup) {
+            this.scene.remove(this.promoTextGroup);
+            this.promoTextGroup.traverse((o) => {
+                if (o.geometry) o.geometry.dispose();
+            });
+            if (this.promoTextGroup.children[0]?.material) {
+                this.promoTextGroup.children[0].material.dispose();
+            }
+            this.promoTextGroup = null;
+        }
+
+        if (this.laserScanMesh) {
+            this.scene.remove(this.laserScanMesh);
+            if (this.laserScanMesh.geometry) this.laserScanMesh.geometry.dispose();
+            if (this._laserScanMaterial) {
+                this._laserScanMaterial.dispose();
+                this._laserScanMaterial = null;
+            }
+            this.laserScanMesh = null;
         }
 
         if (this.cubeCamera) {

@@ -187,7 +187,7 @@ export class HUD {
         this.drawCenterCrosshair();
         this.drawCenterVerticalLine();
         this.drawScaleRuler();
-        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName);
+        this.drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects, rotationX, rotationY, distance, oscStatus, phase, currentBar, cameraModeName, sceneNumber);
         this.drawStatusBar(rotationX, rotationY, distance, noiseLevel, oscStatus, particleCount);
         
         // 航空機風HUD要素
@@ -199,8 +199,8 @@ export class HUD {
             this.drawCallouts(callouts);
         }
 
-        // 最下端・最前面：スキャン＋シーンバンク（各列スロット10個は横並び）＋SCENE
-        this.drawBottomSceneBankCluster(time, phase, currentBar, trackEffects, actualTick, sceneBankIndex, sceneIndex, sceneNumber, totalSceneCount, maxSceneSlots);
+        // 最下端・最前面：スキャン＋シーンバンク（各列スロット10個は横並び）
+        this.drawBottomSceneBankCluster(time, phase, currentBar, trackEffects, actualTick, sceneBankIndex, sceneIndex, totalSceneCount, maxSceneSlots);
 
         this.ctx.restore();
     }
@@ -441,7 +441,6 @@ export class HUD {
         actualTick = 0,
         sceneBankIndex = 0,
         sceneIndex = 0,
-        sceneNumber = null,
         loadedSceneCount = 21,
         maxSceneSlots = 100
     ) {
@@ -485,7 +484,6 @@ export class HUD {
         let hGap = Math.max(0, (innerW - 10 * sq) / 9);
 
         const labelH = 14;
-        const sceneLineH = 20;
         const gap = 8;
         const scanBandH = 26;
 
@@ -494,7 +492,7 @@ export class HUD {
         const t3 = trackEffects?.[3] ? 'CHR' : '--';
         const t4 = trackEffects?.[4] ? 'GLT' : '--';
 
-        // 上→下：スキャン → バンクラベル → スロット横列 → SCENE（必ず bandTop から開始）
+        // 上→下：スキャン → バンクラベル → スロット横列（必ず bandTop から開始）
         let y = bandTop;
         const scanLineY = y + 3;
         y += scanBandH;
@@ -505,9 +503,9 @@ export class HUD {
         const slotTop = y;
         y += sq + gap;
 
-        const sceneBaseline = bandBottom - 3;
-        if (slotTop + sq > sceneBaseline - sceneLineH) {
-            sq = Math.max(2, Math.floor(sceneBaseline - sceneLineH - gap - slotTop));
+        const slotBottomLimit = bandBottom - 3;
+        if (slotTop + sq > slotBottomLimit) {
+            sq = Math.max(2, Math.floor(slotBottomLimit - gap - slotTop));
         }
         hGap = Math.max(0, (innerW - 10 * sq) / 9);
 
@@ -587,15 +585,6 @@ export class HUD {
                     this.ctx.fillRect(px, slotTop, sq, sq);
                 }
             }
-        }
-
-        if (sceneNumber !== null && sceneNumber !== undefined) {
-            this.ctx.font = '11px monospace';
-            this.ctx.textAlign = 'left';
-            this.ctx.textBaseline = 'bottom';
-            this.ctx.globalAlpha = 0.95;
-            this.ctx.fillStyle = this.hudColor;
-            this.ctx.fillText(`SCENE: ${sceneNumber}`, x0, sceneBaseline);
         }
 
         this.ctx.restore();
@@ -932,7 +921,7 @@ export class HUD {
     /**
      * 情報パネルを描画
      */
-    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null) {
+    drawInfoPanel(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, particleCount, trackEffects = null, rotationX = 0, rotationY = 0, distance = 0, oscStatus = 'Disconnected', phase = 0, currentBar = 0, cameraModeName = null, sceneNumber = null) {
         const margin = this.margin;
         let x = margin + 20;
         let y = margin + 40;
@@ -947,7 +936,12 @@ export class HUD {
         this.ctx.fillStyle = this.hudColor;  // 白文字
         this.ctx.font = `${this.fontWeight} ${this.fontSize}px ${this.fontFamily}`;
         this.ctx.fillText('SYSTEM: MAVRX4-experiment', x, y);
-        y += lineHeight * 1.5;  // 間隔を空ける（SYSTEMとCLASSIFIEDの間にスペース）
+        y += lineHeight;
+        if (sceneNumber !== null && sceneNumber !== undefined) {
+            this.ctx.fillText(`SCENE: ${sceneNumber}`, x, y);
+            y += lineHeight;
+        }
+        y += lineHeight * 0.5;  // SYSTEM/SCENE と軍事テキストの間
         
         // 軍事システム風の説明文を追加（高速ランダマイズ）
         this.updateMilitaryInfo(frameRate, currentCameraIndex, cameraPosition, rotationX, rotationY, distance, oscStatus, particleCount);

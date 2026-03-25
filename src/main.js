@@ -37,6 +37,17 @@ let frameCount = 0;
 // キー入力管理
 let ctrlPressed = false;
 
+// マウスカーソル表示（デフォルト表示、c/C で表示/非表示を切り替え）
+let appCursorVisible = true;
+
+function applyAppCursorVisibility() {
+    const style = appCursorVisible ? '' : 'none';
+    document.body.style.cursor = style;
+    if (renderer && renderer.domElement) {
+        renderer.domElement.style.cursor = style;
+    }
+}
+
 // ============================================
 // レンダラーの初期化
 // ============================================
@@ -52,10 +63,7 @@ function initRenderer() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000);
     document.body.appendChild(renderer.domElement);
-    
-    // マウスカーソルを常に非表示にする
-    document.body.style.cursor = 'none';
-    renderer.domElement.style.cursor = 'none';
+    applyAppCursorVisibility();
 }
 
 // ============================================
@@ -316,6 +324,15 @@ function handleKeyDown(e) {
         return;
     }
     
+    // c/Cキーでマウスカーソル表示の切り替え（Ctrl+C はコピー用に素通し）
+    if (e.key === 'c' || e.key === 'C') {
+        if (e.ctrlKey || e.metaKey) return;
+        e.preventDefault();
+        appCursorVisible = !appCursorVisible;
+        applyAppCursorVisibility();
+        return;
+    }
+    
     // F11: フルスクリーン
     if (e.key === 'F11') {
         e.preventDefault();
@@ -393,14 +410,6 @@ function handleKeyUp(e) {
                 labelMax: 64
             });
 }
-    }
-    
-    // c/Cキーでカメラデバッグ表示の切り替え（Scene04専用）
-    if (e.key === 'c' || e.key === 'C') {
-        e.preventDefault();
-        if (currentScene.handleKeyPress) {
-            currentScene.handleKeyPress(e.key);
-        }
     }
 }
 

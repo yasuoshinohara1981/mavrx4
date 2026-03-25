@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Three.js GPU Particle System with OSC for Live Visual (実験用: 共有リソースシステム)",
     "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 3000 --strictPort --host",
     "build": "vite build",
     "preview": "vite preview",
     "osc-server": "node osc-server.js",

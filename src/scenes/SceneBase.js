@@ -92,7 +92,7 @@ export class SceneBase {
         // 表示設定
         this.SHOW_PARTICLES = false;
         this.SHOW_LINES = true;
-        this.SHOW_CAMERA_DEBUG = false;  // カメラパーティクルのデバッグ表示（デフォルトオフ、'c'キーで切り替え）
+        this.SHOW_CAMERA_DEBUG = false;  // カメラパーティクルのデバッグ表示（デフォルトオフ、コードから切り替え可）
         this.SHOW_CAMERA_DEBUG_CIRCLES = false;  // カメラ周りのCircle表示（デフォルトオフ）
         
         // カメラデバッグ用オブジェクト
@@ -1620,68 +1620,6 @@ export class SceneBase {
         if (this.cameraDebugCanvas) {
             this.cameraDebugCanvas.width = window.innerWidth;
             this.cameraDebugCanvas.height = window.innerHeight;
-        }
-    }
-    
-    /**
-     * キー入力処理（c/Cキーでカメラデバッグ表示を切り替え、またはカメラを切り替え）
-     */
-    handleKeyPress(key) {
-        if (key === 'c' || key === 'C') {
-            // 小文字のc: カメラデバッグ表示を切り替え
-            if (key === 'c') {
-                this.SHOW_CAMERA_DEBUG = !this.SHOW_CAMERA_DEBUG;
-                debugLog('camera', `Camera debug: ${this.SHOW_CAMERA_DEBUG ? 'ON' : 'OFF'}`);
-                
-                if (this.SHOW_CAMERA_DEBUG) {
-                    this.ensureCameraDebugCanvas();
-                }
-                
-                // カメラデバッググループの表示/非表示を切り替え
-                if (this.cameraDebugGroup) {
-                    this.cameraDebugGroup.visible = this.SHOW_CAMERA_DEBUG;
-                }
-                
-                // 個々のカメラデバッグオブジェクトの表示/非表示も切り替え
-                if (this.cameraDebugSpheres) {
-                    this.cameraDebugSpheres.forEach(sphere => {
-                        if (sphere) sphere.visible = this.SHOW_CAMERA_DEBUG;
-                    });
-                }
-                if (this.cameraDebugCircles) {
-                    this.cameraDebugCircles.forEach(circles => {
-                        if (circles) {
-                            circles.forEach(circle => {
-                                if (circle) circle.visible = this.SHOW_CAMERA_DEBUG;
-                            });
-                        }
-                    });
-                }
-                if (this.cameraDebugLines) {
-                    this.cameraDebugLines.forEach(line => {
-                        if (line) line.visible = this.SHOW_CAMERA_DEBUG;
-                    });
-                }
-                
-                // 座標軸も連動させる
-                this.SHOW_AXES = this.SHOW_CAMERA_DEBUG;
-                if (this.axesHelper) {
-                    this.axesHelper.visible = this.SHOW_AXES;
-                }
-            }
-            // 大文字のC: カメラを切り替え
-            else if (key === 'C') {
-                this.currentCameraIndex = (this.currentCameraIndex + 1) % this.cameraParticles.length;
-                debugLog('camera', `Camera switched to #${this.currentCameraIndex + 1}`);
-            }
-        }
-        // aキー: 座標軸（AxesHelper）の表示/非表示を切り替え
-        else if (key === 'a' || key === 'A') {
-            this.SHOW_AXES = !this.SHOW_AXES;
-            if (this.axesHelper) {
-                this.axesHelper.visible = this.SHOW_AXES;
-            }
-            debugLog('init', `Axes helper: ${this.SHOW_AXES ? 'ON' : 'OFF'}`);
         }
     }
     

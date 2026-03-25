@@ -4,7 +4,7 @@
  * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター
  * トラック9：画面中心（視線前方）から Scene12 風質感のスフィアを物理演算でスポーン
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
- * 床・壁は PBR コンクリート、ポストは ACES・SSAO・弱 DOF・最小 bloom・軽フォグ
+ * 床・壁は PBR コンクリート、ポストは ACES・SSAO・ごく弱い DOF（ミニチュア感回避）・最小 bloom・軽フォグ
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -1831,10 +1831,11 @@ export class Scene21 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
+            // aperture を上げすぎるとピント面付近までボケが乗りやすい。奥・手前のボケは残しつつシャープ域を広げる。
             this.initDOF({
-                focus: 1500,
-                aperture: 0.00001,
-                maxblur: 0.005
+                focus: 2000,
+                aperture: 0.0000045,
+                maxblur: 0.0028
             });
         }
         this.addFilmGrainIfEnabled(0.22, true);

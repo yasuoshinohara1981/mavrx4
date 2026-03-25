@@ -2,7 +2,7 @@
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
  * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityでヒートマップ色）
  * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター
- * トラック9：画面中心（視線前方）から Scene12 風質感のスフィアを物理演算でスポーン
+ * トラック9：ワールド（部屋）中心付近から Scene12 風質感のスフィアを物理演算でスポーン（カメラ注視点ではない）
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
  * 床・壁は PBR コンクリート、ポストは ACES・SSAO・ごく弱い DOF（ミニチュア感回避）・最小 bloom・軽フォグ
  */
@@ -162,9 +162,12 @@ export class Scene21 extends SceneBase {
         this.track9GridSize = 240;
         this._track9Gravity = new THREE.Vector3(0, -38, 0);
         this._track9SpawnPos = new THREE.Vector3();
-        this._track9CamDir = new THREE.Vector3();
+        /** トラック9：アンビエントBoxと同じ部屋内の基準高さ（ワールド中心＝XZ=0） */
+        this._track9WorldCenter = new THREE.Vector3(0, 0, 0);
         this._track9Diff = new THREE.Vector3();
         this._track9SubSteps = 2;
+        /** スポーン直後、半径が 0→目標まで伸びる時間（秒） */
+        this._track9BirthGrowSec = 0.42;
     }
 
     /** 96小節ループ想定（Scene16 と同系）。actual_tick の差分で歩幅を決める */
@@ -324,35 +327,49 @@ export class Scene21 extends SceneBase {
     }
 
     /**
-     * トラック5/6 で最後に生えたインスタンスの現在ワールド位置を注視点にする（グループ移動に追従）
+     * トラック5/6 の「最後に生えた」インスタンスのワールド位置を注視にする。
+     * 両方そろっているときはスポーン時刻の新しさで重み付けブレンドし、どちらか一方だけを追う切替で迷わないようにする。
      */
     _updateCameraFocusFromSpawns() {
-        let best = null;
-        if (this.shards.length) {
-            const s = this.shards[this.shards.length - 1];
-            best = { kind: 'shard', slot: s.slotIndex, t: s.spawnTime };
-        }
-        if (this.cylinders.length) {
-            const c = this.cylinders[this.cylinders.length - 1];
-            if (!best || c.spawnTime >= best.t) {
-                best = { kind: 'cylinder', slot: c.slotIndex, t: c.spawnTime };
-            }
-        }
-        if (!best) {
+        const hasS = this.shards.length > 0 && this.shardInstMesh && this.shardGroup;
+        const hasC = this.cylinders.length > 0 && this.cylinderInstMesh && this.cylinderGroup;
+
+        if (!hasS && !hasC) {
             if (this.cableBlobParticle) {
                 this._spawnFocusWorld.copy(this.cableBlobParticle.position);
             }
             return;
         }
-        if (best.kind === 'shard' && this.shardInstMesh && this.shardGroup) {
-            this.shardInstMesh.getMatrixAt(best.slot, this._shardMatrixTemp);
+
+        const now = performance.now();
+
+        if (hasS) {
+            const s = this.shards[this.shards.length - 1];
+            this.shardInstMesh.getMatrixAt(s.slotIndex, this._shardMatrixTemp);
             this._shardPosTemp.setFromMatrixPosition(this._shardMatrixTemp);
+            this.shardGroup.updateMatrixWorld(true);
             this.shardGroup.localToWorld(this._shardPosTemp);
-            this._spawnFocusWorld.copy(this._shardPosTemp);
-        } else if (best.kind === 'cylinder' && this.cylinderInstMesh && this.cylinderGroup) {
-            this.cylinderInstMesh.getMatrixAt(best.slot, this._cylinderMatrixTemp);
+        }
+        if (hasC) {
+            const c = this.cylinders[this.cylinders.length - 1];
+            this.cylinderInstMesh.getMatrixAt(c.slotIndex, this._cylinderMatrixTemp);
             this._cylinderPosTemp.setFromMatrixPosition(this._cylinderMatrixTemp);
+            this.cylinderGroup.updateMatrixWorld(true);
             this.cylinderGroup.localToWorld(this._cylinderPosTemp);
+        }
+
+        if (hasS && hasC) {
+            const eps = 80;
+            const ageS = Math.max(0, now - this.shards[this.shards.length - 1].spawnTime);
+            const ageC = Math.max(0, now - this.cylinders[this.cylinders.length - 1].spawnTime);
+            const wS = 1 / (eps + ageS);
+            const wC = 1 / (eps + ageC);
+            const inv = 1 / (wS + wC);
+            this._spawnFocusWorld.copy(this._shardPosTemp).multiplyScalar(wS * inv);
+            this._spawnFocusWorld.addScaledVector(this._cylinderPosTemp, wC * inv);
+        } else if (hasS) {
+            this._spawnFocusWorld.copy(this._shardPosTemp);
+        } else {
             this._spawnFocusWorld.copy(this._cylinderPosTemp);
         }
     }
@@ -1281,32 +1298,33 @@ export class Scene21 extends SceneBase {
     }
 
     /**
-     * 画面の中心＝カメラ視線上の点付近にスフィアを出す。velocity で半径と初速。
+     * ワールド中心（XZ=0）＋部屋内の代表高さ付近にスフィアを出す（アンビエントBoxと同ゾーン）。velocity で半径と初速。
      */
-    spawnTrack9SphereFromScreenCenter(velocity) {
-        if (!this.track9SphereGroup || !this.track9SharedGeo || !this._track9SphereMaterial || !this.camera) return;
+    spawnTrack9SphereFromWorldCenter(velocity) {
+        if (!this.track9SphereGroup || !this.track9SharedGeo || !this._track9SphereMaterial) return;
 
         const vMidi = this.normalizeMidiVelocity(velocity);
         const radius = THREE.MathUtils.clamp(22 + (vMidi / 127) * 76, 16, 102);
 
-        this.camera.getWorldDirection(this._track9CamDir);
-        const depth = 1050;
-        this._track9SpawnPos.copy(this.camera.position).addScaledVector(this._track9CamDir, depth);
-        this._track9SpawnPos.x += (Math.random() - 0.5) * 28;
-        this._track9SpawnPos.y += (Math.random() - 0.5) * 28;
-        this._track9SpawnPos.z += (Math.random() - 0.5) * 28;
+        const yMin = this.floorTopY + 220;
+        const yMax = this.ceilingY * 0.4;
+        const midY = (yMin + yMax) * 0.5;
+        this._track9WorldCenter.set(0, midY, 0);
+        this._track9SpawnPos.copy(this._track9WorldCenter);
+        this._track9SpawnPos.x += (Math.random() - 0.5) * 160;
+        this._track9SpawnPos.y += (Math.random() - 0.5) * 260;
+        this._track9SpawnPos.z += (Math.random() - 0.5) * 160;
 
         const mesh = new THREE.Mesh(this.track9SharedGeo, this._track9SphereMaterial);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
         const position = this._track9SpawnPos.clone();
-        const vel = new THREE.Vector3(
-            (Math.random() - 0.5),
-            (Math.random() - 0.5),
-            (Math.random() - 0.5)
-        );
-        if (vel.lengthSq() < 1e-6) vel.set(0.3, 0.5, -0.2);
+        const vel = new THREE.Vector3();
+        vel.subVectors(this._track9SpawnPos, this._track9WorldCenter);
+        if (vel.lengthSq() < 1e-10) {
+            vel.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+        }
         vel.normalize();
         const speed = 125 + (vMidi / 127) * 340;
         vel.multiplyScalar(speed);
@@ -1323,7 +1341,7 @@ export class Scene21 extends SceneBase {
             Math.random() * Math.PI * 2
         );
         mesh.position.copy(position);
-        mesh.scale.setScalar(radius);
+        mesh.scale.setScalar(radius * 0.015);
 
         this.track9SphereGroup.add(mesh);
         this.track9Spheres.push({
@@ -1331,6 +1349,8 @@ export class Scene21 extends SceneBase {
             position,
             velocity: vel,
             radius,
+            radiusNow: radius * 0.015,
+            birthAge: 0,
             angularVelocity
         });
 
@@ -1342,6 +1362,14 @@ export class Scene21 extends SceneBase {
 
     _updateTrack9SpherePhysics(deltaTime) {
         if (!this.track9Spheres.length) return;
+        const growSec = this._track9BirthGrowSec;
+        for (const sp of this.track9Spheres) {
+            sp.birthAge = (sp.birthAge ?? 0) + deltaTime;
+            const t = Math.min(1, sp.birthAge / growSec);
+            const u = t * t * (3 - 2 * t);
+            sp.radiusNow = sp.radius * Math.max(u, 0.015);
+        }
+
         const sub = this._track9SubSteps;
         const dt = deltaTime / sub;
         const grav = this._track9Gravity;
@@ -1364,7 +1392,7 @@ export class Scene21 extends SceneBase {
                 sp.position.addScaledVector(sp.velocity, dt);
                 sp.velocity.multiplyScalar(0.997);
 
-                const r = sp.radius;
+                const r = sp.radiusNow;
                 const x0 = -this.roomHalfW + margin + r;
                 const x1 = this.roomHalfW - margin - r;
                 const z0 = -this.roomHalfD + margin + r;
@@ -1415,7 +1443,7 @@ export class Scene21 extends SceneBase {
                                 const b = this.track9Spheres[j];
                                 diff.subVectors(a.position, b.position);
                                 const distSq = diff.lengthSq();
-                                const minD = a.radius + b.radius;
+                                const minD = a.radiusNow + b.radiusNow;
                                 if (distSq >= minD * minD || distSq < 1e-10) return;
                                 const dist = Math.sqrt(distSq);
                                 const overlap = (minD - dist) * 0.55;
@@ -1460,7 +1488,7 @@ export class Scene21 extends SceneBase {
 
         this.track9Spheres.forEach((sp) => {
             sp.mesh.position.copy(sp.position);
-            sp.mesh.scale.setScalar(sp.radius);
+            sp.mesh.scale.setScalar(sp.radiusNow);
         });
     }
 
@@ -1587,8 +1615,9 @@ export class Scene21 extends SceneBase {
         this.renderer.toneMappingExposure = 1.45;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        this.scene.background = new THREE.Color(0x1a1f28);
-        this.scene.fog = new THREE.FogExp2(0x1c222c, 0.00009);
+        /** 青みのあるスモーク（冷たい実験室の霞） */
+        this.scene.background = new THREE.Color(0x283440);
+        this.scene.fog = new THREE.FogExp2(0xb8cce8, 0.00028);
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -1745,7 +1774,13 @@ export class Scene21 extends SceneBase {
 
         this._updateCameraFocusFromSpawns();
         {
-            const a = 1 - Math.exp(-Math.min(deltaTime, 0.12) * 5.2);
+            const both =
+                this.shards.length > 0 &&
+                this.cylinders.length > 0 &&
+                this.shardInstMesh &&
+                this.cylinderInstMesh;
+            const smoothK = both ? 3.25 : 5.2;
+            const a = 1 - Math.exp(-Math.min(deltaTime, 0.12) * smoothK);
             this._cameraFocusSmoothed.lerp(this._spawnFocusWorld, a);
         }
         this.updateCamera();
@@ -1795,7 +1830,7 @@ export class Scene21 extends SceneBase {
             }
         } else if (tn === 9) {
             if (velocity > 0) {
-                this.spawnTrack9SphereFromScreenCenter(velocity);
+                this.spawnTrack9SphereFromWorldCenter(velocity);
             }
         }
     }
@@ -1849,7 +1884,7 @@ export class Scene21 extends SceneBase {
     }
 
     render() {
-        this.renderer.setClearColor(0x1a1f28);
+        this.renderer.setClearColor(0x283440);
         super.render();
     }
 

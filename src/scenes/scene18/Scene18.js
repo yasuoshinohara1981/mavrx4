@@ -15,6 +15,7 @@ import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
+import { FogNoisePass } from '../../lib/FogNoisePass.js';
 
 export class Scene18 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -62,6 +63,11 @@ export class Scene18 extends SceneBase {
         this.ambientParticleCount = 2000;
         this.ambientInstManager = null;
         this.ambientParticles = [];
+
+        this._fogNoiseConfig = null;
+        this.fogNoisePass = null;
+        this._composerRTPrimary = null;
+        this._composerRTSecondary = null;
 
         // ストロボエフェクト管理
         this.strobeActive = false;
@@ -195,12 +201,18 @@ export class Scene18 extends SceneBase {
         await super.setup();
 
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.0;
+        this.renderer.toneMappingExposure = 0.88;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        /** 奥行きと霞（Scene21 同型に近い指数フォグ） */
-        this.scene.background = new THREE.Color(0x151820);
-        this.scene.fog = new THREE.FogExp2(0x1e2838, 0.000095);
+        this.scene.background = new THREE.Color(0x0a0a0a);
+        /** FogNoisePass 側で合成（密度に空間＋時間ノイズを微弱に重ねる） */
+        this._fogNoiseConfig = {
+            color: new THREE.Color(0x5c5c5c),
+            density: 0.00042,
+            noiseAmp: 0.055,
+            noiseScale: 0.000072,
+            timeScale: 0.11
+        };
 
         // 初期位置も十分に離す
         this.camera.position.set(0, 5000, 10000);
@@ -249,13 +261,13 @@ export class Scene18 extends SceneBase {
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
         const mat = new THREE.MeshStandardMaterial({
-            color: 0xc4ccd6,
-            metalness: 0.88,
-            roughness: 0.22,
+            color: 0x989898,
+            metalness: 0.82,
+            roughness: 0.32,
             envMap: envTex,
-            envMapIntensity: 1.15,
-            emissive: 0x3a4552,
-            emissiveIntensity: 0.05,
+            envMapIntensity: 0.75,
+            emissive: 0x181818,
+            emissiveIntensity: 0.035,
             fog: true
         });
 
@@ -373,14 +385,14 @@ export class Scene18 extends SceneBase {
     }
 
     setupLights() {
-        const pureWhite = 0xffffff; 
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x333355, 0.35); 
+        const pureWhite = 0xffffff;
+        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x1a1a1a, 0.28);
         this.scene.add(hemiLight);
 
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.22);
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.16);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.7); 
+        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.55); 
         directionalLight.position.set(2000, 3000, 2000);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -8000;
@@ -403,7 +415,7 @@ export class Scene18 extends SceneBase {
 
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
-            color: 0xa8b0b8  // 壁・床（かなり明るく）
+            color: 0x6c6c6c
         });
     }
 
@@ -414,32 +426,30 @@ export class Scene18 extends SceneBase {
 
         let sphereMat;
         if (this.useCeramicSphere) {
-            // 陶器風の白（フラグON時）
             sphereMat = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                emissive: 0x333333, // 0x111111 -> 明るく
-                emissiveIntensity: 0.08, // 0.02 -> 0.08
+                color: 0x1a1a1a,
+                emissive: 0x080808,
+                emissiveIntensity: 0.03,
                 metalness: 0.0,
-                roughness: 0.12,
+                roughness: 0.35,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 0.8,
-                side: THREE.FrontSide 
+                envMapIntensity: 0.35,
+                side: THREE.FrontSide
             });
         } else {
-            // Git版：ブルーグレー（インダストリアル・スチール）※明るめに調整
-            const coreColor = 0xa8b2bc; // 0x808a90 -> 明るく
+            const coreColor = 0x262626;
             const textures = this.generateDirtyTextures(1024, coreColor, true);
             sphereMat = new THREE.MeshStandardMaterial({
                 color: coreColor,
                 map: textures.map,
                 bumpMap: textures.bumpMap,
-                bumpScale: 10.0,
-                emissive: 0x404850, // 0x222a33 -> 明るく
-                emissiveIntensity: 0.25, // 0.1 -> 0.25
-                metalness: 0.5,
-                roughness: 0.6,
+                bumpScale: 8.0,
+                emissive: 0x0a0a0a,
+                emissiveIntensity: 0.06,
+                metalness: 0.45,
+                roughness: 0.72,
                 envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 0.7,
+                envMapIntensity: 0.38,
                 side: THREE.FrontSide
             });
         }
@@ -986,9 +996,9 @@ export class Scene18 extends SceneBase {
 
         // 色ごとのマテリアル作成とメッシュ生成
         const colors = {
-            dark: 0x606870,
-            mid: 0x808a90,
-            light: 0xa0acb5
+            dark: 0x606060,
+            mid: 0x808080,
+            light: 0xa0a0a0
         };
 
         this.detailMaterials = []; 
@@ -1468,25 +1478,25 @@ export class Scene18 extends SceneBase {
         this.stabilizerPipes = pipeGroup; // 管理用に追加
         this.scene.add(pipeGroup);
 
-        // --- 明るめの「ブルーグレーの古い鉄」風のテクスチャとマテリアル ---
-        const beamBaseColor = 0xa0b0c0; // 明るいブルーグレー（スチール風）
-        const beamTextures = this.generateDirtyTextures(512, beamBaseColor, true); 
-        
+        // --- 無彩色のスチール風テクスチャ ---
+        const beamBaseColor = 0x989898;
+        const beamTextures = this.generateDirtyTextures(512, beamBaseColor, true);
+
         const beamMat = new THREE.MeshStandardMaterial({
             color: beamBaseColor,
             map: beamTextures.map,
             bumpMap: beamTextures.bumpMap,
-            bumpScale: 10.0, // 8.0 -> 10.0 (マットな分、凹凸を少し強調)
-            metalness: 0.3, // 0.5 -> 0.3 (金属の反射を抑えてマットに)
-            roughness: 0.9, // 0.4 -> 0.9 (ガッツリ艶消し！)
-            emissive: 0x223344, 
+            bumpScale: 10.0,
+            metalness: 0.3,
+            roughness: 0.9,
+            emissive: 0x202020,
             emissiveIntensity: 0.2,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
             envMapIntensity: 0.3 // 1.5 -> 0.3 (映り込みを最小限にしてマット感を出す)
         });
 
         // 設置パーツ用のマテリアル（こちらもマットに！）
-        const connectorColor = 0x8090a0;
+        const connectorColor = 0x858585;
         const connectorTextures = this.generateDirtyTextures(256, connectorColor, true);
         const connectorMat = new THREE.MeshStandardMaterial({
             color: connectorColor,
@@ -1494,8 +1504,8 @@ export class Scene18 extends SceneBase {
             bumpMap: connectorTextures.bumpMap,
             bumpScale: 6.0,
             metalness: 0.4,
-            roughness: 0.8, // ツヤを消す
-            emissive: 0x112233,
+            roughness: 0.8,
+            emissive: 0x181818,
             emissiveIntensity: 0.1,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
             envMapIntensity: 0.4
@@ -1620,7 +1630,7 @@ export class Scene18 extends SceneBase {
         }
 
         // 球体の外殻・パーツの発光強度の補間（陶器=0.02, ブルーグレー=0.1）
-        const sphereEmissiveTarget = this.useCeramicSphere ? 0.02 : 0.1;
+        const sphereEmissiveTarget = this.useCeramicSphere ? 0.02 : 0.05;
         if (this.centralSphere) {
             this.centralSphere.traverse(child => {
                 if (child === this.innerSphere || child === this.coreGlow) return;
@@ -1669,6 +1679,10 @@ export class Scene18 extends SceneBase {
 
         this._updateAmbientParticles(deltaTime);
 
+        if (this.fogNoisePass) {
+            this.fogNoisePass.uniforms.time.value = this.time;
+        }
+
         this.updateAutoFocus();
 
         // --- 2Dコールアウトの更新（共通システムを使用） ---
@@ -1700,7 +1714,7 @@ export class Scene18 extends SceneBase {
         }
 
         // 外殻やパーツの発光連動は完全に削除（不自然な光りを防ぐ）
-        const sphereEmissiveTarget = this.useCeramicSphere ? 0.02 : 0.1;
+        const sphereEmissiveTarget = this.useCeramicSphere ? 0.02 : 0.05;
         if (this.centralSphere) {
             this.centralSphere.traverse(child => {
                 if (child === this.innerSphere || child === this.coreGlow) return;
@@ -1722,10 +1736,45 @@ export class Scene18 extends SceneBase {
         this.targetLightIntensity = flashIntensity; 
     }
 
+    _createComposerRenderTargets() {
+        const pr = this.renderer.getPixelRatio();
+        const w = Math.max(1, Math.floor(window.innerWidth * pr));
+        const h = Math.max(1, Math.floor(window.innerHeight * pr));
+        const mk = () => {
+            const rt = new THREE.WebGLRenderTarget(w, h, {
+                type: THREE.HalfFloatType,
+                depthBuffer: true
+            });
+            rt.depthTexture = new THREE.DepthTexture(w, h);
+            return rt;
+        };
+        if (this._composerRTPrimary) this._composerRTPrimary.dispose();
+        if (this._composerRTSecondary) this._composerRTSecondary.dispose();
+        this._composerRTPrimary = mk();
+        this._composerRTSecondary = mk();
+    }
+
     initPostProcessing() {
         if (!this.composer) {
-            this.composer = new EffectComposer(this.renderer);
+            this._createComposerRenderTargets();
+            this.composer = new EffectComposer(this.renderer, this._composerRTPrimary);
+            this.composer.renderTarget2.dispose();
+            this.composer.renderTarget2 = this._composerRTSecondary;
+            this.composer.writeBuffer = this.composer.renderTarget1;
+            this.composer.readBuffer = this.composer.renderTarget2;
+
             this.composer.addPass(new RenderPass(this.scene, this.camera));
+
+            this.fogNoisePass = new FogNoisePass(this.camera);
+            const fc = this._fogNoiseConfig;
+            if (fc) {
+                this.fogNoisePass.uniforms.fogColor.value = fc.color;
+                this.fogNoisePass.uniforms.fogDensity.value = fc.density;
+                this.fogNoisePass.uniforms.noiseAmp.value = fc.noiseAmp;
+                this.fogNoisePass.uniforms.noiseScale.value = fc.noiseScale;
+                this.fogNoisePass.uniforms.timeScale.value = fc.timeScale;
+            }
+            this.composer.addPass(this.fogNoisePass);
         }
         if (this.useSSAO && !this.ssaoPass) {
             this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
@@ -1841,7 +1890,7 @@ export class Scene18 extends SceneBase {
             const isWhite = Math.floor(performance.now() / 32) % 2 === 0;
             this.renderer.setClearColor(isWhite ? 0xffffff : 0x000000);
         } else {
-            this.renderer.setClearColor(0x151820);
+            this.renderer.setClearColor(0x0a0a0a);
         }
         super.render();
     }
@@ -1849,6 +1898,17 @@ export class Scene18 extends SceneBase {
     dispose() {
         this.initialized = false;
         this.scene.fog = null;
+
+        if (this.fogNoisePass) {
+            if (this.composer) {
+                const fi = this.composer.passes.indexOf(this.fogNoisePass);
+                if (fi !== -1) this.composer.passes.splice(fi, 1);
+            }
+            this.fogNoisePass.dispose();
+            this.fogNoisePass = null;
+        }
+        this._composerRTPrimary = null;
+        this._composerRTSecondary = null;
 
         if (this.ssaoPass) {
             if (this.composer) {

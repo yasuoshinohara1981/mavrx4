@@ -51,6 +51,9 @@ export class Scene21 extends SceneBase {
         /** 寿命終盤でフェードアウトする時間（ms） */
         this.shardFadeOutMs = 1800;
         this.cylinderFadeOutMs = 1800;
+        /** 生成時に 0→目標サイズへ伸びる時間（ms） */
+        this.shardGrowInMs = 420;
+        this.cylinderGrowInMs = 420;
         this._shardOpacityAttr = null;
         this._cylinderOpacityAttr = null;
         this.shardGroup = null;
@@ -100,10 +103,19 @@ export class Scene21 extends SceneBase {
 
         this.useDOF = true;
         this.useBloom = true;
+        // フォグと併用するため、黒縁が出にくい弱め設定で SSAO を使う
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;
         this.ssaoPass = null;
+        this.saoPass = null;
+        this.aoDepthTexture = null;
+        this.ssaoNearKernelRadius = 8.0;
+        this.ssaoNearMinDistance = 0.007;
+        this.ssaoNearMaxDistance = 0.16;
+        this.ssaoFarAttenuation = 0.28;
+        // Scene21 は固定DOFを優先（オートフォーカスで効きが薄く見えるのを防ぐ）
+        this.useAutoFocusDOF = false;
         /** composer では最後に必須：renderer.toneMapping / 出力色空間を画面に適用 */
         this.outputPass = null;
 
@@ -144,9 +156,10 @@ export class Scene21 extends SceneBase {
         /** 破片・シリンダ・トラック9スポーンに同期して出し、寿命で消す */
         this.ambientParticleLifetimeMs = 11000;
         this.ambientParticleFadeOutMs = 1400;
-        this.ambientParticlesPerShard = 4;
-        this.ambientParticlesPerCylinder = 5;
-        this.ambientParticlesPerTrack9 = 7;
+        this.ambientParticlesPerShard = 10;
+        this.ambientParticlesPerCylinder = 12;
+        this.ambientParticlesPerTrack9 = 16;
+        this.ambientMinLiving = 180;
         this._ambientFreeSlots = [];
         this._ambientLiving = [];
         this._ambientHidePos = new THREE.Vector3(0, -1e6, 0);
@@ -170,9 +183,48 @@ export class Scene21 extends SceneBase {
         this._cylinderPathDir = new THREE.Vector3(0, 0.1, 1).normalize();
         /** OSC actual_tick ベースのスポーン（トラック6） */
         this._lastSpawnTickTrack6 = null;
+        /** シリンダー生成時の石バースト（インスタンシング5000粒） */
+        this.redBurstParticleCount = 5000;
+        this.redBurstInstMesh = null;
+        this.redBurstSharedGeo = null;
+        this.redBurstMaterial = null;
+        this._redBurstPositions = null;
+        this._redBurstVelocities = null;
+        this._redBurstColors = null;
+        this._redBurstRotQuats = null;
+        this._redBurstScales = null;
+        this._redBurstActive = false;
+        this._redBurstAgeSec = 0;
+        this._redBurstLifeSec = 1.35;
+        this.redBurstCurlStrength = 95;
+        this.redBurstCurlFreq = 0.0022;
+        this._redBurstPosTemp = new THREE.Vector3();
+        this._redBurstQuatTemp = new THREE.Quaternion();
+        this._redBurstScaleTemp = new THREE.Vector3();
+        this._redBurstMatrixTemp = new THREE.Matrix4();
+        this._redBurstColorTemp = new THREE.Color();
 
         this._jitterSide = new THREE.Vector3();
         this._jitterUp = new THREE.Vector3();
+
+        /** 常時漂う黒曜石風のチャコール四角形（カールノイズ） */
+        this.obsidianCount = 1000;
+        this.obsidianInstMesh = null;
+        this.obsidianGeometry = null;
+        this.obsidianMaterial = null;
+        this.obsidianBumpMap = null;
+        this._obsidianPositions = null;
+        this._obsidianVelocities = null;
+        this._obsidianRotQuats = null;
+        this._obsidianScales = null;
+        this._obsidianPosTemp = new THREE.Vector3();
+        this._obsidianQuatTemp = new THREE.Quaternion();
+        this._obsidianScaleTemp = new THREE.Vector3();
+        this._obsidianMatrixTemp = new THREE.Matrix4();
+        this.obsidianSpawnRadius = 1200;
+        this.obsidianCurlStrength = 180;
+        this.obsidianCurlFreq = 0.0056;
+        this.obsidianMotionScale = 6.0;
 
         /** トラック9：ワールド中心付近スポーンの物理スフィア（チャコール調） */
         this.track9SphereGroup = null;
@@ -200,6 +252,9 @@ export class Scene21 extends SceneBase {
         /** 壁周りレーザースキャン（1 小節＝TICK_LOOP/96 tick で一周） */
         this.laserScanMesh = null;
         this._laserScanMaterial = null;
+        /** フォグの偏りを作るための薄いノイズ空気ボリューム */
+        this.airNoiseVolume = null;
+        this.airNoiseMaterial = null;
         this._wallCenterY = this.floorTopY + (this.ceilingY - this.floorTopY) * 0.5;
         this._laserHalfW = this.roomHalfW - 240;
         this._laserHalfD = this.roomHalfD - 240;
@@ -210,7 +265,8 @@ export class Scene21 extends SceneBase {
     static METERS_PER_TICK_SHARD = 2.45;
     static METERS_PER_TICK_CYLINDER = 2.45;
     /**
-     * InstancedMesh 用：インスタンスごとの不透明度（instanceOpacity 属性 + opaque_fragment 後に乗算）
+     * InstancedMesh 用：インスタンスごとの不透明度（instanceOpacity 属性）
+     * depthWrite を有効にして、回転時の描画順由来の浮き感を抑える。
      */
     static _attachInstanceOpacityAttribute(geometry, count) {
         const a = new Float32Array(count);
@@ -223,7 +279,7 @@ export class Scene21 extends SceneBase {
 
     static _applyInstanceOpacityShader(material) {
         material.transparent = true;
-        material.depthWrite = false;
+        material.depthWrite = true;
         material.onBeforeCompile = (shader) => {
             shader.vertexShader = 'attribute float instanceOpacity;\nvarying float vInstanceOpacity;\n' + shader.vertexShader;
             shader.vertexShader = shader.vertexShader.replace(
@@ -234,7 +290,6 @@ export class Scene21 extends SceneBase {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <opaque_fragment>',
                 `#include <opaque_fragment>
-                gl_FragColor.rgb *= vInstanceOpacity;
                 gl_FragColor.a *= vInstanceOpacity;`
             );
         };
@@ -245,7 +300,7 @@ export class Scene21 extends SceneBase {
      */
     static _applyRedCylinderShader(material) {
         material.transparent = true;
-        material.depthWrite = false;
+        material.depthWrite = true;
         material.onBeforeCompile = (shader) => {
             shader.vertexShader =
                 'attribute float instanceOpacity;\nvarying float vInstanceOpacity;\nvarying vec3 vCylinderWPos;\n' + shader.vertexShader;
@@ -302,7 +357,6 @@ float cylinderSurfH( vec3 v ) {
             shader.fragmentShader = shader.fragmentShader.replace(
                 '#include <opaque_fragment>',
                 `#include <opaque_fragment>
-                gl_FragColor.rgb *= vInstanceOpacity;
                 gl_FragColor.a *= vInstanceOpacity;`
             );
         };
@@ -314,7 +368,23 @@ float cylinderSurfH( vec3 v ) {
         const t0 = Math.max(0, lifeMs - fade);
         if (elapsedMs <= t0) return 1;
         if (elapsedMs >= lifeMs) return 0;
-        return 1 - (elapsedMs - t0) / (lifeMs - t0);
+        const t = (elapsedMs - t0) / (lifeMs - t0);
+        // 線形よりも緩やかに落とす（ふわっと透明化）
+        const eased = t * t * (3 - 2 * t);
+        return 1 - eased;
+    }
+
+    _growScale01(elapsedMs, growMs) {
+        const g = Math.max(1, Number(growMs) || 1);
+        const t = THREE.MathUtils.clamp(elapsedMs / g, 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
+    _growInMsFromDuration(durationMs, baseGrowMs) {
+        const d = Math.max(1, Number(durationMs) || 180);
+        // duration が長いほど生まれる速度をゆっくりにする（短音は素早く立ち上がる）
+        const k = THREE.MathUtils.clamp(d / 700, 0.35, 2.1);
+        return baseGrowMs * k;
     }
 
     _updateFadeOpacity() {
@@ -322,28 +392,48 @@ float cylinderSurfH( vec3 v ) {
         if (this._shardOpacityAttr && this.shards.length) {
             const arr = this._shardOpacityAttr.array;
             let dirty = false;
+            let matrixDirty = false;
             for (const s of this.shards) {
-                const op = this._fadeOpacity01(now - s.spawnTime, this.shardLifetimeMs, this.shardFadeOutMs);
+                const age = now - s.spawnTime;
+                const op = this._fadeOpacity01(age, this.shardLifetimeMs, this.shardFadeOutMs);
                 const i = s.slotIndex;
                 if (Math.abs(arr[i] - op) > 1e-4) {
                     arr[i] = op;
                     dirty = true;
                 }
+                const grow = this._growScale01(age, s.growInMs ?? this.shardGrowInMs);
+                if (grow < 0.999 && s.baseScaleVec && s.localPos && s.localQuat) {
+                    this._shardScaleTemp.copy(s.baseScaleVec).multiplyScalar(grow);
+                    this._shardMatrixTemp.compose(s.localPos, s.localQuat, this._shardScaleTemp);
+                    this.shardInstMesh.setMatrixAt(i, this._shardMatrixTemp);
+                    matrixDirty = true;
+                }
             }
             if (dirty) this._shardOpacityAttr.needsUpdate = true;
+            if (matrixDirty && this.shardInstMesh) this.shardInstMesh.instanceMatrix.needsUpdate = true;
         }
         if (this._cylinderOpacityAttr && this.cylinders.length) {
             const arr = this._cylinderOpacityAttr.array;
             let dirty = false;
+            let matrixDirty = false;
             for (const c of this.cylinders) {
-                const op = this._fadeOpacity01(now - c.spawnTime, this.cylinderLifetimeMs, this.cylinderFadeOutMs);
+                const age = now - c.spawnTime;
+                const op = this._fadeOpacity01(age, this.cylinderLifetimeMs, this.cylinderFadeOutMs);
                 const i = c.slotIndex;
                 if (Math.abs(arr[i] - op) > 1e-4) {
                     arr[i] = op;
                     dirty = true;
                 }
+                const grow = this._growScale01(age, c.growInMs ?? this.cylinderGrowInMs);
+                if (grow < 0.999 && c.baseRadius != null && c.baseLength != null && c.localPos && c.localQuat) {
+                    this._cylinderScaleTemp.set(c.baseRadius * grow, c.baseLength * grow, c.baseRadius * grow);
+                    this._cylinderMatrixTemp.compose(c.localPos, c.localQuat, this._cylinderScaleTemp);
+                    this.cylinderInstMesh.setMatrixAt(i, this._cylinderMatrixTemp);
+                    matrixDirty = true;
+                }
             }
             if (dirty) this._cylinderOpacityAttr.needsUpdate = true;
+            if (matrixDirty && this.cylinderInstMesh) this.cylinderInstMesh.instanceMatrix.needsUpdate = true;
         }
     }
 
@@ -884,7 +974,8 @@ float cylinderSurfH( vec3 v ) {
             metalness: 0,
             aoMap: textures.aoMap,
             aoMapIntensity: 0.5,
-            envMapIntensity: 0.95 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1))
+            envMapIntensity: 0.95 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
+            fog: true
         });
         const wallConcreteMat = floorConcreteMat.clone();
         wallConcreteMat.map = textures.wallMap || textures.map;
@@ -932,7 +1023,8 @@ float cylinderSurfH( vec3 v ) {
             metalness: 0,
             emissive: 0xffffff,
             emissiveIntensity: 8.5 * (this.sceneLightingScale ?? 1),
-            envMapIntensity: 1.0
+            envMapIntensity: 1.0,
+            fog: true
         });
         this.ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
         this.ceilingMesh.position.set(0, ceilingY, 0);
@@ -1054,7 +1146,15 @@ float cylinderSurfH( vec3 v ) {
         this._shardPosTemp.copy(newPos);
         this.shardGroup.updateMatrixWorld(true);
         this.shardGroup.worldToLocal(this._shardPosTemp);
-        this._shardScaleTemp.set(r, r, r);
+        const shapeSeed = this._shardNoise(si * 0.37, 6.9, 2.4);
+        const ex = 0.62 + 0.95 * this._shardNoise(shapeSeed, si * 0.19, 1.7);
+        const ey = 0.62 + 0.95 * this._shardNoise(si * 0.11, shapeSeed, 2.9);
+        const ez = 0.62 + 0.95 * this._shardNoise(3.1, si * 0.23, shapeSeed);
+        const invAvg = 3 / (ex + ey + ez);
+        const sx = r * ex * invAvg;
+        const sy = r * ey * invAvg;
+        const sz = r * ez * invAvg;
+        this._shardScaleTemp.set(sx * 0.02, sy * 0.02, sz * 0.02);
         this._shardMatrixTemp.compose(this._shardPosTemp, qFinal, this._shardScaleTemp);
         this.shardInstMesh.setMatrixAt(slotIndex, this._shardMatrixTemp);
         this.shardInstMesh.instanceMatrix.needsUpdate = true;
@@ -1063,7 +1163,14 @@ float cylinderSurfH( vec3 v ) {
             this._shardOpacityAttr.needsUpdate = true;
         }
 
-        this.shards.push({ slotIndex, spawnTime: performance.now() });
+        this.shards.push({
+            slotIndex,
+            spawnTime: performance.now(),
+            localPos: this._shardPosTemp.clone(),
+            localQuat: qFinal.clone(),
+            baseScaleVec: new THREE.Vector3(sx, sy, sz),
+            growInMs: this._growInMsFromDuration(dur, this.shardGrowInMs)
+        });
         this._spawnAmbientParticlesBurst(newPos, this.ambientParticlesPerShard);
     }
 
@@ -1132,7 +1239,8 @@ float cylinderSurfH( vec3 v ) {
             envMapIntensity: 0.92 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
             emissive: 0x000000,
             emissiveIntensity: 0,
-            opacity: 1
+            opacity: 1,
+            fog: true
         });
         Scene21._applyInstanceOpacityShader(this._metalShardMaterial);
 
@@ -1168,10 +1276,10 @@ float cylinderSurfH( vec3 v ) {
         this.cylinderGroup.position.set(0, 0, 0);
         this.scene.add(this.cylinderGroup);
 
-        /** レーザーより弱い赤。一般的な赤寄り＋弱エミッシブ（ブルームは控えめ） */
+        /** レーザーより弱い赤橙。暖色寄り＋弱エミッシブ（ブルームは控えめ） */
         this._redCylinderMaterial = new THREE.MeshStandardMaterial({
-            color: 0xae2028,
-            emissive: 0x160608,
+            color: 0xcc4624,
+            emissive: 0x3a1208,
             emissiveIntensity: 0.3,
             metalness: 0,
             roughness: 0.52,
@@ -1236,15 +1344,20 @@ float cylinderSurfH( vec3 v ) {
         const stepLen = deltaTick * Scene21.METERS_PER_TICK_CYLINDER;
         this._cylinderPosTemp.copy(this._lastCylinderWorldPos).addScaledVector(this._cylinderPathDir, stepLen);
         this._applySequenceAwareJitter(this._cylinderPosTemp, deltaTick, this._cylinderPathDir, ci * 2.1 + tick * 0.0005, ci * 1.3 + 9.2);
+        // 端に張り付き続けないよう、緩く中心へ戻す
+        this._cylinderPosTemp.x *= 0.92;
+        this._cylinderPosTemp.z *= 0.92;
+        const cylXLimit = this.roomHalfW * 0.62;
+        const cylZLimit = this.roomHalfD * 0.62;
         this._cylinderPosTemp.x = THREE.MathUtils.clamp(
             this._cylinderPosTemp.x,
-            -this.roomHalfW + 200,
-            this.roomHalfW - 200
+            -cylXLimit,
+            cylXLimit
         );
         this._cylinderPosTemp.z = THREE.MathUtils.clamp(
             this._cylinderPosTemp.z,
-            -this.roomHalfD + 200,
-            this.roomHalfD - 200
+            -cylZLimit,
+            cylZLimit
         );
         this._cylinderPosTemp.y = THREE.MathUtils.clamp(
             this._cylinderPosTemp.y,
@@ -1272,7 +1385,7 @@ float cylinderSurfH( vec3 v ) {
         this.cylinderGroup.updateMatrixWorld(true);
         this.cylinderGroup.worldToLocal(this._cylinderPosTemp);
 
-        this._cylinderScaleTemp.set(radius, length, radius);
+        this._cylinderScaleTemp.set(radius * 0.02, length * 0.02, radius * 0.02);
         this._cylinderMatrixTemp.compose(this._cylinderPosTemp, this._cylinderQuatTemp, this._cylinderScaleTemp);
         this.cylinderInstMesh.setMatrixAt(slotIndex, this._cylinderMatrixTemp);
         this.cylinderInstMesh.instanceMatrix.needsUpdate = true;
@@ -1281,7 +1394,16 @@ float cylinderSurfH( vec3 v ) {
             this._cylinderOpacityAttr.needsUpdate = true;
         }
 
-        this.cylinders.push({ slotIndex, spawnTime: performance.now() });
+        this.cylinders.push({
+            slotIndex,
+            spawnTime: performance.now(),
+            localPos: this._cylinderPosTemp.clone(),
+            localQuat: this._cylinderQuatTemp.clone(),
+            baseRadius: radius,
+            baseLength: length,
+            growInMs: this._growInMsFromDuration(dur, this.cylinderGrowInMs)
+        });
+        this.triggerRedCylinderBurst(this._lastCylinderWorldPos, velocity, durationMs);
         this._spawnAmbientParticlesBurst(this._lastCylinderWorldPos, this.ambientParticlesPerCylinder);
     }
 
@@ -1332,6 +1454,331 @@ float cylinderSurfH( vec3 v ) {
         }
     }
 
+    initRedCylinderBurstParticles() {
+        if (this.redBurstInstMesh) return;
+        const n = this.redBurstParticleCount;
+        this._redBurstPositions = new Float32Array(n * 3);
+        this._redBurstVelocities = new Float32Array(n * 3);
+        this._redBurstColors = new Float32Array(n * 3);
+        this._redBurstRotQuats = new Float32Array(n * 4);
+        this._redBurstScales = new Float32Array(n);
+        this.redBurstSharedGeo = new THREE.DodecahedronGeometry(1, 0);
+        this.redBurstMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.0,
+            roughness: 0.96,
+            emissive: 0x080808,
+            emissiveIntensity: 0.05,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.0,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
+            fog: true
+        });
+        this.redBurstInstMesh = new THREE.InstancedMesh(this.redBurstSharedGeo, this.redBurstMaterial, n);
+        this.redBurstInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.redBurstInstMesh.frustumCulled = false;
+        this.redBurstInstMesh.visible = false;
+        const hidePos = new THREE.Vector3(0, -1e6, 0);
+        const hideQuat = new THREE.Quaternion();
+        const hideScale = new THREE.Vector3(0, 0, 0);
+        for (let i = 0; i < n; i++) {
+            this._redBurstMatrixTemp.compose(hidePos, hideQuat, hideScale);
+            this.redBurstInstMesh.setMatrixAt(i, this._redBurstMatrixTemp);
+            this.redBurstInstMesh.setColorAt(i, new THREE.Color(0, 0, 0));
+        }
+        this.redBurstInstMesh.instanceMatrix.needsUpdate = true;
+        if (this.redBurstInstMesh.instanceColor) this.redBurstInstMesh.instanceColor.needsUpdate = true;
+        this.scene.add(this.redBurstInstMesh);
+    }
+
+    triggerRedCylinderBurst(worldPos, velocity = 127, durationMs = 180) {
+        if (!this.redBurstInstMesh || !this._redBurstPositions || !this._redBurstVelocities) return;
+        const n = this.redBurstParticleCount;
+        const vMidi = this.normalizeMidiVelocity(velocity) / 127;
+        const durN = THREE.MathUtils.clamp((Number(durationMs) || 180) / 900, 0.35, 2.2);
+        const baseSpeed = 130 + vMidi * 520;
+        const spread = 12 + vMidi * 56;
+        for (let i = 0; i < n; i++) {
+            const i3 = i * 3;
+            const th = Math.random() * Math.PI * 2;
+            const ph = Math.acos(2 * Math.random() - 1);
+            const dx = Math.sin(ph) * Math.cos(th);
+            const dy = Math.cos(ph);
+            const dz = Math.sin(ph) * Math.sin(th);
+            const r = Math.random() * spread;
+            this._redBurstPositions[i3] = worldPos.x + dx * r;
+            this._redBurstPositions[i3 + 1] = worldPos.y + dy * r;
+            this._redBurstPositions[i3 + 2] = worldPos.z + dz * r;
+            const sp = baseSpeed * (0.45 + Math.random() * 1.2);
+            this._redBurstVelocities[i3] = dx * sp;
+            this._redBurstVelocities[i3 + 1] = dy * sp + 35;
+            this._redBurstVelocities[i3 + 2] = dz * sp;
+            const qi = i * 4;
+            this._redBurstQuatTemp.setFromEuler(
+                new THREE.Euler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 'XYZ')
+            );
+            this._redBurstRotQuats[qi] = this._redBurstQuatTemp.x;
+            this._redBurstRotQuats[qi + 1] = this._redBurstQuatTemp.y;
+            this._redBurstRotQuats[qi + 2] = this._redBurstQuatTemp.z;
+            this._redBurstRotQuats[qi + 3] = this._redBurstQuatTemp.w;
+            this._redBurstScales[i] = 1.3 + Math.random() * 3.9;
+        }
+        this._redBurstAgeSec = 0;
+        this._redBurstLifeSec = THREE.MathUtils.clamp(0.9 * durN, 0.38, 1.95);
+        this._redBurstActive = true;
+        this.redBurstInstMesh.visible = true;
+        this.redBurstMaterial.opacity = 0.95;
+    }
+
+    _setHeatmapColor01(t, i3, out) {
+        const x = THREE.MathUtils.clamp(t, 0, 1);
+        let r; let g; let b;
+        if (x < 0.25) {
+            const u = x / 0.25;
+            r = 0.1;
+            g = u;
+            b = 1.0;
+        } else if (x < 0.5) {
+            const u = (x - 0.25) / 0.25;
+            r = 0.1;
+            g = 1.0;
+            b = 1.0 - u;
+        } else if (x < 0.75) {
+            const u = (x - 0.5) / 0.25;
+            r = u;
+            g = 1.0;
+            b = 0.0;
+        } else {
+            const u = (x - 0.75) / 0.25;
+            r = 1.0;
+            g = 1.0 - u;
+            b = 0.0;
+        }
+        out[i3] = r;
+        out[i3 + 1] = g;
+        out[i3 + 2] = b;
+    }
+
+    _updateRedCylinderBurstParticles(deltaTime) {
+        if (!this._redBurstActive || !this.redBurstInstMesh || !this._redBurstPositions || !this._redBurstVelocities || !this._redBurstColors) return;
+        const dt = Math.min(deltaTime, 0.05);
+        this._redBurstAgeSec += dt;
+        const n = this.redBurstParticleCount;
+        const drag = Math.exp(-dt * 2.4);
+        const gravity = 170;
+        const curlFreq = this.redBurstCurlFreq;
+        const curlStr = this.redBurstCurlStrength;
+        const tt = this.time;
+        for (let i = 0; i < n; i++) {
+            const i3 = i * 3;
+            const px = this._redBurstPositions[i3];
+            const py = this._redBurstPositions[i3 + 1];
+            const pz = this._redBurstPositions[i3 + 2];
+            const fx = px * curlFreq;
+            const fy = py * curlFreq;
+            const fz = pz * curlFreq;
+            // 拡散運動にカールノイズ風ベクトル場を加えて、渦感を出す
+            const curlX = -Math.cos(fz * 1.9 - tt * 1.1);
+            const curlY = -Math.cos(fx * 1.6 + tt * 1.7);
+            const curlZ = -Math.cos(fy * 1.7 + tt * 1.3);
+            this._redBurstVelocities[i3] *= drag;
+            this._redBurstVelocities[i3 + 1] = this._redBurstVelocities[i3 + 1] * drag - gravity * dt;
+            this._redBurstVelocities[i3 + 2] *= drag;
+            this._redBurstVelocities[i3] += curlX * curlStr * dt;
+            this._redBurstVelocities[i3 + 1] += curlY * curlStr * dt;
+            this._redBurstVelocities[i3 + 2] += curlZ * curlStr * dt;
+            this._redBurstPositions[i3] += this._redBurstVelocities[i3] * dt;
+            this._redBurstPositions[i3 + 1] += this._redBurstVelocities[i3 + 1] * dt;
+            this._redBurstPositions[i3 + 2] += this._redBurstVelocities[i3 + 2] * dt;
+            const sp = Math.sqrt(
+                this._redBurstVelocities[i3] * this._redBurstVelocities[i3] +
+                this._redBurstVelocities[i3 + 1] * this._redBurstVelocities[i3 + 1] +
+                this._redBurstVelocities[i3 + 2] * this._redBurstVelocities[i3 + 2]
+            );
+            const ageT = THREE.MathUtils.clamp(this._redBurstAgeSec / this._redBurstLifeSec, 0, 1);
+            const heat = THREE.MathUtils.clamp((sp / 520) * (1.0 - ageT * 0.6), 0, 1);
+            this._setHeatmapColor01(heat, i3, this._redBurstColors);
+            const qi = i * 4;
+            this._redBurstQuatTemp.set(
+                this._redBurstRotQuats[qi],
+                this._redBurstRotQuats[qi + 1],
+                this._redBurstRotQuats[qi + 2],
+                this._redBurstRotQuats[qi + 3]
+            );
+            this._redBurstQuatTemp.normalize();
+            this._redBurstPosTemp.set(
+                this._redBurstPositions[i3],
+                this._redBurstPositions[i3 + 1],
+                this._redBurstPositions[i3 + 2]
+            );
+            const s = this._redBurstScales[i];
+            this._redBurstScaleTemp.set(s, s, s);
+            this._redBurstMatrixTemp.compose(this._redBurstPosTemp, this._redBurstQuatTemp, this._redBurstScaleTemp);
+            this.redBurstInstMesh.setMatrixAt(i, this._redBurstMatrixTemp);
+            this._redBurstColorTemp.setRGB(
+                this._redBurstColors[i3],
+                this._redBurstColors[i3 + 1],
+                this._redBurstColors[i3 + 2]
+            );
+            this.redBurstInstMesh.setColorAt(i, this._redBurstColorTemp);
+        }
+        this.redBurstInstMesh.instanceMatrix.needsUpdate = true;
+        if (this.redBurstInstMesh.instanceColor) this.redBurstInstMesh.instanceColor.needsUpdate = true;
+        const t = THREE.MathUtils.clamp(this._redBurstAgeSec / this._redBurstLifeSec, 0, 1);
+        this.redBurstMaterial.opacity = 1 - t * t * (3 - 2 * t);
+        if (t >= 1) {
+            this._redBurstActive = false;
+            this.redBurstInstMesh.visible = false;
+            this.redBurstMaterial.opacity = 0.0;
+        }
+    }
+
+    _generateObsidianBumpTexture(size = 256) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(0, 0, size, size);
+        for (let i = 0; i < 1800; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const r = 0.4 + Math.random() * 1.8;
+            const v = Math.floor(80 + Math.random() * 130);
+            ctx.fillStyle = `rgba(${v},${v},${v},0.32)`;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        for (let i = 0; i < 120; i++) {
+            const x = Math.random() * size;
+            const y = Math.random() * size;
+            const rr = 6 + Math.random() * 18;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, rr);
+            g.addColorStop(0, 'rgba(255,255,255,0.24)');
+            g.addColorStop(1, 'rgba(128,128,128,0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(x, y, rr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        const t = new THREE.CanvasTexture(canvas);
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.colorSpace = THREE.LinearSRGBColorSpace;
+        return t;
+    }
+
+    initObsidianDrifters() {
+        if (this.obsidianInstMesh) return;
+        const n = this.obsidianCount;
+        this._obsidianPositions = new Float32Array(n * 3);
+        this._obsidianVelocities = new Float32Array(n * 3);
+        this._obsidianRotQuats = new Float32Array(n * 4);
+        this._obsidianScales = new Float32Array(n * 3);
+        this.obsidianGeometry = new THREE.BoxGeometry(1, 1, 1);
+        this.obsidianBumpMap = this._generateObsidianBumpTexture(256);
+        this.obsidianMaterial = new THREE.MeshStandardMaterial({
+            color: 0x2a2b2f,
+            metalness: 0.58,
+            roughness: 0.22,
+            bumpMap: this.obsidianBumpMap,
+            bumpScale: 0.85,
+            envMap: this.scene.environment,
+            envMapIntensity: 0.36,
+            emissive: 0x0b0b0d,
+            emissiveIntensity: 0.08,
+            fog: true
+        });
+        this.obsidianInstMesh = new THREE.InstancedMesh(this.obsidianGeometry, this.obsidianMaterial, n);
+        this.obsidianInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        this.obsidianInstMesh.frustumCulled = false;
+        this.obsidianInstMesh.castShadow = false;
+        this.obsidianInstMesh.receiveShadow = false;
+        this.scene.add(this.obsidianInstMesh);
+
+        const rad = this.obsidianSpawnRadius;
+        for (let i = 0; i < n; i++) {
+            const i3 = i * 3;
+            const qi = i * 4;
+            const th = Math.random() * Math.PI * 2;
+            const ph = Math.acos(2 * Math.random() - 1);
+            const rr = Math.pow(Math.random(), 1.35) * rad;
+            this._obsidianPositions[i3] = Math.sin(ph) * Math.cos(th) * rr;
+            this._obsidianPositions[i3 + 1] = (Math.random() - 0.5) * rad * 1.15 + 380;
+            this._obsidianPositions[i3 + 2] = Math.sin(ph) * Math.sin(th) * rr;
+            this._obsidianVelocities[i3] = (Math.random() - 0.5) * 65;
+            this._obsidianVelocities[i3 + 1] = (Math.random() - 0.5) * 35;
+            this._obsidianVelocities[i3 + 2] = (Math.random() - 0.5) * 65;
+            this._obsidianQuatTemp.setFromEuler(
+                new THREE.Euler(Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, Math.random() * Math.PI * 2, 'XYZ')
+            );
+            this._obsidianRotQuats[qi] = this._obsidianQuatTemp.x;
+            this._obsidianRotQuats[qi + 1] = this._obsidianQuatTemp.y;
+            this._obsidianRotQuats[qi + 2] = this._obsidianQuatTemp.z;
+            this._obsidianRotQuats[qi + 3] = this._obsidianQuatTemp.w;
+            const base = 5 + Math.random() * 20;
+            this._obsidianScales[i3] = base * (0.2 + Math.random() * 2.8);
+            this._obsidianScales[i3 + 1] = base * (0.2 + Math.random() * 2.8);
+            this._obsidianScales[i3 + 2] = base * (0.2 + Math.random() * 2.8);
+            this._obsidianPosTemp.set(this._obsidianPositions[i3], this._obsidianPositions[i3 + 1], this._obsidianPositions[i3 + 2]);
+            this._obsidianScaleTemp.set(this._obsidianScales[i3], this._obsidianScales[i3 + 1], this._obsidianScales[i3 + 2]);
+            this._obsidianMatrixTemp.compose(this._obsidianPosTemp, this._obsidianQuatTemp, this._obsidianScaleTemp);
+            this.obsidianInstMesh.setMatrixAt(i, this._obsidianMatrixTemp);
+        }
+        this.obsidianInstMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    _updateObsidianDrifters(deltaTime) {
+        if (!this.obsidianInstMesh || !this._obsidianPositions || !this._obsidianVelocities) return;
+        const n = this.obsidianCount;
+        const dt = Math.min(deltaTime, 0.05);
+        const simDt = dt * this.obsidianMotionScale;
+        const drag = Math.exp(-simDt * 0.35);
+        const curlF = this.obsidianCurlFreq;
+        const curlS = this.obsidianCurlStrength;
+        const t = this.time * 12.0;
+        const bound = this.obsidianSpawnRadius * 1.25;
+        for (let i = 0; i < n; i++) {
+            const i3 = i * 3;
+            const qi = i * 4;
+            const px = this._obsidianPositions[i3];
+            const py = this._obsidianPositions[i3 + 1];
+            const pz = this._obsidianPositions[i3 + 2];
+            const fx = px * curlF;
+            const fy = py * curlF;
+            const fz = pz * curlF;
+            const cx = -Math.cos(fz * 1.4 - t * 0.95);
+            const cy = -Math.cos(fx * 1.2 + t * 1.05);
+            const cz = -Math.cos(fy * 1.5 + t * 0.85);
+            this._obsidianVelocities[i3] = this._obsidianVelocities[i3] * drag + cx * curlS * simDt;
+            this._obsidianVelocities[i3 + 1] = this._obsidianVelocities[i3 + 1] * drag + cy * curlS * simDt;
+            this._obsidianVelocities[i3 + 2] = this._obsidianVelocities[i3 + 2] * drag + cz * curlS * simDt;
+            this._obsidianPositions[i3] += this._obsidianVelocities[i3] * simDt;
+            this._obsidianPositions[i3 + 1] += this._obsidianVelocities[i3 + 1] * simDt;
+            this._obsidianPositions[i3 + 2] += this._obsidianVelocities[i3 + 2] * simDt;
+            if (this._obsidianPositions[i3] > bound) this._obsidianPositions[i3] = -bound;
+            if (this._obsidianPositions[i3] < -bound) this._obsidianPositions[i3] = bound;
+            if (this._obsidianPositions[i3 + 1] > this.ceilingY * 0.52) this._obsidianPositions[i3 + 1] = this.floorTopY + 220;
+            if (this._obsidianPositions[i3 + 1] < this.floorTopY + 160) this._obsidianPositions[i3 + 1] = this.ceilingY * 0.48;
+            if (this._obsidianPositions[i3 + 2] > bound) this._obsidianPositions[i3 + 2] = -bound;
+            if (this._obsidianPositions[i3 + 2] < -bound) this._obsidianPositions[i3 + 2] = bound;
+            this._obsidianQuatTemp.set(
+                this._obsidianRotQuats[qi],
+                this._obsidianRotQuats[qi + 1],
+                this._obsidianRotQuats[qi + 2],
+                this._obsidianRotQuats[qi + 3]
+            );
+            this._obsidianQuatTemp.normalize();
+            this._obsidianPosTemp.set(this._obsidianPositions[i3], this._obsidianPositions[i3 + 1], this._obsidianPositions[i3 + 2]);
+            this._obsidianScaleTemp.set(this._obsidianScales[i3], this._obsidianScales[i3 + 1], this._obsidianScales[i3 + 2]);
+            this._obsidianMatrixTemp.compose(this._obsidianPosTemp, this._obsidianQuatTemp, this._obsidianScaleTemp);
+            this.obsidianInstMesh.setMatrixAt(i, this._obsidianMatrixTemp);
+        }
+        this.obsidianInstMesh.instanceMatrix.needsUpdate = true;
+    }
+
     /**
      * 金属片とは別レイヤーのインスタンスボックス（プール）。初期は全非表示、スポーン時に割当。
      */
@@ -1340,15 +1787,13 @@ float cylinderSurfH( vec3 v ) {
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
         const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
         const L = this.sceneLightingScale ?? 1;
-        /** 部屋が暗くても環境反射でキラつくよう金属寄り＋エミッシブ弱め（ブルームに少し乗る） */
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0xd4dae4,
-            metalness: 0.88,
-            roughness: 0.2,
-            envMap: envTex,
-            envMapIntensity: THREE.MathUtils.lerp(1.35, 0.95, L),
-            emissive: 0xb8c4d0,
-            emissiveIntensity: 0.055,
+        /** マット寄りに見せるため、通常合成の黄色パーティクルにする */
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0xe8dc67,
+            transparent: true,
+            opacity: 0.62,
+            depthWrite: false,
+            blending: THREE.NormalBlending,
             fog: true
         });
 
@@ -1378,6 +1823,8 @@ float cylinderSurfH( vec3 v ) {
             this._clearAmbientParticleSlot(i);
         }
         this.ambientInstManager.markNeedsUpdate();
+        const seedY = this.floorTopY + (this.ceilingY - this.floorTopY) * 0.3;
+        this._spawnAmbientParticlesBurst(new THREE.Vector3(0, seedY, 0), this.ambientMinLiving);
     }
 
     _clearAmbientParticleSlot(slotIndex) {
@@ -1426,9 +1873,9 @@ float cylinderSurfH( vec3 v ) {
             );
             const sr = 0.55 + Math.random() * 2.6;
             ap.baseScale.set(
-                sr * (0.32 + Math.random() * 1.55) * 0.32,
-                sr * (0.32 + Math.random() * 1.55) * 0.32,
-                sr * (0.32 + Math.random() * 1.55) * 0.32
+                sr * (0.34 + Math.random() * 1.05) * 0.28,
+                sr * (0.34 + Math.random() * 1.05) * 0.28,
+                sr * (0.34 + Math.random() * 1.05) * 0.28
             );
             ap.scale.copy(ap.baseScale);
             ap.phase = Math.random() * Math.PI * 2;
@@ -1437,7 +1884,7 @@ float cylinderSurfH( vec3 v ) {
         }
     }
 
-    /** トラック9：generateFleshTextures の map/bump ＋ color でチャコール寄せ */
+    /** トラック9：generateFleshTextures の map/bump ＋ color で明るめグレー寄せ */
     initTrack9SpawnSpheres() {
         this.track9SphereGroup = new THREE.Group();
         this.scene.add(this.track9SphereGroup);
@@ -1447,13 +1894,14 @@ float cylinderSurfH( vec3 v ) {
             map: this._track9FleshTextures.map,
             bumpMap: this._track9FleshTextures.bumpMap,
             bumpScale: 3.0,
-            color: 0x4a4e55,
+            color: 0xd5d9df,
             metalness: 0.22,
-            roughness: 0.52,
+            roughness: 0.44,
             envMap: env,
-            envMapIntensity: 0.52 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
-            emissive: 0x0a0b0c,
-            emissiveIntensity: 0.22
+            envMapIntensity: 0.68 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
+            emissive: 0x2a2d32,
+            emissiveIntensity: 0.2,
+            fog: true
         });
         this.track9SharedGeo = new THREE.SphereGeometry(1, 28, 28);
     }
@@ -1745,55 +2193,107 @@ float cylinderSurfH( vec3 v ) {
     /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
     setupLights() {
         const L = this.sceneLightingScale ?? 1;
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0xf4f6f8, 0.72 * L);
-        this.scene.add(hemiLight);
+        this.fillPointLight = null;
+        this.pulsePointLight = null;
 
-        const ambientLight = new THREE.AmbientLight(0xf5f6f8, 0.58 * L);
-        this.scene.add(ambientLight);
-
-        const keyLight = new THREE.DirectionalLight(0xffffff, 2.05 * L);
-        keyLight.position.set(2000, 5000, 2000);
-        keyLight.castShadow = true;
-
-        const sSize = 8000;
-        keyLight.shadow.camera.left = -sSize;
-        keyLight.shadow.camera.right = sSize;
-        keyLight.shadow.camera.top = sSize;
-        keyLight.shadow.camera.bottom = -sSize;
-        keyLight.shadow.camera.near = 100;
-        keyLight.shadow.camera.far = 10000;
-
-        keyLight.shadow.mapSize.width = 2048;
-        keyLight.shadow.mapSize.height = 2048;
-        keyLight.shadow.radius = 6;
-        keyLight.shadow.bias = -0.00035;
-
-        this.scene.add(keyLight);
-
-        const fillLight = new THREE.DirectionalLight(0xe8eef5, 0.72 * L);
-        fillLight.position.set(-3500, 2800, -2200);
-        fillLight.castShadow = false;
-        this.scene.add(fillLight);
-
-        this.fillPointLight = new THREE.PointLight(0xf0f2f5, 0.82 * L, 12000);
-        this.fillPointLight.position.set(0, 2200, 0);
-        this.fillPointLight.castShadow = false;
-        this.scene.add(this.fillPointLight);
-
-        this.pulsePointLight = new THREE.PointLight(0xffffff, 0, 14000, 1.2);
-        this.pulsePointLight.position.set(0, 550, 0);
-        this.pulsePointLight.castShadow = false;
-        this.scene.add(this.pulsePointLight);
-
-        const wallTextZ = -this.roomHalfD + 72;
         this.promoWallLightTarget = new THREE.Object3D();
-        this.promoWallLightTarget.position.set(0, this._wallCenterY, wallTextZ);
+        this.promoWallLightTarget.position.set(0, 0, 0);
         this.scene.add(this.promoWallLightTarget);
-        this.promoWallFillLight = new THREE.SpotLight(0xf2f6fb, 0.78 * L, 22000, Math.PI / 2.6, 0.42, 1.15);
-        this.promoWallFillLight.position.set(0, this._wallCenterY + 1100, 0);
-        this.promoWallFillLight.castShadow = false;
+
+        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 2.0 * L, 26000, Math.PI / 5, 0.32, 1.0);
+        this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
+        this.promoWallFillLight.castShadow = true;
         this.promoWallFillLight.target = this.promoWallLightTarget;
+
+        this.promoWallFillLight.shadow.mapSize.width = 2048;
+        this.promoWallFillLight.shadow.mapSize.height = 2048;
+        this.promoWallFillLight.shadow.radius = 4;
+        this.promoWallFillLight.shadow.bias = -0.00025;
+        this.promoWallFillLight.shadow.camera.near = 100;
+        this.promoWallFillLight.shadow.camera.far = 12000;
+
         this.scene.add(this.promoWallFillLight);
+    }
+
+    setupAirNoiseVolume() {
+        const volumeGeo = new THREE.BoxGeometry(this.roomHalfW * 2.6, this.ceilingY * 1.3, this.roomHalfD * 2.6);
+        this.airNoiseMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                uTime: { value: 0.0 },
+                uDensity: { value: 0.036 },
+                uColor: { value: new THREE.Color(0xffffff) }
+            },
+            vertexShader: `
+                varying vec3 vWorldPos;
+                void main() {
+                    vec4 wp = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = wp.xyz;
+                    gl_Position = projectionMatrix * viewMatrix * wp;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vWorldPos;
+                uniform float uTime;
+                uniform float uDensity;
+                uniform vec3 uColor;
+
+                float hash13(vec3 p) {
+                    p = fract(p * 0.1031);
+                    p += dot(p, p.yzx + 33.33);
+                    return fract((p.x + p.y) * p.z);
+                }
+
+                float noise3(vec3 p) {
+                    vec3 i = floor(p);
+                    vec3 f = fract(p);
+                    f = f * f * (3.0 - 2.0 * f);
+
+                    float n000 = hash13(i + vec3(0.0, 0.0, 0.0));
+                    float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
+                    float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
+                    float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
+                    float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
+                    float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
+                    float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
+                    float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
+
+                    float nx00 = mix(n000, n100, f.x);
+                    float nx10 = mix(n010, n110, f.x);
+                    float nx01 = mix(n001, n101, f.x);
+                    float nx11 = mix(n011, n111, f.x);
+                    float nxy0 = mix(nx00, nx10, f.y);
+                    float nxy1 = mix(nx01, nx11, f.y);
+                    return mix(nxy0, nxy1, f.z);
+                }
+
+                float fbm(vec3 p) {
+                    float a = 0.5;
+                    float s = 0.0;
+                    for (int i = 0; i < 4; i++) {
+                        s += a * noise3(p);
+                        p = p * 2.03 + vec3(17.1, 3.7, 11.9);
+                        a *= 0.5;
+                    }
+                    return s;
+                }
+
+                void main() {
+                    vec3 p = vWorldPos * 0.0012 + vec3(0.0, uTime * 0.02, uTime * 0.012);
+                    float n = fbm(p);
+                    float vertical = smoothstep(-500.0, 2500.0, vWorldPos.y);
+                    float alpha = uDensity * (0.22 + n * 0.34) * vertical;
+                    gl_FragColor = vec4(uColor, alpha);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.BackSide,
+            blending: THREE.NormalBlending
+        });
+
+        this.airNoiseVolume = new THREE.Mesh(volumeGeo, this.airNoiseMaterial);
+        this.airNoiseVolume.position.set(0, this.floorTopY + (this.ceilingY - this.floorTopY) * 0.55, 0);
+        this.scene.add(this.airNoiseVolume);
     }
 
     async setup() {
@@ -1807,9 +2307,9 @@ float cylinderSurfH( vec3 v ) {
         this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        /** 薄めの霞＋白寄りグレー。密度は控えめ（飽和しにくい） */
+        /** グレー寄りフォグ */
         this.scene.background = new THREE.Color(0x151820);
-        this.scene.fog = new THREE.FogExp2(0xd2d6dc, 0.00017);
+        this.scene.fog = new THREE.FogExp2(0xd5d9df, 0.00017);
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -1857,6 +2357,7 @@ float cylinderSurfH( vec3 v ) {
 
         this.initMetalShardsSystem();
         this.initRedCylinderSystem();
+        this.initRedCylinderBurstParticles();
         this.createAmbientFloatingParticles();
         this.initTrack9SpawnSpheres();
         if (this.cableBlobParticle && this.shardGroup) {
@@ -1889,7 +2390,12 @@ float cylinderSurfH( vec3 v ) {
         this._updateFadeOpacity();
         this.pruneExpiredShards();
         this.pruneExpiredCylinders();
+        this._updateRedCylinderBurstParticles(deltaTime);
         this._updateAmbientParticles(deltaTime);
+        if (this._ambientLiving.length < this.ambientMinLiving) {
+            const p = this.shardGroup?.position ?? this._cameraFocusSmoothed ?? new THREE.Vector3(0, this.floorTopY + 600, 0);
+            this._spawnAmbientParticlesBurst(p, this.ambientMinLiving - this._ambientLiving.length);
+        }
         this._updateTrack9SpherePhysics(deltaTime);
 
         const targetTrack7 = this.trackEffects[7] ? this.trackValues[7] || 0 : 0;
@@ -1984,7 +2490,24 @@ float cylinderSurfH( vec3 v ) {
         if (this.cylinderGroup) focusTargets.push(this.cylinderGroup);
         if (this.track9SphereGroup) focusTargets.push(this.track9SphereGroup);
         if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
-        this.updateAutoFocus(focusTargets);
+        if (this.useAutoFocusDOF) {
+            this.updateAutoFocus(focusTargets);
+        } else if (this.bokehPass?.uniforms?.focus) {
+            this.bokehPass.uniforms.focus.value = this.dofParams.focus;
+        }
+        const aoPass = this.ssaoPass || this.saoPass;
+        if (aoPass) {
+            const focusPos = this._cameraFocusSmoothed ?? this._spawnFocusWorld;
+            const camDist = this.camera.position.distanceTo(focusPos);
+            const nearD = 900;
+            const farD = 6200;
+            const t = THREE.MathUtils.clamp((camDist - nearD) / (farD - nearD), 0, 1);
+            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t);
+            if ('kernelRadius' in aoPass) aoPass.kernelRadius = this.ssaoNearKernelRadius * aoScale;
+            if ('minDistance' in aoPass) aoPass.minDistance = this.ssaoNearMinDistance * aoScale;
+            if ('maxDistance' in aoPass) aoPass.maxDistance = this.ssaoNearMaxDistance * aoScale;
+            this._syncAODepthAndCameraUniforms(aoPass);
+        }
 
         if (this.calloutSystem) {
             this.calloutSystem.update(deltaTime, this.time, this.camera, {
@@ -2020,7 +2543,8 @@ float cylinderSurfH( vec3 v ) {
             envMap: env,
             envMapIntensity: 1.15,
             emissive: 0x2a3038,
-            emissiveIntensity: 0.16
+            emissiveIntensity: 0.16,
+            fog: true
         });
 
         this.promoTextGroup = new THREE.Group();
@@ -2200,10 +2724,11 @@ float cylinderSurfH( vec3 v ) {
         }
         if (this.useSSAO && !this.ssaoPass) {
             this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
-            this.ssaoPass.kernelRadius = 8;
-            this.ssaoPass.minDistance = 0.005;
-            this.ssaoPass.maxDistance = 0.12;
+            this.ssaoPass.kernelRadius = this.ssaoNearKernelRadius;
+            this.ssaoPass.minDistance = this.ssaoNearMinDistance;
+            this.ssaoPass.maxDistance = this.ssaoNearMaxDistance;
             this.composer.addPass(this.ssaoPass);
+            this._syncAODepthAndCameraUniforms(this.ssaoPass);
         }
         if (this.useBloom) {
             this.bloomPass = new UnrealBloomPass(
@@ -2215,11 +2740,11 @@ float cylinderSurfH( vec3 v ) {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            // aperture を上げすぎるとピント面付近までボケが乗りやすい。奥・手前のボケは残しつつシャープ域を広げる。
+            // ミニチュア感を避けるため、被写界深度を弱めてピント域を広げる。
             this.initDOF({
-                focus: 2000,
-                aperture: 0.0000045,
-                maxblur: 0.0028
+                focus: 2100,
+                aperture: 0.0000044,
+                maxblur: 0.0031
             });
         }
         if (!this.outputPass) {
@@ -2229,11 +2754,59 @@ float cylinderSurfH( vec3 v ) {
         this.addFilmGrainIfEnabled(0.22, false);
     }
 
+    _syncAODepthAndCameraUniforms(aoPass) {
+        if (!aoPass) return;
+        if (!this.aoDepthTexture && this.composer?.renderTarget1) {
+            const size = this.renderer.getSize(new THREE.Vector2());
+            const ratio = this.renderer.getPixelRatio();
+            const w = Math.max(1, Math.floor(size.x * ratio));
+            const h = Math.max(1, Math.floor(size.y * ratio));
+            this.aoDepthTexture = new THREE.DepthTexture(w, h);
+            this.aoDepthTexture.type = THREE.UnsignedIntType;
+            this.aoDepthTexture.format = THREE.DepthFormat;
+            this.composer.renderTarget1.depthTexture = this.aoDepthTexture;
+            this.composer.renderTarget1.depthBuffer = true;
+        }
+
+        const candidateDepth =
+            aoPass.beautyRenderTarget?.depthTexture ||
+            aoPass.normalRenderTarget?.depthTexture ||
+            aoPass.depthRenderTarget?.depthTexture ||
+            this.aoDepthTexture ||
+            null;
+
+        const maybeMaterials = [
+            aoPass.ssaoMaterial,
+            aoPass.saoMaterial,
+            aoPass.materialAO,
+            aoPass.vBlurMaterial,
+            aoPass.hBlurMaterial
+        ];
+
+        for (const m of maybeMaterials) {
+            const u = m?.uniforms;
+            if (!u) continue;
+            if (u.cameraNear) u.cameraNear.value = this.camera.near;
+            if (u.cameraFar) u.cameraFar.value = this.camera.far;
+            if (u.tDepth && candidateDepth) u.tDepth.value = candidateDepth;
+        }
+    }
+
     onResize() {
         super.onResize();
         if (this.ssaoPass && typeof this.ssaoPass.setSize === 'function') {
             this.ssaoPass.setSize(window.innerWidth, window.innerHeight);
         }
+        if (this.saoPass && typeof this.saoPass.setSize === 'function') {
+            this.saoPass.setSize(window.innerWidth, window.innerHeight);
+        }
+        if (this.aoDepthTexture) {
+            const ratio = this.renderer.getPixelRatio();
+            this.aoDepthTexture.image.width = Math.max(1, Math.floor(window.innerWidth * ratio));
+            this.aoDepthTexture.image.height = Math.max(1, Math.floor(window.innerHeight * ratio));
+            this.aoDepthTexture.needsUpdate = true;
+        }
+        this._syncAODepthAndCameraUniforms(this.ssaoPass || this.saoPass);
     }
 
     render() {
@@ -2253,6 +2826,18 @@ float cylinderSurfH( vec3 v ) {
             this.ssaoPass.enabled = false;
             this.ssaoPass = null;
         }
+        if (this.saoPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.saoPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.saoPass.enabled = false;
+            this.saoPass = null;
+        }
+        if (this.aoDepthTexture) {
+            this.aoDepthTexture.dispose();
+            this.aoDepthTexture = null;
+        }
 
         if (this.outputPass) {
             if (this.composer) {
@@ -2262,7 +2847,6 @@ float cylinderSurfH( vec3 v ) {
             this.outputPass.dispose();
             this.outputPass = null;
         }
-
         if (this.studio) {
             this.studio.dispose();
             this.studio = null;
@@ -2291,6 +2875,46 @@ float cylinderSurfH( vec3 v ) {
             this._redCylinderMaterial = null;
             this.cylinderGroup = null;
         }
+        if (this.redBurstInstMesh) {
+            this.scene.remove(this.redBurstInstMesh);
+            this.redBurstInstMesh.dispose();
+            this.redBurstInstMesh = null;
+        }
+        if (this.redBurstSharedGeo) {
+            this.redBurstSharedGeo.dispose();
+            this.redBurstSharedGeo = null;
+        }
+        if (this.redBurstMaterial) {
+            this.redBurstMaterial.dispose();
+            this.redBurstMaterial = null;
+        }
+        this._redBurstPositions = null;
+        this._redBurstVelocities = null;
+        this._redBurstColors = null;
+        this._redBurstRotQuats = null;
+        this._redBurstScales = null;
+        this._redBurstActive = false;
+        if (this.obsidianInstMesh) {
+            this.scene.remove(this.obsidianInstMesh);
+            this.obsidianInstMesh.dispose();
+            this.obsidianInstMesh = null;
+        }
+        if (this.obsidianGeometry) {
+            this.obsidianGeometry.dispose();
+            this.obsidianGeometry = null;
+        }
+        if (this.obsidianMaterial) {
+            this.obsidianMaterial.dispose();
+            this.obsidianMaterial = null;
+        }
+        if (this.obsidianBumpMap) {
+            this.obsidianBumpMap.dispose();
+            this.obsidianBumpMap = null;
+        }
+        this._obsidianPositions = null;
+        this._obsidianVelocities = null;
+        this._obsidianRotQuats = null;
+        this._obsidianScales = null;
 
         if (this.ambientInstManager) {
             this.ambientInstManager.dispose();
@@ -2346,6 +2970,16 @@ float cylinderSurfH( vec3 v ) {
                 this._laserScanMaterial = null;
             }
             this.laserScanMesh = null;
+        }
+
+        if (this.airNoiseVolume) {
+            this.scene.remove(this.airNoiseVolume);
+            if (this.airNoiseVolume.geometry) this.airNoiseVolume.geometry.dispose();
+            this.airNoiseVolume = null;
+        }
+        if (this.airNoiseMaterial) {
+            this.airNoiseMaterial.dispose();
+            this.airNoiseMaterial = null;
         }
 
         if (this.cubeCamera) {

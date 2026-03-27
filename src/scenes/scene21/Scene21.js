@@ -1,8 +1,8 @@
 /**
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
  * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
- * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター
- * トラック9：部屋中心付近からスフィア（flesh テクスチャ＋チャコール寄せ color）を物理演算でスポーン
+ * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター。トラック6は args[2] デュレーション中に間隔スポーン可（cylinderSpawnDuringDuration）
+ * トラック9：部屋中心付近からスフィア（flesh テクスチャ＋チャコール寄せ color）を物理演算でスポーン。args[2]=デュレーションms、track9SpawnDuringDuration でデュレ中に間隔スポーン可
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
  * 床・壁は PBR コンクリート、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ
  */
@@ -16,9 +16,8 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import { StudioBox } from '../../lib/StudioBox.js';
+import { generateConcretePBRTextures } from '../../lib/ConcretePBRTextures.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene16Particle } from '../scene16/Scene16Particle.js';
 
@@ -26,14 +25,6 @@ export class Scene21 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | Xenomist';
-        /** 南壁 3D テキスト（helvetiker はラテン only - 日本語は文字化けする） */
-        this.promoReleaseInfoLines = [
-            '2025 SPRING - Live / installation visual suite',
-            'OSC / actual_tick sync; tracks 5-9. Metal shards, cylinders, spheres, red burst -',
-            'spawned in real time. DOF, SSAO, bloom, fog tied to concrete room lighting.',
-            'Mastering, credits, full notes: release notes and official site.',
-            'Adjust volume and brightness for your venue. mathym / Xenomist'
-        ];
         this.initialized = false;
         this.sceneNumber = 21;
         this.kitNo = 21;
@@ -76,10 +67,31 @@ export class Scene21 extends SceneBase {
         this._spawnWorldPosTemp = new THREE.Vector3();
         this._lastShardPos = new THREE.Vector3(0, 550, 0);
         this._snakeDir = new THREE.Vector3(0, 0.12, 1).normalize();
+        /** 残像ヘッド：金属片/赤シリンダーで別系統のカールノイズを使う */
+        this._trailHeadPos = new THREE.Vector3(0, 550, 0);
+        this._trailHeadDir = new THREE.Vector3(0, 0.06, 1).normalize();
+        this._trailHeadPosShard = new THREE.Vector3(0, 550, 0);
+        this._trailHeadDirShard = new THREE.Vector3(0, 0.06, 1).normalize();
+        this._trailHeadPosCylinder = new THREE.Vector3(0, 550, 0);
+        this._trailHeadDirCylinder = new THREE.Vector3(0.1, 0.04, 1).normalize();
+        this._trailCenter = new THREE.Vector3(0, 1200, 0);
+        this._trailSpeed = 720;
+        this._trailSpeedShard = 760;
+        this._trailSpeedCylinder = 690;
+        this._trailCurlFreq = 0.00135;
+        this._trailCurlFreqShard = 0.00165;
+        this._trailCurlFreqCylinder = 0.00195;
+        this._trailCurlStrength = 2.6;
+        this._trailCurlStrengthShard = 4.2;
+        this._trailCurlStrengthCylinder = 6.4;
+        this._trailCenterPull = 0.7;
+        this._trailYawAmp = 0.42;
+        this._trailPitchAmp = 0.28;
+        this._trailRollAmp = 0.36;
         /** 直近スポーンしたオブジェクトのワールド座標（カメラ注視） */
         this._spawnFocusWorld = new THREE.Vector3(0, 550, 0);
         this._cameraFocusSmoothed = new THREE.Vector3(0, 550, 0);
-        /** OSC actual_tick ベースのスポーン（トラック5） */
+        /** 旧 tick ベース生成の互換用カウンタ（色/形ノイズ種） */
         this._lastSpawnTickTrack5 = null;
         this._snakeIndex = 0;
         this._shardSeed = Math.random() * 1000;
@@ -183,7 +195,16 @@ export class Scene21 extends SceneBase {
         this.cylinderGroup = null;
         this.cylinderInstMesh = null;
         this.cylinders = [];
-        this.maxCylinders = 400;
+        this.maxCylinders = 640;
+        /** true: args[2] のデュレーション（ms）が終わるまで一定間隔でスポーン。false: ノートオンで1回のみ */
+        this.cylinderSpawnDuringDuration = true;
+        /** デュレーション中スポーンの間隔（ms） */
+        this.cylinderDurationSpawnIntervalMs = 52;
+        this._cylinderSpawnWindowEndMs = 0;
+        this._cylinderSpawnWindowVelocity = 127;
+        this._cylinderSpawnWindowNoteNumber = 64;
+        this._cylinderSpawnWindowDurationMs = 180;
+        this._cylinderLastDurationSpawnMs = 0;
         this.cylinderLifetimeMs = 180000;
         this._cylinderFreeSlots = [];
         this._redCylinderMaterial = null;
@@ -192,6 +213,9 @@ export class Scene21 extends SceneBase {
         this._cylinderScaleTemp = new THREE.Vector3();
         this._cylinderPosTemp = new THREE.Vector3();
         this._cylinderDirTemp = new THREE.Vector3();
+        this._cylinderSideTemp = new THREE.Vector3();
+        this._cylinderPerpTemp = new THREE.Vector3();
+        this._cylinderFallbackAxis = new THREE.Vector3(1, 0, 0);
         this._cylinderAxisUp = new THREE.Vector3(0, 1, 0);
         this._lastCylinderWorldPos = new THREE.Vector3(0, 550, 0);
         this._cylinderPathDir = new THREE.Vector3(0, 0.1, 1).normalize();
@@ -217,6 +241,7 @@ export class Scene21 extends SceneBase {
         this._redBurstScaleTemp = new THREE.Vector3();
         this._redBurstMatrixTemp = new THREE.Matrix4();
         this._redBurstColorTemp = new THREE.Color();
+        this._redBurstCurlTemp = new THREE.Vector3();
 
         this._jitterSide = new THREE.Vector3();
         this._jitterUp = new THREE.Vector3();
@@ -243,7 +268,14 @@ export class Scene21 extends SceneBase {
         /** トラック9：ワールド中心付近スポーンの物理スフィア（チャコール調） */
         this.track9SphereGroup = null;
         this.track9Spheres = [];
-        this.maxTrack9Spheres = 80;
+        this.maxTrack9Spheres = 280;
+        /** true: args[2] のデュレーション（ms）が終わるまで一定間隔でスポーン。false: ノートオンで1回のみ */
+        this.track9SpawnDuringDuration = true;
+        /** デュレーション中スポーンの間隔（ms）。下限はフレーム間隔程度 */
+        this.track9DurationSpawnIntervalMs = 52;
+        this._track9SpawnWindowEndMs = 0;
+        this._track9SpawnWindowVelocity = 127;
+        this._track9LastDurationSpawnMs = 0;
         this.track9SharedGeo = null;
         this._track9SphereMaterial = null;
         this._track9FleshTextures = null;
@@ -258,9 +290,7 @@ export class Scene21 extends SceneBase {
         /** スポーン直後、半径が 0→目標まで伸びる時間（秒） */
         this._track9BirthGrowSec = 0.42;
 
-        /** 3D プロモテキスト（部屋内・壁面固定） */
-        this.promoTextGroup = null;
-        /** 南壁テキストを白く浮かせる補助スポット */
+        /** 南壁レーザー用スポットの注視点 */
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
         /** 壁周りレーザースキャン（1 小節＝TICK_LOOP/96 tick で一周） */
@@ -610,275 +640,6 @@ float cylinderSurfH( vec3 v ) {
         }
     }
 
-    /**
-     * @param {number} size キャンバス解像度
-     * @param {number} [maxAnisotropy=8] 斜め視点で目地がミップで消えにくいよう大きめ推奨
-     */
-    generateConcretePBRTextures(size = 1024, maxAnisotropy = 8) {
-        const albedoCanvas = document.createElement('canvas');
-        albedoCanvas.width = size;
-        albedoCanvas.height = size;
-        const aCtx = albedoCanvas.getContext('2d');
-        const hCanvas = document.createElement('canvas');
-        hCanvas.width = size;
-        hCanvas.height = size;
-        const hCtx = hCanvas.getContext('2d');
-        const roughCanvas = document.createElement('canvas');
-        roughCanvas.width = size;
-        roughCanvas.height = size;
-        const rCtx = roughCanvas.getContext('2d');
-        const aoCanvas = document.createElement('canvas');
-        aoCanvas.width = size;
-        aoCanvas.height = size;
-        const aoCtx = aoCanvas.getContext('2d');
-
-        const rnd = (x, y) => {
-            const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-            return s - Math.floor(s);
-        };
-        const smooth = (x, y) => {
-            const x0 = Math.floor(x);
-            const y0 = Math.floor(y);
-            const fx = x - x0;
-            const fy = y - y0;
-            const u = fx * fx * (3 - 2 * fx);
-            const v = fy * fy * (3 - 2 * fy);
-            const a = rnd(x0, y0);
-            const b = rnd(x0 + 1, y0);
-            const c = rnd(x0, y0 + 1);
-            const d = rnd(x0 + 1, y0 + 1);
-            return a * (1 - u) * (1 - v) + b * u * (1 - v) + c * (1 - u) * v + d * u * v;
-        };
-        const fbm = (x, y, oct) => {
-            let amp = 0.5;
-            let f = 0;
-            let xx = x;
-            let yy = y;
-            for (let o = 0; o < oct; o++) {
-                f += smooth(xx, yy) * amp;
-                xx *= 2.05;
-                yy *= 2.03;
-                amp *= 0.5;
-            }
-            return f;
-        };
-
-        const heightData = new Float32Array(size * size);
-        const roughData = new Float32Array(size * size);
-        const aoData = new Float32Array(size * size);
-
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                const u = x / size;
-                const v = y / size;
-                const nx = x * 0.018;
-                const ny = y * 0.018;
-
-                // ドメインウェアプ三段：ノイズで座標を歪ませ、さらにその歪みを歪める
-                const w1x = fbm(ny * 0.88 + 12.3, nx * 0.62 + 4.1, 3) * 0.44;
-                const w1y = fbm(nx * 0.88 + 2.7, ny * 0.62 + 8.9, 3) * 0.44;
-                const qx = nx + w1x;
-                const qy = ny + w1y;
-                const w2x = fbm(qy * 0.58 + 1.1, qx * 0.51 + 6.0, 4) * 0.52;
-                const w2y = fbm(qx * 0.58 + 7.1, qy * 0.51 + 2.3, 4) * 0.52;
-                const wx = qx + w2x;
-                const wy = qy + w2y;
-                const w3x = fbm(wy * 0.72 + 3.0, wx * 0.66 + 0.4, 3) * 0.26;
-                const w3y = fbm(wx * 0.72 + 5.0, wy * 0.66 + 8.0, 3) * 0.26;
-                const warpX = wx + w3x;
-                const warpY = wy + w3y;
-
-                const nMod = 0.55 + 0.9 * fbm(nx * 0.36 + 9.5, ny * 0.34 - 2.0, 4);
-                const coarse = fbm(warpX, warpY, 5) * 0.52 * nMod;
-                const mid =
-                    fbm(warpX * 2.2 + 10, warpY * 2.1 - 4, 4) *
-                    0.28 *
-                    (0.75 + 0.5 * fbm(nx * 0.2, ny * 0.19, 2));
-                const ripple =
-                    Math.sin(u * 40 + v * 12) * 0.04 * (0.65 + 0.7 * fbm(nx * 0.45, ny * 0.42, 2));
-                const patch = fbm(nx * 0.52 + 1.9, ny * 0.5 - 0.7, 4) * 0.22;
-                const patchMod = patch * (0.45 + 0.55 * fbm(warpX * 3.8, warpY * 3.8, 2));
-                const grain = fbm(nx * 8.5 + 30, ny * 8.1 - 11, 3) * 0.058;
-                const micro = fbm(wx * 18, wy * 17, 2) * 0.032;
-                const h = coarse + mid + ripple + patchMod + grain + micro;
-                heightData[y * size + x] = h;
-
-                const rEnvelop = fbm(nx * 0.38 + 2.1, ny * 0.36 + 1.0, 3);
-                const macroRough = fbm(
-                    nx * (0.46 + 0.15 * rEnvelop) + 19.2,
-                    ny * (0.44 + 0.12 * rEnvelop) + 6.8,
-                    4
-                );
-                const rVar =
-                    fbm(nx * 1.7 + 50 + macroRough * 0.85, ny * 1.6 - 20, 5) * 0.55 +
-                    fbm(nx * 5.1, ny * 4.8, 3) * 0.35 * (0.45 + 0.55 * fbm(nx * 0.9, ny * 0.85, 2)) +
-                    fbm(nx * 12 + 3, ny * 11.5 - 5, 2) * 0.14;
-                const rMicro = fbm(nx * 38 + 4, ny * 37, 2) * 0.14;
-                roughData[y * size + x] = THREE.MathUtils.clamp(
-                    0.1 + rVar * 0.58 + macroRough * 0.42 + rMicro * 0.65,
-                    0,
-                    1
-                );
-
-                const cx = u - 0.5;
-                const cy = v - 0.5;
-                const edge = 1 - Math.min(1, Math.sqrt(cx * cx + cy * cy) * 1.85);
-                const contact = Math.pow(Math.max(0, edge), 1.35);
-                const stain = fbm(nx * 0.8 + 100, ny * 0.7, 3);
-                const aoGrain = (fbm(nx * 2.4, ny * 2.2, 3) - 0.5) * 0.11;
-                const aoNested =
-                    (fbm(nx * 6.5, ny * 6.2, 3) - 0.5) * 0.09 * (0.4 + 0.6 * fbm(nx * 0.9, ny * 0.85, 2));
-                aoData[y * size + x] = THREE.MathUtils.clamp(
-                    0.52 + contact * 0.28 + stain * 0.08 + aoGrain + aoNested,
-                    0,
-                    1
-                );
-            }
-        }
-
-        const aImg = aCtx.createImageData(size, size);
-        const nImg = aCtx.createImageData(size, size);
-        const rImg = rCtx.createImageData(size, size);
-        const aoImg = aoCtx.createImageData(size, size);
-
-        const baseCol = new THREE.Color(0x8e949e);
-        const cold = new THREE.Color(0x7a808a);
-        const stainCol = new THREE.Color(0x5c6068);
-        const pixCol = new THREE.Color();
-
-        for (let y = 0; y < size; y++) {
-            for (let x = 0; x < size; x++) {
-                const i = (y * size + x) * 4;
-                const h = heightData[y * size + x];
-                const hx = x < size - 1 ? heightData[y * size + x + 1] : h;
-                const hxm = x > 0 ? heightData[y * size + x - 1] : h;
-                const hy = y < size - 1 ? heightData[(y + 1) * size + x] : h;
-                const hym = y > 0 ? heightData[(y - 1) * size + x] : h;
-                let dx = (hxm - hx) * 4.2;
-                let dy = (hym - hy) * 4.2;
-                const nxP = x * 0.018;
-                const nyP = y * 0.018;
-                const px = nxP + (fbm(nyP * 2.35, nxP * 2.15 + 1.7, 2) - 0.5) * 0.52;
-                const py = nyP + (fbm(nxP * 2.35, nyP * 2.15 + 4.2, 2) - 0.5) * 0.52;
-                const det = (fbm(px * 14 + 40, py * 13.5, 3) - 0.5) * 0.5;
-                const det2 = (fbm(px * 28 + 7, py * 27, 2) - 0.5) * 0.2;
-                const det3 = (fbm(px * 52 + 3, py * 50, 2) - 0.5) * 0.12;
-                dx += det + det2 + det3;
-                dy += (fbm(px * 14.2 + 2, py * 13.7 + 55, 3) - 0.5) * 0.5;
-                dy += (fbm(px * 28.1 + 90, py * 27.2, 2) - 0.5) * 0.2;
-                dy += (fbm(px * 52 + 20, py * 50 + 10, 2) - 0.5) * 0.12;
-                const dLen = Math.sqrt(dx * dx + dy * dy);
-                if (dLen > 0.92) {
-                    const s = 0.92 / dLen;
-                    dx *= s;
-                    dy *= s;
-                }
-                const nz = Math.sqrt(Math.max(0.0001, 1 - dx * dx - dy * dy));
-                const nx = dx * 0.5 + 0.5;
-                const ny = dy * 0.5 + 0.5;
-                const nzp = nz * 0.5 + 0.5;
-                nImg.data[i] = Math.floor(nx * 255);
-                nImg.data[i + 1] = Math.floor(ny * 255);
-                nImg.data[i + 2] = Math.floor(nzp * 255);
-                nImg.data[i + 3] = 255;
-
-                const u = x / size;
-                const v = y / size;
-                const blot = fbm(x * 0.04, y * 0.04, 4);
-                const drip = Math.sin(u * 90 + v * 22) * 0.5 + 0.5;
-                const wear = fbm(x * 0.09 + 20, y * 0.11, 3);
-                pixCol.copy(baseCol).lerp(cold, blot * 0.35);
-                pixCol.lerp(stainCol, drip * 0.12 * wear);
-                const toneNest =
-                    0.9 +
-                    0.2 *
-                        fbm(x * 0.022 + 5.1, y * 0.021 - 2.4, 3) *
-                        (0.45 + 0.55 * fbm(x * 0.075 + 1.2, y * 0.071 + 8.0, 2));
-                pixCol.multiplyScalar((0.96 + h * 0.14) * toneNest);
-                const speck = rnd(x * 0.37, y * 0.41);
-                if (speck < 0.0009) {
-                    pixCol.multiplyScalar(0.86 + speck * 14);
-                }
-
-                aImg.data[i] = Math.floor(pixCol.r * 255);
-                aImg.data[i + 1] = Math.floor(pixCol.g * 255);
-                aImg.data[i + 2] = Math.floor(pixCol.b * 255);
-                aImg.data[i + 3] = 255;
-
-                const rg = roughData[y * size + x];
-                const gCh = Math.floor(rg * 255);
-                rImg.data[i] = 0;
-                rImg.data[i + 1] = gCh;
-                rImg.data[i + 2] = 0;
-                rImg.data[i + 3] = 255;
-
-                const ao = aoData[y * size + x];
-                const ar = Math.floor(ao * 255);
-                aoImg.data[i] = ar;
-                aoImg.data[i + 1] = ar;
-                aoImg.data[i + 2] = ar;
-                aoImg.data[i + 3] = 255;
-            }
-        }
-
-        aCtx.putImageData(aImg, 0, 0);
-        // StudioBox 床と同じ目地・赤十字・目盛りのみをコンクリート albedo に合成（質感は維持）
-        const tileDiv = Scene21.TILE_OVERLAY_DIVISIONS;
-        aCtx.save();
-        aCtx.globalCompositeOperation = 'multiply';
-        /** 既定 0.5px だと斜めから見たときミップで潰れやすいので太めに */
-        StudioBox.drawGroutLines(aCtx, size, {
-            strokeStyle: '#6f757c',
-            divisions: tileDiv,
-            lineWidth: 1.65
-        });
-        aCtx.restore();
-        StudioBox.drawRedCrossesAndLabels(aCtx, size, tileDiv);
-
-        /** 壁は床より掠り角になりやすく目地が薄く見えるので、同じ目地を一段だけ濃く乗せた albedo */
-        const wallAlbedoCanvas = document.createElement('canvas');
-        wallAlbedoCanvas.width = size;
-        wallAlbedoCanvas.height = size;
-        const wallACtx = wallAlbedoCanvas.getContext('2d');
-        wallACtx.drawImage(albedoCanvas, 0, 0);
-        wallACtx.save();
-        wallACtx.globalCompositeOperation = 'multiply';
-        StudioBox.drawGroutLines(wallACtx, size, {
-            strokeStyle: '#5a6169',
-            divisions: tileDiv,
-            lineWidth: 1.2
-        });
-        wallACtx.restore();
-
-        hCtx.putImageData(nImg, 0, 0);
-        rCtx.putImageData(rImg, 0, 0);
-        aoCtx.putImageData(aoImg, 0, 0);
-
-        const wrap = (canvasTex, linearColor = false) => {
-            canvasTex.wrapS = canvasTex.wrapT = THREE.RepeatWrapping;
-            canvasTex.colorSpace = linearColor ? THREE.LinearSRGBColorSpace : THREE.SRGBColorSpace;
-            canvasTex.anisotropy = maxAnisotropy;
-            canvasTex.needsUpdate = true;
-        };
-
-        const map = new THREE.CanvasTexture(albedoCanvas);
-        wrap(map, false);
-
-        const wallMap = new THREE.CanvasTexture(wallAlbedoCanvas);
-        wrap(wallMap, false);
-
-        const normalMap = new THREE.CanvasTexture(hCanvas);
-        wrap(normalMap, true);
-
-        const roughnessMap = new THREE.CanvasTexture(roughCanvas);
-        wrap(roughnessMap, true);
-
-        const aoMap = new THREE.CanvasTexture(aoCanvas);
-        wrap(aoMap, true);
-
-        return { map, wallMap, normalMap, roughnessMap, aoMap };
-    }
-
     /** Scene12 と同系：肉質テクスチャ（カラー＋バンプ）。トラック9スフィア用。 */
     generateFleshTextures() {
         const size = 512;
@@ -1054,6 +815,117 @@ float cylinderSurfH( vec3 v ) {
         return n - Math.floor(n);
     }
 
+    _sampleCurlNoiseVector(pos, time, freq = 0.001, eps = 7.5) {
+        const px = pos.x * freq;
+        const py = pos.y * freq;
+        const pz = pos.z * freq;
+        const t = time * 0.16;
+        const e = eps * freq;
+        const n = (x, y, z) => this._shardNoise(x + t * 0.71, y - t * 0.53, z + t * 0.37);
+        const dx = n(px + e, py, pz) - n(px - e, py, pz);
+        const dy = n(px, py + e, pz) - n(px, py - e, pz);
+        const dz = n(px, py, pz + e) - n(px, py, pz - e);
+        return new THREE.Vector3(dy - dz, dz - dx, dx - dy);
+    }
+
+    _sampleCurlNoiseVectorInto(out, x, y, z, time, freq = 0.001, eps = 7.5, seed = 0) {
+        const px = x * freq;
+        const py = y * freq;
+        const pz = z * freq;
+        const t = time * 0.16;
+        const e = eps * freq;
+        const n = (xx, yy, zz) => this._shardNoise(
+            xx + t * (0.71 + seed * 0.13),
+            yy - t * (0.53 - seed * 0.09),
+            zz + t * (0.37 + seed * 0.11)
+        );
+        const dx = n(px + e, py, pz) - n(px - e, py, pz);
+        const dy = n(px, py + e, pz) - n(px, py - e, pz);
+        const dz = n(px, py, pz + e) - n(px, py, pz - e);
+        out.set(dy - dz, dz - dx, dx - dy);
+        return out;
+    }
+
+    _composeTrailNoiseQuat(seed) {
+        const t = this.time;
+        const nX = this._shardNoise(seed * 0.61, t * 0.11, 2.3) * 2 - 1;
+        const nY = this._shardNoise(3.7, seed * 0.47, t * 0.09) * 2 - 1;
+        const nZ = this._shardNoise(t * 0.08, 6.1, seed * 0.53) * 2 - 1;
+        return new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(nX * this._trailPitchAmp, nY * this._trailYawAmp, nZ * this._trailRollAmp, 'YXZ')
+        );
+    }
+
+    /**
+     * @param {object} [yVary] シリンダー軌道だけ高さ揺れを強める（時間周波数＋第2ノイズ）
+     * @param {number} [yVary.timeScale] yTarget の主ノイズの時間倍率
+     * @param {number} [yVary.extraAmp] 追加ノイズの 0〜1 相当係数（620 に掛ける）
+     */
+    _updateTrailHeadSingle(pos, dir, deltaTime, timeOffset, speed, curlFreq, curlStrength, yVary = null) {
+        const dt = Math.min(Math.max(deltaTime, 0), 0.05);
+        const curl = this._sampleCurlNoiseVector(pos, this.time + timeOffset, curlFreq);
+        if (curl.lengthSq() > 1e-9) curl.normalize();
+
+        const toCenter = this._trailCenter.clone().sub(pos);
+        const centerDist = Math.max(1, toCenter.length());
+        toCenter.normalize();
+        const centerPull = this._trailCenterPull * THREE.MathUtils.clamp(centerDist / 2400, 0.08, 1.0);
+
+        dir.addScaledVector(curl, curlStrength * dt);
+        dir.addScaledVector(toCenter, centerPull * dt);
+        dir.y *= yVary ? 0.88 : 0.92;
+        dir.normalize();
+
+        pos.addScaledVector(dir, speed * dt);
+
+        const xLim = this.roomHalfW * 0.55;
+        const zLim = this.roomHalfD * 0.55;
+        pos.x = THREE.MathUtils.clamp(pos.x, -xLim, xLim);
+        pos.z = THREE.MathUtils.clamp(pos.z, -zLim, zLim);
+        const yMin = this.floorTopY + 130;
+        const yMax = this.ceilingY * 0.43;
+        const ts = yVary?.timeScale ?? 1.0;
+        const base =
+            (this._shardNoise((this.time + timeOffset) * 0.08 * ts, 9.1, 4.2) - 0.5) * 620;
+        const extra =
+            yVary && yVary.extraAmp > 0
+                ? (this._shardNoise((this.time + timeOffset) * 0.29 * ts, 2.4, 7.8) - 0.5) * 620 * yVary.extraAmp
+                : 0;
+        const yTarget = this._trailCenter.y + base + extra;
+        pos.y = THREE.MathUtils.clamp(
+            THREE.MathUtils.lerp(pos.y, yTarget, (yVary ? 0.44 : 0.38) * dt * 60),
+            yMin,
+            yMax
+        );
+    }
+
+    _updateTrailHeadMotion(deltaTime) {
+        this._updateTrailHeadSingle(
+            this._trailHeadPosShard,
+            this._trailHeadDirShard,
+            deltaTime,
+            0.0,
+            this._trailSpeedShard ?? this._trailSpeed,
+            this._trailCurlFreqShard ?? this._trailCurlFreq,
+            this._trailCurlStrengthShard ?? this._trailCurlStrength
+        );
+        this._updateTrailHeadSingle(
+            this._trailHeadPosCylinder,
+            this._trailHeadDirCylinder,
+            deltaTime,
+            37.0,
+            this._trailSpeedCylinder ?? this._trailSpeed,
+            this._trailCurlFreqCylinder ?? this._trailCurlFreq,
+            this._trailCurlStrengthCylinder ?? this._trailCurlStrength,
+            { timeScale: 2.35, extraAmp: 0.62 }
+        );
+
+        this._trailHeadPos.copy(this._trailHeadPosShard);
+        this._trailHeadDir.copy(this._trailHeadDirShard);
+        this._lastShardPos.copy(this._trailHeadPosShard);
+        this._lastCylinderWorldPos.copy(this._trailHeadPosCylinder);
+    }
+
     /** 0–127 以外に OSC が 0–1 float を送る場合も正規化 */
     normalizeMidiVelocity(v) {
         if (v === undefined || v === null) return 127;
@@ -1088,7 +960,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * トラック5：位置は actual_tick 差分×定数。進行方向はノイズでねじる。
+     * トラック5：常時移動する残像ヘッド位置に金属片を生成。
      * durationMs: デュレーション（ms）でスケール。velocity: 金属色の明るさ。
      */
     spawnMetalShardFromTrack5(velocity, durationMs = 180) {
@@ -1096,31 +968,22 @@ float cylinderSurfH( vec3 v ) {
 
         const vMidi = this.normalizeMidiVelocity(velocity);
 
-        const tick = Math.floor(this.actualTick ?? 0);
-        const deltaTick = this._tickDelta(tick, this._lastSpawnTickTrack5);
-        this._lastSpawnTickTrack5 = tick;
-
         const si = this._snakeIndex;
-        const worldUp = new THREE.Vector3(0, 1, 0);
-        let side = new THREE.Vector3().crossVectors(worldUp, this._snakeDir);
-        if (side.lengthSq() < 1e-8) {
-            side.crossVectors(new THREE.Vector3(1, 0, 0), this._snakeDir);
-        }
-        side.normalize();
-        this._snakeDir.applyAxisAngle(worldUp, (this._shardNoise(si * 0.31, 1.2, 3.4) - 0.5) * 0.44);
-        this._snakeDir.applyAxisAngle(side, (this._shardNoise(2.1, si * 0.29, 4.4) - 0.5) * 0.38);
-        this._snakeDir.normalize();
-
-        const stepLen = deltaTick * Scene21.METERS_PER_TICK_SHARD;
         const newPos = this._spawnWorldPosTemp;
-        newPos.copy(this._lastShardPos).addScaledVector(this._snakeDir, stepLen);
-        this._applySequenceAwareJitter(newPos, deltaTick, this._snakeDir, si + tick * 0.0007, si * 1.7);
-
-        newPos.x = THREE.MathUtils.clamp(newPos.x, -this.roomHalfW + 140, this.roomHalfW - 140);
-        newPos.z = THREE.MathUtils.clamp(newPos.z, -this.roomHalfD + 140, this.roomHalfD - 140);
+        newPos.copy(this._trailHeadPosShard);
+        const headRight = new THREE.Vector3().crossVectors(this._trailHeadDirShard, new THREE.Vector3(0, 1, 0));
+        if (headRight.lengthSq() > 1e-8) {
+            headRight.normalize();
+            const lateral = (this._shardNoise(si * 0.63, this.time * 0.11, 1.9) - 0.5) * 130;
+            newPos.addScaledVector(headRight, lateral);
+        }
+        const vertical = (this._shardNoise(2.7, si * 0.29, this.time * 0.09) - 0.5) * 95;
+        newPos.y += vertical;
+        newPos.x = THREE.MathUtils.clamp(newPos.x, -this.roomHalfW * 0.62, this.roomHalfW * 0.62);
+        newPos.z = THREE.MathUtils.clamp(newPos.z, -this.roomHalfD * 0.62, this.roomHalfD * 0.62);
         newPos.y = THREE.MathUtils.clamp(newPos.y, this.floorTopY + 90, this.ceilingY * 0.46);
 
-        const fwd = this._snakeDir.clone().normalize();
+        const fwd = this._trailHeadDirShard.clone().normalize();
         const qSnake = new THREE.Quaternion();
         const zAxis = new THREE.Vector3(0, 0, 1);
         if (Math.abs(zAxis.dot(fwd)) > 0.998) {
@@ -1128,15 +991,9 @@ float cylinderSurfH( vec3 v ) {
         } else {
             qSnake.setFromUnitVectors(zAxis, fwd);
         }
-        const rapid = 0.72;
-        const roll = (this._shardNoise(si, 7.1, 0.3) - 0.5) * Math.PI * (0.88 + rapid * 0.45);
+        const roll = (this._shardNoise(si, 7.1, this.time * 0.05) - 0.5) * Math.PI * 0.32;
         const qRoll = new THREE.Quaternion().setFromAxisAngle(fwd, roll);
-        const nx = (this._shardNoise(si, 4.2, 1.1) - 0.5) * (1.15 + rapid * 0.35);
-        const ny = (this._shardNoise(si, 5.3, 2.2) - 0.5) * (1.15 + rapid * 0.35);
-        const nz = (this._shardNoise(si, 6.4, 3.3) - 0.5) * (0.95 + rapid * 0.45);
-        const qN = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(nx * Math.PI * 0.55, ny * Math.PI * 0.55, nz * Math.PI * 0.55, 'YXZ')
-        );
+        const qN = this._composeTrailNoiseQuat(si * 0.71 + this.time * 0.13);
         const qFinal = qSnake.clone().multiply(qRoll).multiply(qN);
 
         this._lastShardPos.copy(newPos);
@@ -1290,11 +1147,11 @@ float cylinderSurfH( vec3 v ) {
         this.cylinderGroup.position.set(0, 0, 0);
         this.scene.add(this.cylinderGroup);
 
-        /** レーザーより弱い赤橙。暖色寄り＋弱エミッシブ（ブルームは控えめ） */
+        /** 赤橙は color 主役。emissive は実質オフ寄り（フォグと馴染ませる） */
         this._redCylinderMaterial = new THREE.MeshStandardMaterial({
             color: 0xcc4624,
-            emissive: 0x3a1208,
-            emissiveIntensity: 0.3,
+            emissive: 0x000000,
+            emissiveIntensity: 0,
             metalness: 0,
             roughness: 0.52,
             /** フォグ無効だと壁・床と霞のかかり方が違い、浮いて見えやすい */
@@ -1323,8 +1180,8 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * トラック6：赤いシリンダ。位置はトラック5と同系の tick パス＋ジッター。
-     * デュレーション→長さ（緩いマッピング）、ベロシティ→半径。noteNumber は向きのばらつき用（args[0]）
+     * トラック6：赤いシリンダ。常時移動する残像ヘッド位置で生成。
+     * デュレーション→長さ（緩いマッピング）、ベロシティ→半径。noteNumber は傾き種（args[0]）
      */
     spawnRedCylinderFromTrack6(velocity, durationMs = 180, noteNumber = 64) {
         if (!this.cylinderGroup || !this.cylinderInstMesh || !this._redCylinderMaterial) return;
@@ -1337,30 +1194,16 @@ float cylinderSurfH( vec3 v ) {
 
         const slotIndex = this._allocCylinderSlot();
 
-        const tick = Math.floor(this.actualTick ?? 0);
-        const deltaTick = this._tickDelta(tick, this._lastSpawnTickTrack6);
-        this._lastSpawnTickTrack6 = tick;
-
         const ci = this.cylinders.length;
         const wu = new THREE.Vector3(0, 1, 0);
-        let cside = new THREE.Vector3().crossVectors(wu, this._cylinderPathDir);
-        if (cside.lengthSq() < 1e-8) {
-            cside.crossVectors(new THREE.Vector3(1, 0, 0), this._cylinderPathDir);
+        this._cylinderPosTemp.copy(this._trailHeadPosCylinder);
+        const cside = new THREE.Vector3().crossVectors(this._trailHeadDirCylinder, wu);
+        if (cside.lengthSq() > 1e-8) {
+            cside.normalize();
+            const lateral = (this._shardNoise(ci * 0.37, this.time * 0.09, 2.2) - 0.5) * 180;
+            this._cylinderPosTemp.addScaledVector(cside, lateral);
         }
-        cside.normalize();
-        this._cylinderPathDir.applyAxisAngle(wu, (this._shardNoise(ci * 0.27, 1.1, 3.2) - 0.5) * 0.46);
-        this._cylinderPathDir.applyAxisAngle(cside, (this._shardNoise(2.2, ci * 0.23, 4.0) - 0.5) * 0.4);
-        this._cylinderPathDir.normalize();
-
-        if (this.cylinders.length === 0) {
-            this._lastCylinderWorldPos.copy(this._lastShardPos);
-        }
-        const stepLen = deltaTick * Scene21.METERS_PER_TICK_CYLINDER;
-        this._cylinderPosTemp.copy(this._lastCylinderWorldPos).addScaledVector(this._cylinderPathDir, stepLen);
-        this._applySequenceAwareJitter(this._cylinderPosTemp, deltaTick, this._cylinderPathDir, ci * 2.1 + tick * 0.0005, ci * 1.3 + 9.2);
-        // 端に張り付き続けないよう、緩く中心へ戻す
-        this._cylinderPosTemp.x *= 0.92;
-        this._cylinderPosTemp.z *= 0.92;
+        this._cylinderPosTemp.y += (this._shardNoise(3.4, ci * 0.21, this.time * 0.07) - 0.5) * 140;
         const cylXLimit = this.roomHalfW * 0.62;
         const cylZLimit = this.roomHalfD * 0.62;
         this._cylinderPosTemp.x = THREE.MathUtils.clamp(
@@ -1380,22 +1223,25 @@ float cylinderSurfH( vec3 v ) {
         );
         this._lastCylinderWorldPos.copy(this._cylinderPosTemp);
 
-        const u = Math.random() * Math.PI * 2;
-        const v = Math.acos(2 * Math.random() - 1);
-        this._cylinderDirTemp.set(
-            Math.sin(v) * Math.cos(u),
-            Math.cos(v),
-            Math.sin(v) * Math.sin(u)
-        );
-        if (Math.abs(this._cylinderDirTemp.dot(this._cylinderAxisUp)) > 0.998) {
-            this._cylinderDirTemp.x += 0.002;
-            this._cylinderDirTemp.normalize();
-        }
         const n = Number(noteNumber);
         const nJ = Number.isFinite(n) ? n : 64;
-        this._cylinderDirTemp.applyAxisAngle(wu, (this._shardNoise(nJ * 0.07, ci * 0.13, 0.9) - 0.5) * 0.55);
+        const tiltBase = THREE.MathUtils.lerp(0.08, 0.92, vMidi / 127);
+        const tiltNoise = this._shardNoise(nJ * 0.07, ci * 0.13, this.time * 0.06);
+        const tiltT = THREE.MathUtils.clamp(tiltBase * 0.62 + tiltNoise * 0.38, 0, 1);
+        const tiltRad = THREE.MathUtils.lerp(0.0, Math.PI * 0.44, tiltT);
+        this._cylinderSideTemp.crossVectors(this._trailHeadDirCylinder, this._cylinderAxisUp);
+        if (this._cylinderSideTemp.lengthSq() < 1e-8) {
+            this._cylinderSideTemp.crossVectors(this._trailHeadDirCylinder, this._cylinderFallbackAxis);
+        }
+        this._cylinderSideTemp.normalize();
+        // 基準姿勢は進行方向に対して垂直（forward への直交ベクトル）
+        this._cylinderPerpTemp.crossVectors(this._cylinderSideTemp, this._trailHeadDirCylinder).normalize();
+        // そこから forward 側へ倒し角を与える
+        this._cylinderDirTemp.copy(this._cylinderPerpTemp).multiplyScalar(Math.cos(tiltRad));
+        this._cylinderDirTemp.addScaledVector(this._trailHeadDirCylinder, Math.sin(tiltRad));
         this._cylinderDirTemp.normalize();
         this._cylinderQuatTemp.setFromUnitVectors(this._cylinderAxisUp, this._cylinderDirTemp);
+        this._cylinderQuatTemp.multiply(this._composeTrailNoiseQuat(ci * 0.53 + this.time * 0.17));
         this.cylinderGroup.updateMatrixWorld(true);
         this.cylinderGroup.worldToLocal(this._cylinderPosTemp);
 
@@ -1590,13 +1436,27 @@ float cylinderSurfH( vec3 v ) {
             const px = this._redBurstPositions[i3];
             const py = this._redBurstPositions[i3 + 1];
             const pz = this._redBurstPositions[i3 + 2];
-            const fx = px * curlFreq;
-            const fy = py * curlFreq;
-            const fz = pz * curlFreq;
-            // 拡散運動にカールノイズ風ベクトル場を加えて、渦感を出す
-            const curlX = -Math.cos(fz * 1.9 - tt * 1.1);
-            const curlY = -Math.cos(fx * 1.6 + tt * 1.7);
-            const curlZ = -Math.cos(fy * 1.7 + tt * 1.3);
+            const seed = this._shardNoise(i * 0.173, 4.37, 9.11);
+            const jitterAmp = 220;
+            const sx = px + (seed - 0.5) * jitterAmp;
+            const sy = py + (this._shardNoise(i * 0.127, 7.91, 2.13) - 0.5) * jitterAmp;
+            const sz = pz + (this._shardNoise(i * 0.097, 1.77, 5.59) - 0.5) * jitterAmp;
+            this._sampleCurlNoiseVectorInto(
+                this._redBurstCurlTemp,
+                sx,
+                sy,
+                sz,
+                tt + seed * 6.0,
+                curlFreq * 1.7,
+                12.0,
+                seed
+            );
+            const turbX = (this._shardNoise(sx * 0.0061, sy * 0.0043, tt * 0.73 + seed * 3.1) - 0.5) * 2.0;
+            const turbY = (this._shardNoise(sy * 0.0057, sz * 0.0047, tt * 0.89 + seed * 1.7) - 0.5) * 2.0;
+            const turbZ = (this._shardNoise(sz * 0.0063, sx * 0.0041, tt * 0.67 + seed * 2.9) - 0.5) * 2.0;
+            const curlX = this._redBurstCurlTemp.x + turbX * 0.62;
+            const curlY = this._redBurstCurlTemp.y + turbY * 0.62;
+            const curlZ = this._redBurstCurlTemp.z + turbZ * 0.62;
             this._redBurstVelocities[i3] *= drag;
             this._redBurstVelocities[i3 + 1] = this._redBurstVelocities[i3 + 1] * drag - gravity * dt;
             this._redBurstVelocities[i3 + 2] *= drag;
@@ -1918,6 +1778,38 @@ float cylinderSurfH( vec3 v ) {
             fog: true
         });
         this.track9SharedGeo = new THREE.SphereGeometry(1, 28, 28);
+    }
+
+    /**
+     * track9SpawnDuringDuration がオンのとき、デュレーション窓が生きている間に一定間隔でスポーン。
+     * ノートオン時の1発目は handleTrackNumber 側で行う。
+     */
+    _tickTrack9DurationSpawn() {
+        if (!this.track9SpawnDuringDuration) return;
+        const now = performance.now();
+        if (now >= this._track9SpawnWindowEndMs) return;
+        const intv = Math.max(16, Number(this.track9DurationSpawnIntervalMs) || 52);
+        if (now - this._track9LastDurationSpawnMs < intv) return;
+        this._track9LastDurationSpawnMs = now;
+        this.spawnTrack9SphereFromWorldCenter(this._track9SpawnWindowVelocity);
+    }
+
+    /**
+     * cylinderSpawnDuringDuration がオンのとき、デュレーション窓が生きている間に一定間隔でスポーン。
+     * ノートオン時の1発目は handleTrackNumber 側で行う。
+     */
+    _tickCylinderDurationSpawn() {
+        if (!this.cylinderSpawnDuringDuration) return;
+        const now = performance.now();
+        if (now >= this._cylinderSpawnWindowEndMs) return;
+        const intv = Math.max(16, Number(this.cylinderDurationSpawnIntervalMs) || 52);
+        if (now - this._cylinderLastDurationSpawnMs < intv) return;
+        this._cylinderLastDurationSpawnMs = now;
+        this.spawnRedCylinderFromTrack6(
+            this._cylinderSpawnWindowVelocity,
+            this._cylinderSpawnWindowDurationMs,
+            this._cylinderSpawnWindowNoteNumber
+        );
     }
 
     /**
@@ -2335,6 +2227,15 @@ float cylinderSurfH( vec3 v ) {
         this.camera.updateProjectionMatrix();
         this.camera.position.set(0, 1000, 4500);
         this.camera.lookAt(0, 400, 0);
+        this._trailCenter.set(0, this.floorTopY + (this.ceilingY - this.floorTopY) * 0.33, 0);
+        this._trailHeadPos.set(0, this._trailCenter.y, 0);
+        this._trailHeadDir.set(0, 0.06, 1).normalize();
+        this._trailHeadPosShard.copy(this._trailHeadPos);
+        this._trailHeadDirShard.copy(this._trailHeadDir);
+        this._trailHeadPosCylinder.copy(this._trailHeadPos).add(new THREE.Vector3(140, 40, -120));
+        this._trailHeadDirCylinder.set(0.1, 0.04, 1).normalize();
+        this._lastShardPos.copy(this._trailHeadPosShard);
+        this._lastCylinderWorldPos.copy(this._trailHeadPosCylinder);
 
         this.setupEnvironment();
 
@@ -2357,7 +2258,7 @@ float cylinderSurfH( vec3 v ) {
         }
 
         const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
-        const textures = this.generateConcretePBRTextures(1024, maxAniso);
+        const textures = generateConcretePBRTextures(1024, maxAniso);
         this.buildRoom(textures);
 
         const floorMat = this.roomGroup.children[0].material;
@@ -2394,7 +2295,6 @@ float cylinderSurfH( vec3 v ) {
         this.setupCameraParticleDistances();
         this.initPostProcessing();
         this.setParticleCount(this.maxShards + 8 + this.ambientParticleCount + this.maxCylinders + this.maxTrack9Spheres);
-        await this._initPromoText3D();
         this._initLaserScan();
         this.initialized = true;
     }
@@ -2402,6 +2302,7 @@ float cylinderSurfH( vec3 v ) {
     onUpdate(deltaTime) {
         if (!this.initialized) return;
         this.time += deltaTime;
+        this._updateTrailHeadMotion(deltaTime);
 
         this._updateFadeOpacity();
         this.pruneExpiredShards();
@@ -2412,6 +2313,8 @@ float cylinderSurfH( vec3 v ) {
             const p = this.shardGroup?.position ?? this._cameraFocusSmoothed ?? new THREE.Vector3(0, this.floorTopY + 600, 0);
             this._spawnAmbientParticlesBurst(p, this.ambientMinLiving - this._ambientLiving.length);
         }
+        this._tickTrack9DurationSpawn();
+        this._tickCylinderDurationSpawn();
         this._updateTrack9SpherePhysics(deltaTime);
 
         const targetTrack7 = this.trackEffects[7] ? this.trackValues[7] || 0 : 0;
@@ -2533,85 +2436,7 @@ float cylinderSurfH( vec3 v ) {
             });
         }
 
-        this._updatePromoTextAndLaser();
-    }
-
-    /**
-     * 金属調 3D テキスト（南壁・部屋内固定）＋壁レーザー（1 小節で一周）
-     */
-    async _initPromoText3D() {
-        if (this.promoTextGroup) return;
-        const fontHref = new URL('../../../node_modules/three/examples/fonts/helvetiker_regular.typeface.json', import.meta.url).href;
-        const loader = new FontLoader();
-        let font;
-        try {
-            font = await new Promise((resolve, reject) => loader.load(fontHref, resolve, undefined, reject));
-        } catch (e) {
-            console.warn('Scene21: promo font load failed', e);
-            return;
-        }
-
-        const env = this.scene.environment;
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0xd4dae4,
-            metalness: 0.94,
-            roughness: 0.2,
-            envMap: env,
-            envMapIntensity: 1.15,
-            emissive: 0x2a3038,
-            emissiveIntensity: 0.16,
-            fog: true
-        });
-
-        this.promoTextGroup = new THREE.Group();
-        const headline = this.title || 'mathym | Xenomist';
-        const releaseLines = this.promoReleaseInfoLines ?? [];
-        const mainSize = 400;
-        const mainExtrude = 92;
-        const subSize = 148;
-        const subExtrude = 34;
-        const gapAfterHeadline = 96;
-        const lineGapSub = 40;
-        let yCursor = 0;
-
-        const addLine = (text, size, height, bevelT, bevelS, gapAfter) => {
-            const geo = new TextGeometry(text, {
-                font,
-                size,
-                height,
-                curveSegments: size > 200 ? 10 : 8,
-                bevelEnabled: true,
-                bevelThickness: bevelT,
-                bevelSize: bevelS,
-                bevelOffset: 0,
-                bevelSegments: 2
-            });
-            geo.computeBoundingBox();
-            const bx = geo.boundingBox;
-            const cy = -(bx.max.y + bx.min.y) * 0.5;
-            const cz = -(bx.max.z + bx.min.z) * 0.5;
-            geo.translate(-bx.min.x, cy, cz);
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.y = yCursor;
-            yCursor -= size + gapAfter;
-            this.promoTextGroup.add(mesh);
-        };
-
-        addLine(headline, mainSize, mainExtrude, 9, 3.8, gapAfterHeadline);
-        for (let j = 0; j < releaseLines.length; j++) {
-            addLine(releaseLines[j], subSize, subExtrude, 3.2, 1.35, lineGapSub);
-        }
-
-        this.promoTextGroup.updateMatrixWorld(true);
-        const box = new THREE.Box3().setFromObject(this.promoTextGroup);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        const hd = this.roomHalfD;
-        const zFromWall = 72;
-        const zPos = -hd + zFromWall;
-        this.promoTextGroup.position.set(-center.x, this._wallCenterY - center.y, zPos - center.z);
-        this.promoTextGroup.rotation.y = 0;
-        this.scene.add(this.promoTextGroup);
+        this._updateWallLaserScan();
     }
 
     _initLaserScan() {
@@ -2643,7 +2468,7 @@ float cylinderSurfH( vec3 v ) {
         return beat - Math.floor(beat);
     }
 
-    _updatePromoTextAndLaser() {
+    _updateWallLaserScan() {
         if (!this.laserScanMesh) return;
 
         const hw = this.roomHalfW;
@@ -2713,12 +2538,21 @@ float cylinderSurfH( vec3 v ) {
             }
         } else if (tn === 6) {
             this.trackValues[6] = value;
+            const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
+            const durationMs = Number.isFinite(durRaw) ? Math.max(1, durRaw) : 180;
+            const noteRaw = args[0] !== undefined ? Number(args[0]) : 64;
+            const noteNumber = Number.isFinite(noteRaw) ? noteRaw : 64;
             if (velocity > 0) {
-                const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
-                const durationMs = Number.isFinite(durRaw) ? durRaw : 180;
-                const noteRaw = args[0] !== undefined ? Number(args[0]) : 64;
-                const noteNumber = Number.isFinite(noteRaw) ? noteRaw : 64;
+                this._cylinderSpawnWindowVelocity = velocity;
+                this._cylinderSpawnWindowNoteNumber = noteNumber;
+                this._cylinderSpawnWindowDurationMs = durationMs;
+                if (this.cylinderSpawnDuringDuration) {
+                    this._cylinderSpawnWindowEndMs = performance.now() + durationMs;
+                    this._cylinderLastDurationSpawnMs = performance.now();
+                }
                 this.spawnRedCylinderFromTrack6(velocity, durationMs, noteNumber);
+            } else {
+                this._cylinderSpawnWindowEndMs = 0;
             }
         } else if (tn === 7) {
             this.trackValues[7] = value;
@@ -2726,8 +2560,17 @@ float cylinderSurfH( vec3 v ) {
                 this.colorIndex = (this.colorIndex + 1) % this.colors.length;
             }
         } else if (tn === 9) {
+            const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
+            const durationMs = Number.isFinite(durRaw) ? Math.max(1, durRaw) : 180;
             if (velocity > 0) {
+                this._track9SpawnWindowVelocity = velocity;
+                if (this.track9SpawnDuringDuration) {
+                    this._track9SpawnWindowEndMs = performance.now() + durationMs;
+                    this._track9LastDurationSpawnMs = performance.now();
+                }
                 this.spawnTrack9SphereFromWorldCenter(velocity);
+            } else {
+                this._track9SpawnWindowEndMs = 0;
             }
         }
     }
@@ -2973,17 +2816,6 @@ float cylinderSurfH( vec3 v ) {
         if (this.promoWallLightTarget) {
             this.scene.remove(this.promoWallLightTarget);
             this.promoWallLightTarget = null;
-        }
-
-        if (this.promoTextGroup) {
-            this.scene.remove(this.promoTextGroup);
-            this.promoTextGroup.traverse((o) => {
-                if (o.geometry) o.geometry.dispose();
-            });
-            if (this.promoTextGroup.children[0]?.material) {
-                this.promoTextGroup.children[0].material.dispose();
-            }
-            this.promoTextGroup = null;
         }
 
         if (this.laserScanMesh) {

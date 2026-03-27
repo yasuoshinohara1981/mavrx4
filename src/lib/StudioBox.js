@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { drawGroutLines, drawRedCrossesAndLabels } from './studioBoxGrout.js';
+import { generateLabGrungeTextures } from './LabGrungeTextures.js';
 
 /**
  * StudioBox: 撮影用スタジオ（白い箱と床）を管理するクラス
@@ -19,7 +21,17 @@ export class StudioBox {
         // 追加パラメータ（既存の挙動を壊さないようにデフォルト値を設定）
         this.envMap = options.envMap || null;
         this.envMapIntensity = options.envMapIntensity !== undefined ? options.envMapIntensity : 1.0;
-        
+        this.grungeEnabled = options.grungeEnabled === true;
+        this.maxAnisotropy = options.maxAnisotropy ?? 8;
+        /** 壁・床のリピート（非対称で汚れの流れを偏らせる） */
+        this.grungeWallRepeat = options.grungeWallRepeat || null;
+        this.grungeFloorRepeat = options.grungeFloorRepeat || null;
+        this.grungeWallOffset = options.grungeWallOffset || null;
+        this.grungeFloorOffset = options.grungeFloorOffset || null;
+        this.grungeWallTexOptions = options.grungeWallTexOptions || null;
+        this.grungeFloorTexOptions = options.grungeFloorTexOptions || null;
+        this.grungeTextures = null;
+
         this.studioBox = null;
         this.studioFloor = null;
         this.textures = null;
@@ -31,34 +43,100 @@ export class StudioBox {
     }
 
     setup() {
-        // テクスチャ生成（壁用：タイル、赤い十字なし）
-        this.textures = this.generateTileTexture(true);
+        if (this.grungeEnabled) {
+            const maxA = this.maxAnisotropy;
+            const wallGen = { variant: 'wall', seed: 101, maxAnisotropy: maxA, ...(this.grungeWallTexOptions || {}) };
+            const floorGen = { variant: 'floor', seed: 202, maxAnisotropy: maxA, ...(this.grungeFloorTexOptions || {}) };
+            this.grungeTextures = {
+                wall: generateLabGrungeTextures(2048, wallGen),
+                floor: generateLabGrungeTextures(2048, floorGen),
+                ceiling: generateLabGrungeTextures(2048, { variant: 'ceiling', seed: 303, maxAnisotropy: maxA })
+            };
+            const wallRepX = this.grungeWallRepeat ? this.grungeWallRepeat.x : 5.5;
+            const wallRepY = this.grungeWallRepeat ? this.grungeWallRepeat.y : 5.5;
+            const floorRepX = this.grungeFloorRepeat ? this.grungeFloorRepeat.x : 5.2;
+            const floorRepY = this.grungeFloorRepeat ? this.grungeFloorRepeat.y : 5.2;
+            ['map', 'normalMap', 'roughnessMap', 'aoMap'].forEach((key) => {
+                const t = this.grungeTextures.wall[key];
+                if (t && t.repeat) {
+                    t.repeat.set(wallRepX, wallRepY);
+                    if (this.grungeWallOffset) t.offset.set(this.grungeWallOffset.x, this.grungeWallOffset.y);
+                }
+            });
+            ['map', 'normalMap', 'roughnessMap', 'aoMap'].forEach((key) => {
+                const t = this.grungeTextures.floor[key];
+                if (t && t.repeat) {
+                    t.repeat.set(floorRepX, floorRepY);
+                    if (this.grungeFloorOffset) t.offset.set(this.grungeFloorOffset.x, this.grungeFloorOffset.y);
+                }
+            });
+            this.textures = this.grungeTextures.wall;
+            this.floorTextures = this.grungeTextures.floor;
+        } else {
+            this.textures = this.generateTileTexture(true);
+        }
 
         // スタジオ（箱）
         // 天井だけタイルにならないように、マテリアルを配列で定義する
         // BoxGeometryの面順: 0:右, 1:左, 2:上(天井), 3:下(床), 4:前, 5:後
-        const wallMat = new THREE.MeshStandardMaterial({
-            color: this.color,
-            map: this.textures.map,
-            bumpMap: this.textures.bumpMap,
-            bumpScale: 1.0, // 壁も凹凸を抑えて細い線を活かす
-            side: THREE.BackSide,
-            roughness: this.roughness * 0.5, 
-            metalness: this.metalness + 0.1,
-            envMap: this.envMap,
-            envMapIntensity: this.envMapIntensity
-        });
-
-        const ceilingMat = new THREE.MeshStandardMaterial({
-            color: this.lightColor, // 天井自体をライトの色にする
-            side: THREE.BackSide,
-            roughness: this.roughness,
-            metalness: this.metalness,
-            emissive: this.lightColor, // 天井を発光させる！
-            emissiveIntensity: this.lightIntensity * 0.5, // 少し抑えめに発光
-            envMap: this.envMap,
-            envMapIntensity: this.envMapIntensity
-        });
+        let wallMat;
+        let ceilingMat;
+        if (this.grungeEnabled) {
+            const w = this.grungeTextures.wall;
+            const c = this.grungeTextures.ceiling;
+            wallMat = new THREE.MeshStandardMaterial({
+                color: this.color,
+                map: w.map,
+                normalMap: w.normalMap,
+                normalScale: new THREE.Vector2(0.62, 0.62),
+                roughnessMap: w.roughnessMap,
+                aoMap: w.aoMap,
+                aoMapIntensity: 1.0,
+                side: THREE.BackSide,
+                roughness: this.roughness * 0.5,
+                metalness: this.metalness + 0.1,
+                envMap: this.envMap,
+                envMapIntensity: this.envMapIntensity
+            });
+            ceilingMat = new THREE.MeshStandardMaterial({
+                color: this.lightColor,
+                map: c.map,
+                normalMap: c.normalMap,
+                normalScale: new THREE.Vector2(0.42, 0.42),
+                roughnessMap: c.roughnessMap,
+                aoMap: c.aoMap,
+                aoMapIntensity: 0.88,
+                side: THREE.BackSide,
+                roughness: this.roughness,
+                metalness: this.metalness,
+                emissive: this.lightColor,
+                emissiveIntensity: this.lightIntensity * 0.5,
+                envMap: this.envMap,
+                envMapIntensity: this.envMapIntensity
+            });
+        } else {
+            wallMat = new THREE.MeshStandardMaterial({
+                color: this.color,
+                map: this.textures.map,
+                bumpMap: this.textures.bumpMap,
+                bumpScale: 1.0, // 壁も凹凸を抑えて細い線を活かす
+                side: THREE.BackSide,
+                roughness: this.roughness * 0.5,
+                metalness: this.metalness + 0.1,
+                envMap: this.envMap,
+                envMapIntensity: this.envMapIntensity
+            });
+            ceilingMat = new THREE.MeshStandardMaterial({
+                color: this.lightColor, // 天井自体をライトの色にする
+                side: THREE.BackSide,
+                roughness: this.roughness,
+                metalness: this.metalness,
+                emissive: this.lightColor, // 天井を発光させる！
+                emissiveIntensity: this.lightIntensity * 0.5, // 少し抑えめに発光
+                envMap: this.envMap,
+                envMapIntensity: this.envMapIntensity
+            });
+        }
 
         const materials = [
             wallMat, // 0: 右
@@ -68,30 +146,58 @@ export class StudioBox {
             wallMat, // 4: 前
             wallMat  // 5: 後
         ];
-        
+
         const geometry = new THREE.BoxGeometry(this.size, this.size, this.size);
+        if (this.grungeEnabled) {
+            geometry.setAttribute('uv2', geometry.attributes.uv.clone());
+        }
         this.studioBox = new THREE.Mesh(geometry, materials);
         this.studioBox.position.set(0, 500, 0);
+        this.studioBox.castShadow = true;
         this.studioBox.receiveShadow = true;
         this.scene.add(this.studioBox);
 
         const floorGeo = new THREE.PlaneGeometry(this.size, this.size);
-        this.floorTextures = this.generateTileTexture(false);
+        if (!this.grungeEnabled) {
+            this.floorTextures = this.generateTileTexture(false);
+        }
+        if (this.grungeEnabled) {
+            floorGeo.setAttribute('uv2', floorGeo.attributes.uv.clone());
+        }
 
         if (this.useFloorTile) {
-            const floorMat = new THREE.MeshStandardMaterial({
-                color: this.color,
-                map: this.floorTextures.map,
-                bumpMap: this.floorTextures.bumpMap,
-                bumpScale: 1.0, 
-                roughness: this.roughness * 0.3, 
-                metalness: this.metalness + 0.2,
-                envMap: this.envMap,
-                envMapIntensity: this.envMapIntensity * 1.3 
-            });
+            let floorMat;
+            if (this.grungeEnabled) {
+                const f = this.grungeTextures.floor;
+                floorMat = new THREE.MeshStandardMaterial({
+                    color: this.color,
+                    map: f.map,
+                    normalMap: f.normalMap,
+                    normalScale: new THREE.Vector2(0.62, 0.62),
+                    roughnessMap: f.roughnessMap,
+                    aoMap: f.aoMap,
+                    aoMapIntensity: 1.0,
+                    roughness: this.roughness * 0.3,
+                    metalness: this.metalness + 0.2,
+                    envMap: this.envMap,
+                    envMapIntensity: this.envMapIntensity * 1.3
+                });
+            } else {
+                floorMat = new THREE.MeshStandardMaterial({
+                    color: this.color,
+                    map: this.floorTextures.map,
+                    bumpMap: this.floorTextures.bumpMap,
+                    bumpScale: 1.0,
+                    roughness: this.roughness * 0.3,
+                    metalness: this.metalness + 0.2,
+                    envMap: this.envMap,
+                    envMapIntensity: this.envMapIntensity * 1.3
+                });
+            }
             this.studioFloor = new THREE.Mesh(floorGeo, floorMat);
             this.studioFloor.rotation.x = -Math.PI / 2;
-            this.studioFloor.position.y = -498; 
+            this.studioFloor.position.y = -498;
+            this.studioFloor.castShadow = true;
             this.studioFloor.receiveShadow = true;
             this.scene.add(this.studioFloor);
         }
@@ -131,84 +237,6 @@ export class StudioBox {
             this.scene.add(mesh);
             this.fluorescentLights.push(mesh);
         });
-    }
-
-    /**
-     * 目地グリッドのみ（StudioBox タイルと同じ 50 分割・同寸法）
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {number} size キャンバス一辺
-     * @param {{ divisions?: number, strokeStyle?: string, lineWidth?: number }} [options]
-     */
-    static drawGroutLines(ctx, size, options = {}) {
-        const divisions = options.divisions ?? 50;
-        const step = size / divisions;
-        ctx.strokeStyle = options.strokeStyle ?? '#808080';
-        ctx.lineWidth = options.lineWidth ?? 0.5;
-        ctx.beginPath();
-        for (let i = 0; i <= divisions; i++) {
-            ctx.moveTo(i * step, 0);
-            ctx.lineTo(i * step, size);
-            ctx.moveTo(0, i * step);
-            ctx.lineTo(size, i * step);
-        }
-        ctx.stroke();
-    }
-
-    /**
-     * 赤い十字と目盛りテキスト（床タイル用）。canvas サイズに応じてスケールする。
-     * @param {CanvasRenderingContext2D} ctx
-     * @param {number} size キャンバス一辺
-     * @param {number} [divisions=50] 目地分割数（drawGroutLines と同じにすること）
-     */
-    static drawRedCrossesAndLabels(ctx, size, divisions = 50) {
-        const scale = size / 2048;
-        const step = size / divisions;
-        const labelMax = 256;
-        const centerIdx = divisions / 2;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        const fontPx = Math.max(5, Math.round(8 * scale));
-        ctx.font = `500 ${fontPx}px "Inter", "Roboto", sans-serif`;
-        const cs = 5 * scale;
-        const textOff = 12 * scale;
-        const lineW = Math.max(0.5, 1.0 * scale);
-
-        for (let i = 0; i <= divisions; i += 2) {
-            const tx = i * step;
-            const tyCenter = centerIdx * step;
-            const labelVal = Math.abs((i - centerIdx) * (labelMax / centerIdx));
-
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
-            ctx.lineWidth = lineW;
-
-            ctx.beginPath();
-            ctx.moveTo(tx - cs, tyCenter);
-            ctx.lineTo(tx + cs, tyCenter);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(tx, tyCenter - cs);
-            ctx.lineTo(tx, tyCenter + cs);
-            ctx.stroke();
-
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            ctx.fillText(String(Math.round(labelVal)), tx, tyCenter + textOff);
-
-            const tz = i * step;
-            const txCenter = centerIdx * step;
-
-            if (i !== centerIdx) {
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
-                ctx.beginPath();
-                ctx.moveTo(txCenter - cs, tz);
-                ctx.lineTo(txCenter + cs, tz);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(txCenter, tz - cs);
-                ctx.lineTo(txCenter, tz + cs);
-                ctx.stroke();
-                ctx.fillText(String(Math.round(labelVal)), txCenter + textOff, tz);
-            }
-        }
     }
 
     /**
@@ -296,14 +324,15 @@ export class StudioBox {
             this.studioFloor.geometry.dispose();
             this.studioFloor.material.dispose();
         }
-        if (this.textures) {
+        if (this.textures && !this.grungeEnabled) {
             if (this.textures.map) this.textures.map.dispose();
             if (this.textures.bumpMap) this.textures.bumpMap.dispose();
         }
-        if (this.floorTextures) {
+        if (this.floorTextures && !this.grungeEnabled) {
             if (this.floorTextures.map) this.floorTextures.map.dispose();
             if (this.floorTextures.bumpMap) this.floorTextures.bumpMap.dispose();
         }
+        this.grungeTextures = null;
         // 蛍光灯のクリーンアップ
         this.fluorescentLights.forEach(light => {
             this.scene.remove(light);
@@ -317,3 +346,6 @@ export class StudioBox {
         this.pointLights = [];
     }
 }
+
+StudioBox.drawGroutLines = drawGroutLines;
+StudioBox.drawRedCrossesAndLabels = drawRedCrossesAndLabels;

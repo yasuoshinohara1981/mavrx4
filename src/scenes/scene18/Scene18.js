@@ -7,15 +7,18 @@
 
 import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
-import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { PMREMGenerator } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
+import { generateLabGrungeTextures } from '../../lib/LabGrungeTextures.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { FogNoisePass } from '../../lib/FogNoisePass.js';
+import { generateConcretePBRTextures } from '../../lib/ConcretePBRTextures.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 export class Scene18 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -42,14 +45,28 @@ export class Scene18 extends SceneBase {
         this.coreRadius = 1300; 
         this.coreCenterY = 1200; // 400 -> 1200 (球体を浮かせるやで！)
         this.detailGroup = new THREE.Group(); // 球体やケーブルの部品用
-        this.clusterPositions = []; // パーツの配置場所を記録してケーブルと被らんようにするで！
+        this.clusterPositions = [];
 
         // 光の弾丸（ファイバーエフェクト）管理
         this.pulses = [];
 
         // 撮影用スタジオ
         this.studio = null;
-        
+        this._stabilizerSteelMaterial = null;
+        this._stabilizerSteelTextures = null;
+        this.coreGlowVividColor = new THREE.Color();
+        this.innerVividEmissive = new THREE.Color();
+        /** 外殻で共有する色（メイン球は白） */
+        this.sphereSessionColor = new THREE.Color();
+        /** チャコールグレー：部屋・入口・漂う粒子など（ケーブル・鉄骨以外） */
+        this.charcoalHex = 0x3e4248;
+        /** メイン核球のベース（白） */
+        this.sphereMainHex = 0xffffff;
+        /** 核からこぼれるスフィアの赤 */
+        this.sphereRedHex = 0xd62828;
+        /** 入口プレートのウェア用テクスチャ（dispose 用） */
+        this._entrancePlateTextures = null;
+
         // エフェクト設定（Scene21 同系：SSAO・OutputPass・控えめ DOF でミニチュア感を抑える）
         this.useDOF = true;
         this.useBloom = true;
@@ -58,13 +75,58 @@ export class Scene18 extends SceneBase {
         this.bloomPass = null;
         this.ssaoPass = null;
         this.outputPass = null;
+        this.pmremGenerator = null;
+        this._roomEnvTexture = null;
+        /** Scene21 同型：SSAO の距離スケール */
+        this.ssaoNearKernelRadius = 6.2;
+        this.ssaoNearMinDistance = 0.008;
+        this.ssaoNearMaxDistance = 0.14;
+        this.ssaoFarAttenuation = 0.42;
 
         /** 空間を漂うインスタンスボックス（2000） */
-        this.ambientParticleCount = 2000;
+        this.ambientParticleCount = 10000;
         this.ambientInstManager = null;
         this.ambientParticles = [];
 
+        /** 核球体からこぼれるピンク球（インスタンス＋表面滑り＋離脱後は自由落下） */
+        this.spillInstManager = null;
+        this._spillSphereGeo = null;
+        this.spillParticles = [];
+        this.spillMaxCount = 9000;
+        this.spillRadius = 26;
+        /** StudioBox の床プレーン Y（床で転がる中心高さはこれ + spillRadius） */
+        this.spillFloorSurfaceY = -498;
+        /** 床面上の水平移動半径（スタジオ床の半分より少し内側） */
+        this.spillFloorXZExtent = 4900;
+        this.spillGravity = 3800;
+        this.spillFloorFriction = 520;
+        this.spillSpawnRate = 34;
+        this.spillSpawnAccum = 0;
+        this._spillG = new THREE.Vector3();
+        this._spillCenter = new THREE.Vector3();
+        this._spillTmpOff = new THREE.Vector3();
+        this._spillTmpTangent = new THREE.Vector3();
+        this._spillTmpN = new THREE.Vector3();
+        this._spillTmpAxis = new THREE.Vector3();
+        this._spillTmpQ = new THREE.Quaternion();
+        this._spillScale = new THREE.Vector3(1, 1, 1);
+        this._spillHidePos = new THREE.Vector3(0, -8e5, 0);
+        this._spillHideScale = new THREE.Vector3(0.0001, 0.0001, 0.0001);
+        this._spillIdentityQuat = new THREE.Quaternion();
+        this._spillWorldUp = new THREE.Vector3(0, 1, 0);
+        this._spillTmpH = new THREE.Vector3();
+        /** スピアのインスタンス別ブルーム用（エミッシブ乗算、dispose で null） */
+        this._spillBloomAttr = null;
+        /** 生まれた直後のブルーム強さ（エミッシブ乗算のピーク） */
+        this.spillBloomPeakMul = 5.2;
+        /** 空中・球面でブルームがほぼ消えるまでの秒数 */
+        this.spillBloomDecaySec = 2.6;
+
         this._fogNoiseConfig = null;
+        /** Scene21 床と同系のコンクリPBR（目地なし）— ケーブル類に共有 */
+        this._cableConcreteTextures = null;
+        /** チューブ・終端リング用：球殻とは別パターンのラボ汚れ */
+        this._cableLabGrungeTextures = null;
         this.fogNoisePass = null;
         this._composerRTPrimary = null;
         this._composerRTSecondary = null;
@@ -90,8 +152,10 @@ export class Scene18 extends SceneBase {
         this.coreEmissiveIntensity = 0.1;
         this.targetCoreEmissiveIntensity = 0.1;
 
-        // ライト管理（パルス連動）
-        this.pointLight = null;
+        // メインは SpotLight 1本（パルスで強度・色が乗る）
+        this.spotLight = null;
+        /** 常時スポットのベース強度 */
+        this.spotBaseIntensity = 1.28;
         this.lightIntensity = 0.0;
         this.targetLightIntensity = 0.0;
 
@@ -101,9 +165,9 @@ export class Scene18 extends SceneBase {
 
         this.setScreenshotText(this.title);
 
-        // --- コールアウト管理（2Dコードは残しつつ3D化対応） ---
+        // --- コールアウト管理（HUD 2D 描画） ---
         if (this.calloutSystem) {
-            this.calloutSystem.setUse3DCallouts(true); // 3Dコールアウトを有効化
+            this.calloutSystem.setUse3DCallouts(false);
             this.calloutSystem.setLabels([
                 "CORE_TEMP: NORMAL", "VOLTAGE: 1.2MV", "PRESSURE: 450kPa", 
                 "SYNC_RATE: 98.2%", "FLOW_CTRL: ACTIVE", "CELL_STAT: STABLE",
@@ -196,22 +260,33 @@ export class Scene18 extends SceneBase {
         }
     }
 
+    setupEnvironment() {
+        this.pmremGenerator = new PMREMGenerator(this.renderer);
+        this.pmremGenerator.compileEquirectangularShader();
+        const envScene = new RoomEnvironment();
+        this._roomEnvTexture = this.pmremGenerator.fromScene(envScene, 0.045).texture;
+        this.scene.environment = this._roomEnvTexture;
+    }
+
     async setup() {
         if (this.initialized) return;
         await super.setup();
 
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 0.88;
+        this.renderer.toneMappingExposure = 0.56;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+        if ('transmissionResolutionScale' in this.renderer) {
+            this.renderer.transmissionResolutionScale = 1;
+        }
 
-        this.scene.background = new THREE.Color(0x0a0a0a);
-        /** FogNoisePass 側で合成（密度に空間＋時間ノイズを微弱に重ねる） */
+        this.scene.background = new THREE.Color(0x18191c);
+        /** FogNoisePass：チャコール系（遠景をしっかりかぶせる） */
         this._fogNoiseConfig = {
-            color: new THREE.Color(0x5c5c5c),
-            density: 0.00042,
-            noiseAmp: 0.055,
-            noiseScale: 0.000072,
-            timeScale: 0.11
+            color: new THREE.Color(0x2e3036),
+            density: 0.00032,
+            noiseAmp: 0.036,
+            noiseScale: 0.00007,
+            timeScale: 0.09
         };
 
         // 初期位置も十分に離す
@@ -224,20 +299,14 @@ export class Scene18 extends SceneBase {
         this.camera.far = 12000;
         this.camera.updateProjectionMatrix();
 
+        // シャドウはこのスポットのみが投射。cast/receive はメッシュ単位（未設定は false）
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        // CubeCameraのセットアップ（反射用）
-        this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { 
-            generateMipmaps: true, 
-            minFilter: THREE.LinearMipmapLinearFilter 
-        });
-        this.cubeCamera = new THREE.CubeCamera(10, 10000, this.cubeRenderTarget);
-        this.cubeCamera.position.set(0, 500, 0);
-        this.scene.add(this.cubeCamera);
+        this.setupEnvironment();
 
         this.setupLights();
-        // 3Dコールアウト用にシーンを渡す（Z位置はCalloutSystem内でランダマイズ）
+        // 2Dコールアウト：ワールド座標→スクリーン投影にシーン参照が必要
         if (this.calloutSystem) {
             this.calloutSystem.setScene(this.scene);
         }
@@ -248,8 +317,9 @@ export class Scene18 extends SceneBase {
         this.createCables(); // ケーブルは後から作って入口を避ける！
         this.createStabilizerPipes(); // 安定パイプを追加！
         this.createAmbientFloatingParticles();
+        this.createPinkSpillSpheres();
         this.initPostProcessing();
-        this.setParticleCount(this.cableCount + this.ambientParticleCount);
+        this.setParticleCount(this.cableCount + this.ambientParticleCount + this.spillMaxCount);
         this.initialized = true;
     }
 
@@ -259,16 +329,17 @@ export class Scene18 extends SceneBase {
     createAmbientFloatingParticles() {
         const count = this.ambientParticleCount;
         const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-        const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
+        const envTex = this.scene.environment;
         const mat = new THREE.MeshStandardMaterial({
-            color: 0x989898,
-            metalness: 0.82,
+            color: this.charcoalHex,
+            metalness: 0.48,
             roughness: 0.32,
             envMap: envTex,
-            envMapIntensity: 0.75,
-            emissive: 0x181818,
-            emissiveIntensity: 0.035,
-            fog: true
+            envMapIntensity: 0.34,
+            emissive: 0x1c1d22,
+            emissiveIntensity: 0.055,
+            fog: true,
+            vertexColors: true
         });
 
         this.ambientInstManager = new InstancedMeshManager(this.scene, boxGeo, mat, count);
@@ -304,13 +375,13 @@ export class Scene18 extends SceneBase {
                 (Math.random() - 0.5) * 1.9,
                 (Math.random() - 0.5) * 1.9
             );
-            const sr = 0.55 + Math.random() * 2.6;
+            const sr = 0.65 + Math.random() * 3.0;
             const scale = new THREE.Vector3(
-                sr * (0.32 + Math.random() * 1.55),
-                sr * (0.32 + Math.random() * 1.55),
-                sr * (0.32 + Math.random() * 1.55)
+                sr * (0.35 + Math.random() * 1.6),
+                sr * (0.35 + Math.random() * 1.6),
+                sr * (0.35 + Math.random() * 1.6)
             );
-            scale.multiplyScalar(0.32);
+            scale.multiplyScalar(0.52);
             const phase = Math.random() * Math.PI * 2;
             this.ambientParticles.push({
                 position,
@@ -321,7 +392,10 @@ export class Scene18 extends SceneBase {
                 phase
             });
             this.ambientInstManager.setMatrixAt(i, position, rotation, scale);
+            const lum = 0.2 + Math.random() * 0.16;
+            this.ambientInstManager.setColorAt(i, new THREE.Color(lum, lum, lum));
         }
+        this.ambientInstManager.markColorsNeedsUpdate();
         this.ambientInstManager.markNeedsUpdate();
     }
 
@@ -377,46 +451,467 @@ export class Scene18 extends SceneBase {
         this.ambientInstManager.markNeedsUpdate();
     }
 
+    /**
+     * 核球の上から赤いスフィアを生成し、表面に沿って重力で滑らせる（球同士の当たり判定なし）
+     */
+    createPinkSpillSpheres() {
+        const r = this.spillRadius;
+        this._spillSphereGeo = new THREE.SphereGeometry(r, 12, 10);
+        const n = this.spillMaxCount;
+        const bloomArr = new Float32Array(n);
+        bloomArr.fill(0);
+        this._spillBloomAttr = new THREE.InstancedBufferAttribute(bloomArr, 1);
+        this._spillBloomAttr.setUsage(THREE.DynamicDrawUsage);
+        this._spillSphereGeo.setAttribute('instanceBloom', this._spillBloomAttr);
+
+        const envTex = this.scene.environment;
+        const mat = new THREE.MeshStandardMaterial({
+            color: this.sphereRedHex,
+            emissive: 0x3a0808,
+            emissiveIntensity: 0.14,
+            metalness: 0.08,
+            roughness: 0.38,
+            envMap: envTex,
+            envMapIntensity: 0.55,
+            fog: true
+        });
+        mat.onBeforeCompile = (shader) => {
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <common>',
+                `#include <common>
+                attribute float instanceBloom;
+                varying float vSpillBloomMul;`
+            );
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <begin_vertex>',
+                `#include <begin_vertex>
+                vSpillBloomMul = instanceBloom;`
+            );
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <common>',
+                `#include <common>
+                varying float vSpillBloomMul;`
+            );
+            shader.fragmentShader = shader.fragmentShader.replace(
+                '#include <emissivemap_fragment>',
+                `#include <emissivemap_fragment>
+                totalEmissiveRadiance *= vSpillBloomMul;`
+            );
+        };
+        this.spillInstManager = new InstancedMeshManager(this.scene, this._spillSphereGeo, mat, n);
+        const mesh = this.spillInstManager.getMainMesh();
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.renderOrder = 1;
+
+        for (let i = 0; i < n; i++) {
+            this.spillParticles.push({
+                active: false,
+                onSurface: true,
+                onFloor: false,
+                birthTime: 0,
+                p: new THREE.Vector3(),
+                v: new THREE.Vector3(),
+                q: new THREE.Quaternion()
+            });
+            this.spillInstManager.setMatrixAt(i, this._spillHidePos, this._spillIdentityQuat, this._spillHideScale);
+        }
+        this.spillInstManager.markNeedsUpdate();
+    }
+
+    _spawnOneSpillPinkSphere() {
+        const idx = this.spillParticles.findIndex((x) => !x.active);
+        const i = idx >= 0 ? idx : (Math.random() * this.spillMaxCount) | 0;
+        const part = this.spillParticles[i];
+        const bigR = this.coreRadius + this.spillRadius;
+        const cap = 0.26;
+        const theta = Math.random() * cap;
+        const phi = Math.random() * Math.PI * 2;
+        const st = Math.sin(theta);
+        const dir = new THREE.Vector3(st * Math.cos(phi), Math.cos(theta), st * Math.sin(phi));
+        this._spillCenter.set(0, this.coreCenterY, 0);
+        part.p.copy(this._spillCenter).addScaledVector(dir, bigR);
+        part.v.set(0, 0, 0);
+        part.q.identity();
+        part.onSurface = true;
+        part.onFloor = false;
+        part.active = true;
+        part.birthTime = this.time;
+    }
+
+    _updatePinkSpillSpheres(deltaTime) {
+        if (!this.spillInstManager || !this.spillParticles.length) return;
+        const dt = Math.min(deltaTime, 0.048);
+        const steps = dt > 0.024 ? 2 : 1;
+        const subDt = dt / steps;
+
+        const rate = this.spillSpawnRate + Math.min(44, this.time * 0.38);
+        this.spillSpawnAccum += rate * dt;
+        while (this.spillSpawnAccum >= 1) {
+            this.spillSpawnAccum -= 1;
+            this._spawnOneSpillPinkSphere();
+        }
+
+        const G = this.spillGravity;
+        const bigR = this.coreRadius + this.spillRadius;
+        const smallR = this.spillRadius;
+        this._spillCenter.set(0, this.coreCenterY, 0);
+        const floorY = this.spillFloorSurfaceY + smallR;
+        const xzLim = this.spillFloorXZExtent - smallR;
+        const fric = this.spillFloorFriction;
+
+        for (let s = 0; s < steps; s++) {
+            for (let i = 0; i < this.spillMaxCount; i++) {
+                const part = this.spillParticles[i];
+                if (!part.active) continue;
+
+                const p = part.p;
+                const v = part.v;
+                const q = part.q;
+
+                if (part.onSurface) {
+                    this._spillG.set(0, -G, 0);
+                    this._spillTmpOff.copy(p).sub(this._spillCenter);
+                    this._spillTmpOff.normalize();
+                    const gn = this._spillG.dot(this._spillTmpOff);
+                    this._spillTmpTangent.copy(this._spillG).sub(
+                        this._spillTmpN.copy(this._spillTmpOff).multiplyScalar(gn)
+                    );
+                    v.addScaledVector(this._spillTmpTangent, subDt);
+                    v.multiplyScalar(0.9984);
+                    p.addScaledVector(v, subDt);
+
+                    this._spillTmpOff.copy(p).sub(this._spillCenter);
+                    this._spillTmpOff.normalize();
+                    p.copy(this._spillCenter).addScaledVector(this._spillTmpOff, bigR);
+                    const vn = v.dot(this._spillTmpOff);
+                    v.sub(this._spillTmpN.copy(this._spillTmpOff).multiplyScalar(vn));
+
+                    if (this._spillTmpOff.y < -0.052) {
+                        part.onSurface = false;
+                    }
+
+                    const speed = v.length();
+                    if (speed > 0.4) {
+                        this._spillTmpAxis.crossVectors(this._spillTmpOff, v);
+                        if (this._spillTmpAxis.lengthSq() > 1e-8) {
+                            this._spillTmpAxis.normalize();
+                            const ang = (speed * subDt) / smallR;
+                            this._spillTmpQ.setFromAxisAngle(this._spillTmpAxis, ang);
+                            q.multiply(this._spillTmpQ);
+                        }
+                    }
+                } else if (part.onFloor) {
+                    v.y = 0;
+                    p.y = floorY;
+                    const hsp = this._spillTmpH.set(v.x, 0, v.z);
+                    const hlen = hsp.length();
+                    if (hlen > 1e-6) {
+                        const decel = Math.min(fric * subDt, hlen);
+                        const f = (hlen - decel) / hlen;
+                        v.x *= f;
+                        v.z *= f;
+                    }
+                    p.x += v.x * subDt;
+                    p.z += v.z * subDt;
+                    const wallB = 0.38;
+                    if (p.x > xzLim) {
+                        p.x = xzLim;
+                        v.x *= -wallB;
+                    } else if (p.x < -xzLim) {
+                        p.x = -xzLim;
+                        v.x *= -wallB;
+                    }
+                    if (p.z > xzLim) {
+                        p.z = xzLim;
+                        v.z *= -wallB;
+                    } else if (p.z < -xzLim) {
+                        p.z = -xzLim;
+                        v.z *= -wallB;
+                    }
+                    const hsp2 = this._spillTmpH.set(v.x, 0, v.z);
+                    const hlen2 = hsp2.length();
+                    if (hlen2 < 0.028) {
+                        v.x = 0;
+                        v.z = 0;
+                    }
+                    if (hlen2 > 0.05) {
+                        this._spillTmpAxis.crossVectors(this._spillWorldUp, hsp2);
+                        if (this._spillTmpAxis.lengthSq() > 1e-8) {
+                            this._spillTmpAxis.normalize();
+                            this._spillTmpQ.setFromAxisAngle(
+                                this._spillTmpAxis,
+                                (hlen2 * subDt) / smallR
+                            );
+                            q.multiply(this._spillTmpQ);
+                        }
+                    }
+                } else {
+                    this._spillG.set(0, -G, 0);
+                    v.addScaledVector(this._spillG, subDt);
+                    p.addScaledVector(v, subDt);
+                    v.multiplyScalar(0.9994);
+
+                    if (p.y <= floorY && v.y <= 0) {
+                        part.onFloor = true;
+                        p.y = floorY;
+                        const vyAbs = Math.abs(v.y);
+                        v.y = 0;
+                        const slip = Math.hypot(v.x, v.z);
+                        const boost = 0.88 + Math.min(2.2, vyAbs * 0.0024);
+                        v.x *= boost;
+                        v.z *= boost;
+                        if (slip < 320 && vyAbs > 100) {
+                            const kick = 160 + Math.min(480, vyAbs * 0.42);
+                            v.x += (Math.random() - 0.5) * kick;
+                            v.z += (Math.random() - 0.5) * kick;
+                        }
+                    }
+
+                    const speed = v.length();
+                    if (speed > 2) {
+                        this._spillTmpAxis.crossVectors(this._spillWorldUp, v);
+                        if (this._spillTmpAxis.lengthSq() > 1e-6) {
+                            this._spillTmpAxis.normalize();
+                            this._spillTmpQ.setFromAxisAngle(
+                                this._spillTmpAxis,
+                                (speed * subDt) / smallR
+                            );
+                            q.multiply(this._spillTmpQ);
+                        }
+                    }
+                }
+            }
+        }
+
+        const peak = this.spillBloomPeakMul;
+        const decay = this.spillBloomDecaySec;
+        const bloomArr = this._spillBloomAttr ? this._spillBloomAttr.array : null;
+
+        for (let i = 0; i < this.spillMaxCount; i++) {
+            const part = this.spillParticles[i];
+            let bloomMul = 0;
+            if (part.active && bloomArr) {
+                if (part.onFloor) {
+                    bloomMul = 0;
+                } else {
+                    const age = this.time - part.birthTime;
+                    bloomMul = Math.max(0, peak * (1 - age / decay));
+                }
+                bloomArr[i] = bloomMul;
+            } else if (bloomArr) {
+                bloomArr[i] = 0;
+            }
+
+            if (part.active) {
+                this.spillInstManager.setMatrixAt(i, part.p, part.q, this._spillScale);
+            } else {
+                this.spillInstManager.setMatrixAt(
+                    i,
+                    this._spillHidePos,
+                    this._spillIdentityQuat,
+                    this._spillHideScale
+                );
+            }
+        }
+        if (this._spillBloomAttr) {
+            this._spillBloomAttr.needsUpdate = true;
+        }
+        this.spillInstManager.markNeedsUpdate();
+    }
+
     onResize() {
         super.onResize();
         if (this.ssaoPass && typeof this.ssaoPass.setSize === 'function') {
             this.ssaoPass.setSize(window.innerWidth, window.innerHeight);
         }
+        this._syncAODepthAndCameraUniforms(this.ssaoPass);
     }
 
     setupLights() {
         const pureWhite = 0xffffff;
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0x1a1a1a, 0.28);
-        this.scene.add(hemiLight);
-
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.16);
+        // 輪郭とSSAOが真っ黒にならないよう極小フィル（メインはスポットのみ）
+        const ambientLight = new THREE.AmbientLight(pureWhite, 0.085);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 0.55); 
-        directionalLight.position.set(2000, 3000, 2000);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -8000;
-        directionalLight.shadow.camera.right = 8000;
-        directionalLight.shadow.camera.top = 8000;
-        directionalLight.shadow.camera.bottom = -8000;
-        directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 15000;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.bias = -0.0001;
-        this.scene.add(directionalLight);
+        const coneAngle = Math.PI / 4.4;
+        this.spotLight = new THREE.SpotLight(
+            pureWhite,
+            this.spotBaseIntensity,
+            18000,
+            coneAngle,
+            0.38,
+            1
+        );
+        this.spotLight.decay = 0;
+        // 球体中心（核）を正面から当てる：位置は中心方向へ寄せ、ターゲットは球の中心
+        const sphereCenter = new THREE.Vector3(0, this.coreCenterY, 0);
+        this.spotLight.position.set(3400, 4800, 3600);
+        this.spotLight.target.position.copy(sphereCenter);
+        this.scene.add(this.spotLight);
+        this.scene.add(this.spotLight.target);
 
-        // パルス連動用の点光源は維持
-        this.pointLight = new THREE.PointLight(pureWhite, 0.0, 8000); 
-        this.pointLight.position.set(0, 500, 0); 
-        this.pointLight.castShadow = false; 
-        this.scene.add(this.pointLight);
+        this.spotLight.castShadow = true;
+        this.spotLight.shadow.mapSize.set(2048, 2048);
+        this.spotLight.shadow.camera.near = 120;
+        this.spotLight.shadow.camera.far = 20000;
+        this.spotLight.shadow.bias = -0.00018;
+        this.spotLight.shadow.radius = 3;
     }
 
     createStudioBox() {
         this.studio = new StudioBox(this.scene, {
-            color: 0x6c6c6c
+            color: this.charcoalHex,
+            envMap: this._roomEnvTexture,
+            envMapIntensity: 0.34,
+            lightIntensity: 3.6,
+            grungeEnabled: true,
+            maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+            grungeWallRepeat: { x: 6.9, y: 4.1 },
+            grungeFloorRepeat: { x: 4.2, y: 8.4 },
+            grungeWallOffset: { x: 0.21, y: 0.41 },
+            grungeFloorOffset: { x: 0.63, y: 0.08 },
+            grungeWallTexOptions: {
+                stainContrast: 1.2,
+                stainEdgeBias: 0.58,
+                stainCornerBias: true,
+                stainBiasMul: 1.32
+            },
+            grungeFloorTexOptions: {
+                stainContrast: 1.26,
+                stainEdgeBias: 0.68,
+                stainCornerBias: true,
+                stainBiasMul: 1.45
+            }
         });
+    }
+
+    /**
+     * 核まわり（球殻・取り付け部品）用：白陶器っぽい MeshPhysical（クリアコート弱め）
+     */
+    _createCeramicHullMaterial(overrides = {}) {
+        return new THREE.MeshPhysicalMaterial({
+            color: new THREE.Color(0xf6f5f3),
+            metalness: 0.02,
+            roughness: 0.32,
+            clearcoat: 0.48,
+            clearcoatRoughness: 0.17,
+            envMap: this.scene.environment,
+            envMapIntensity: 0.64,
+            side: THREE.FrontSide,
+            ...overrides
+        });
+    }
+
+    /**
+     * 入口プレート用：高さからノーマル＋ラフネス（角・直線スクラッチを汚す）
+     */
+    _generateEntrancePlateWearTextures(size = 512) {
+        const S = size;
+        const h = new Float32Array(S * S);
+        const scratchH = [];
+        const scratchV = [];
+        for (let i = 0; i < 44; i++) {
+            scratchH.push((((i * 137) % 251) / 250) * (S - 1));
+            scratchV.push((((i * 193) % 241) / 240) * (S - 1));
+        }
+        for (let y = 0; y < S; y++) {
+            for (let x = 0; x < S; x++) {
+                const u = x / (S - 1);
+                const v = y / (S - 1);
+                const ed = Math.min(Math.min(u, 1 - u), Math.min(v, 1 - v));
+                let val = 0.5;
+                val -= Math.pow(1 - Math.min(ed * 9, 1), 2.1) * 0.42;
+                val += Math.sin(x * 0.14 + y * 0.09) * 0.028;
+                val += Math.sin(x * 0.038 - y * 0.052) * 0.052;
+                val += Math.sin(x * 0.11) * Math.sin(y * 0.13) * 0.018;
+                for (let k = 0; k < scratchH.length; k++) {
+                    const ly = scratchH[k];
+                    const d = Math.abs(y - ly);
+                    if (d < 1.2) val -= 0.09 * (1 - d / 1.2);
+                }
+                for (let k = 0; k < scratchV.length; k++) {
+                    const lx = scratchV[k];
+                    const d = Math.abs(x - lx);
+                    if (d < 1.2) val -= 0.09 * (1 - d / 1.2);
+                }
+                h[y * S + x] = Math.max(0, Math.min(1, val));
+            }
+        }
+        const normData = new Uint8ClampedArray(S * S * 4);
+        const roughData = new Uint8ClampedArray(S * S * 4);
+        for (let y = 0; y < S; y++) {
+            for (let x = 0; x < S; x++) {
+                const xm = Math.max(0, x - 1);
+                const xp = Math.min(S - 1, x + 1);
+                const ym = Math.max(0, y - 1);
+                const yp = Math.min(S - 1, y + 1);
+                const idx = y * S + x;
+                const dx = (h[y * S + xp] - h[y * S + xm]) * 0.5;
+                const dy = (h[yp * S + x] - h[ym * S + x]) * 0.5;
+                let nx = -dx * 4.2;
+                let ny = -dy * 4.2;
+                let nz = 1;
+                const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+                nx /= len;
+                ny /= len;
+                nz /= len;
+                const i4 = idx * 4;
+                normData[i4] = (nx * 0.5 + 0.5) * 255;
+                normData[i4 + 1] = (ny * 0.5 + 0.5) * 255;
+                normData[i4 + 2] = (nz * 0.5 + 0.5) * 255;
+                normData[i4 + 3] = 255;
+                const u = x / (S - 1);
+                const v = y / (S - 1);
+                const edge = Math.min(Math.min(u, 1 - u), Math.min(v, 1 - v));
+                const rough = 0.38 + (1 - Math.min(edge * 8, 1)) * 0.48;
+                const rv = Math.min(255, Math.max(0, rough * 255));
+                roughData[i4] = 0;
+                roughData[i4 + 1] = rv;
+                roughData[i4 + 2] = 0;
+                roughData[i4 + 3] = 255;
+            }
+        }
+        const normCanvas = document.createElement('canvas');
+        normCanvas.width = normCanvas.height = S;
+        normCanvas.getContext('2d').putImageData(new ImageData(normData, S, S), 0, 0);
+        const roughCanvas = document.createElement('canvas');
+        roughCanvas.width = roughCanvas.height = S;
+        roughCanvas.getContext('2d').putImageData(new ImageData(roughData, S, S), 0, 0);
+        const maxA = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 8;
+        const normalMap = new THREE.CanvasTexture(normCanvas);
+        normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping;
+        normalMap.repeat.set(2, 2);
+        normalMap.colorSpace = THREE.NoColorSpace;
+        normalMap.generateMipmaps = false;
+        normalMap.minFilter = THREE.LinearFilter;
+        normalMap.magFilter = THREE.LinearFilter;
+        normalMap.anisotropy = maxA;
+        const roughnessMap = new THREE.CanvasTexture(roughCanvas);
+        roughnessMap.wrapS = roughnessMap.wrapT = THREE.RepeatWrapping;
+        roughnessMap.repeat.copy(normalMap.repeat);
+        roughnessMap.colorSpace = THREE.NoColorSpace;
+        roughnessMap.generateMipmaps = false;
+        roughnessMap.minFilter = THREE.LinearFilter;
+        roughnessMap.magFilter = THREE.LinearFilter;
+        roughnessMap.anisotropy = maxA;
+        return { normalMap, roughnessMap };
+    }
+
+    /** 外殻：白の単純メッシュ用（マップ・ディスプレイスメントなし） */
+    _createSphereShellMaterial() {
+        const m = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.08,
+            roughness: 0.36,
+            envMap: this.scene.environment,
+            envMapIntensity: 0.52,
+            fog: true,
+            side: THREE.DoubleSide
+        });
+        m.userData.sphereCeramicShell = true;
+        m.userData.sphereGlassShell = true;
+        return m;
     }
 
     createCore() {
@@ -424,88 +919,100 @@ export class Scene18 extends SceneBase {
         this.centralSphere.position.y = this.coreCenterY;
         this.scene.add(this.centralSphere);
 
-        let sphereMat;
-        if (this.useCeramicSphere) {
-            sphereMat = new THREE.MeshStandardMaterial({
-                color: 0x1a1a1a,
-                emissive: 0x080808,
-                emissiveIntensity: 0.03,
-                metalness: 0.0,
-                roughness: 0.35,
-                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 0.35,
-                side: THREE.FrontSide
-            });
-        } else {
-            const coreColor = 0x262626;
-            const textures = this.generateDirtyTextures(1024, coreColor, true);
-            sphereMat = new THREE.MeshStandardMaterial({
-                color: coreColor,
-                map: textures.map,
-                bumpMap: textures.bumpMap,
-                bumpScale: 8.0,
-                emissive: 0x0a0a0a,
-                emissiveIntensity: 0.06,
-                metalness: 0.45,
-                roughness: 0.72,
-                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 0.38,
-                side: THREE.FrontSide
-            });
-        }
+        const cableBaseMat = this._createCeramicHullMaterial(
+            this.useCeramicSphere
+                ? {
+                    roughness: 0.22,
+                    clearcoat: 0.58,
+                    clearcoatRoughness: 0.11,
+                    envMapIntensity: 0.7
+                }
+                : {
+                    roughness: 0.32,
+                    clearcoat: 0.48,
+                    clearcoatRoughness: 0.17,
+                    envMapIntensity: 0.64
+                }
+        );
+        cableBaseMat.userData.sphereCeramicShell = true;
 
-        // 緯度（Vertical）と経度（Horizontal）で分割して、工業パーツを作るで！
-        const offsetTheta = 0.2; 
+        const maxA = this.renderer.capabilities.getMaxAnisotropy();
+        // 壁と同じ解像度＆低めの repeat でシミが画面上で大きく見えるようにする
+        this._sphereLabGrungeTextures = generateLabGrungeTextures(2048, {
+            variant: 'sphere',
+            seed: 17,
+            maxAnisotropy: maxA
+        });
+        const gr = 7.5;
+        const gt = 9;
+        ['map', 'normalMap', 'roughnessMap', 'aoMap'].forEach((key) => {
+            const tex = this._sphereLabGrungeTextures[key];
+            if (tex) tex.repeat.set(gr, gt);
+        });
+        cableBaseMat.normalMap = this._sphereLabGrungeTextures.normalMap;
+        cableBaseMat.normalScale = new THREE.Vector2(0.92, 0.92);
+        cableBaseMat.roughnessMap = this._sphereLabGrungeTextures.roughnessMap;
+        cableBaseMat.aoMap = this._sphereLabGrungeTextures.aoMap;
+        cableBaseMat.aoMapIntensity = 0.48;
+        // 汚れアルベドは乗せず純白ベース（凹凸・粗さマップのみ）
+        cableBaseMat.map = null;
+        cableBaseMat.color.set(0xffffff);
+        cableBaseMat.roughness = 0.46;
+        cableBaseMat.metalness = 0.02;
+        cableBaseMat.clearcoat = 0.08;
+        cableBaseMat.clearcoatRoughness = 0.38;
+        cableBaseMat.envMapIntensity = 0.48;
+        cableBaseMat.needsUpdate = true;
+        this.sharedWhiteShellMaterial = cableBaseMat;
 
-        // 1. 上蓋 (Top Cap)
-        this.createSpherePart(0, Math.PI * 0.2, 0, Math.PI * 2, sphereMat);
-        
-        // 2. 中段 (Middle Ring) を4分割
-        for (let i = 0; i < 4; i++) {
-            this.createSpherePart(Math.PI * 0.2, Math.PI * 0.5, (Math.PI * 2 / 4) * i + offsetTheta, (Math.PI * 2 / 4), sphereMat);
-            // 縦の継ぎ目に沿ったリブパーツを追加！
-            this.createSeamDetail(Math.PI * 0.2, Math.PI * 0.5, (Math.PI * 2 / 4) * i + offsetTheta, true);
-        }
+        this._cableLabGrungeTextures = generateLabGrungeTextures(1024, {
+            variant: 'wall',
+            seed: 91,
+            maxAnisotropy: maxA
+        });
+        const cabU = 26;
+        const cabV = 4.2;
+        ['map', 'normalMap', 'roughnessMap', 'aoMap', 'bumpMap'].forEach((key) => {
+            const tex = this._cableLabGrungeTextures[key];
+            if (tex && tex.repeat) tex.repeat.set(cabU, cabV);
+        });
 
-        // 緯度の継ぎ目（横ライン）に沿ったリングパーツを追加！
-        this.createSeamDetail(Math.PI * 0.2, 0, 0, false); // 上段と中段の間
-        this.createSeamDetail(Math.PI * 0.7, 0, 0, false); // 中段と下段の間
+        // 外殻は白の SphereGeometry（歪み・ディスプレイスメントなし）
+        this.sphereSessionColor.setHex(this.sphereMainHex);
+        const shellMat = this._createSphereShellMaterial();
+        const shellGeo = new THREE.SphereGeometry(this.coreRadius, 64, 64);
+        this._ensureUv2(shellGeo);
+        const outerShell = new THREE.Mesh(shellGeo, shellMat);
+        outerShell.castShadow = true;
+        outerShell.receiveShadow = true;
+        this.centralSphere.add(outerShell);
 
-        // 3. 下段 (Bottom Ring) を3分割
-        for (let i = 0; i < 3; i++) {
-            this.createSpherePart(Math.PI * 0.5, Math.PI * 0.8, (Math.PI * 2 / 3) * i + offsetTheta, (Math.PI * 2 / 3), sphereMat);
-            // 縦の継ぎ目
-            this.createSeamDetail(Math.PI * 0.5, Math.PI * 0.8, (Math.PI * 2 / 3) * i + offsetTheta, true);
-        }
-
-        // 4. 底蓋 (Bottom Cap)
-        this.createSpherePart(Math.PI * 0.8, Math.PI, 0, Math.PI * 2, sphereMat);
-
-        // --- 継ぎ目の交差点（ジャンクション）にディテールを追加！ ---
-        this.createJunctionDetails(offsetTheta);
-
-        // --- 頑丈なドア（Heavy Doors）を追加！ ---
-        // 上部ドア
-        this.createHeavyDoor(0.15 * Math.PI, 0.5, "Upper Hatch");
-        // 下部ドア
-        this.createHeavyDoor(0.85 * Math.PI, 2.5, "Lower Access");
-
-        // --- 継ぎ目の「凹み」を表現するためのインナー球体（光る核にするで！） ---
+        // --- 内側のインナー球体（光る核にするで！） ---
         const innerGeo = new THREE.SphereGeometry(this.coreRadius - 5, 64, 64); // -15 -> -5 (外殻にギリギリまで近づける)
-        const innerMat = new THREE.MeshStandardMaterial({
-            color: 0x000000, 
-            roughness: 0.1, 
-            metalness: 0.9, 
-            emissive: this.pulseColor, 
-            emissiveIntensity: 0.0 
+        const innerBodyColor = new THREE.Color()
+            .copy(this.sphereSessionColor)
+            .lerp(new THREE.Color(0x000000), 0.58);
+        this.innerVividEmissive.copy(this.sphereSessionColor);
+        const innerMat = new THREE.MeshPhysicalMaterial({
+            color: innerBodyColor,
+            roughness: 0.42,
+            metalness: 0,
+            clearcoat: 0.12,
+            clearcoatRoughness: 0.35,
+            envMap: this.scene.environment,
+            envMapIntensity: 0.18,
+            emissive: this.innerVividEmissive,
+            emissiveIntensity: 0.0
         });
         this.innerSphere = new THREE.Mesh(innerGeo, innerMat);
+        this.innerSphere.receiveShadow = true;
         this.centralSphere.add(this.innerSphere);
 
         // さらに内側に、より強い光を放つコアを追加（ブルーム効果を狙う）
         const coreGlowGeo = new THREE.SphereGeometry(this.coreRadius - 10, 32, 32); // -30 -> -10 (さらに外側に広げる)
+        this.coreGlowVividColor.copy(this.sphereSessionColor);
         const coreGlowMat = new THREE.MeshBasicMaterial({
-            color: this.pulseColor,
+            color: this.coreGlowVividColor.clone(),
             transparent: true,
             opacity: 0.0, 
             blending: THREE.AdditiveBlending 
@@ -514,220 +1021,6 @@ export class Scene18 extends SceneBase {
         this.centralSphere.add(this.coreGlow);
 
         this.scene.add(this.detailGroup);
-    }
-
-    /**
-     * 継ぎ目の交差点（ジャンクション）にディテールを追加するやで！
-     */
-    createJunctionDetails(offsetTheta) {
-        const detailMat = new THREE.MeshStandardMaterial({
-            color: 0x444444,
-            metalness: 0.8,
-            roughness: 0.2,
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.0
-        });
-
-        const phis = [Math.PI * 0.2, Math.PI * 0.5, Math.PI * 0.8];
-        const thetaCounts = [4, 4, 3];
-
-        phis.forEach((phi, pIdx) => {
-            const count = thetaCounts[pIdx];
-            for (let i = 0; i < count; i++) {
-                const theta = (Math.PI * 2 / count) * i + offsetTheta;
-                const pos = new THREE.Vector3(
-                    this.coreRadius * Math.sin(phi) * Math.cos(theta),
-                    this.coreRadius * Math.cos(phi),
-                    this.coreRadius * Math.sin(phi) * Math.sin(theta)
-                );
-                const normal = pos.clone().normalize();
-
-                // 1. 交差点の巨大なハブ
-                const hubGeo = new THREE.CylinderGeometry(60, 70, 40, 8);
-                const hub = new THREE.Mesh(hubGeo, detailMat);
-                hub.position.copy(pos.clone().add(normal.multiplyScalar(15)));
-                hub.lookAt(pos.clone().add(normal));
-                hub.rotateX(Math.PI / 2);
-                this.centralSphere.add(hub);
-
-                // 警告ライトは飛び出して不自然やったから削除したで！
-            }
-        });
-    }
-
-    /**
-     * 頑丈なドア（ハッチ）を生成するやで！
-     */
-    createHeavyDoor(phi, theta, labelText) {
-        const doorGroup = new THREE.Group();
-        const radius = this.coreRadius + 10;
-        const pos = new THREE.Vector3(
-            radius * Math.sin(phi) * Math.cos(theta),
-            radius * Math.cos(phi),
-            radius * Math.sin(phi) * Math.sin(theta)
-        );
-        doorGroup.position.copy(pos);
-        doorGroup.lookAt(pos.clone().add(pos.clone().normalize()));
-        this.centralSphere.add(doorGroup);
-
-        const doorMat = new THREE.MeshStandardMaterial({
-            color: 0x333333,
-            metalness: 0.8,
-            roughness: 0.2,
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.0
-        });
-
-        // 1. メインドア（少し盛り上がった厚みのある円柱）
-        const doorGeo = new THREE.CylinderGeometry(180, 200, 40, 32);
-        const door = new THREE.Mesh(doorGeo, doorMat);
-        door.rotateX(Math.PI / 2);
-        doorGroup.add(door);
-
-        // 2. 補強フレーム（外枠）
-        const frameGeo = new THREE.TorusGeometry(210, 15, 16, 32);
-        const frame = new THREE.Mesh(frameGeo, doorMat);
-        doorGroup.add(frame);
-
-        // 3. 固定ボルト（周囲に配置）
-        const boltGeo = new THREE.CylinderGeometry(15, 15, 30, 8);
-        for (let i = 0; i < 8; i++) {
-            const angle = (i / 8) * Math.PI * 2;
-            const bolt = new THREE.Mesh(boltGeo, doorMat);
-            bolt.position.set(Math.cos(angle) * 210, Math.sin(angle) * 210, 10);
-            bolt.rotateX(Math.PI / 2);
-            doorGroup.add(bolt);
-        }
-
-        // 4. 中央のハンドル/ロック機構
-        const lockGeo = new THREE.BoxGeometry(100, 30, 30);
-        const lock = new THREE.Mesh(lockGeo, doorMat);
-        lock.position.z = 30;
-        doorGroup.add(lock);
-
-        // 5. ラベル（CanvasTexture）
-        const canvas = document.createElement('canvas');
-        canvas.width = 256; canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#111111';
-        ctx.font = 'bold 40px Arial';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(labelText, canvas.width / 2, canvas.height / 2);
-        
-        const textTex = new THREE.CanvasTexture(canvas);
-        const textMat = new THREE.MeshBasicMaterial({ map: textTex, transparent: true });
-        const textGeo = new THREE.PlaneGeometry(120, 30);
-        const textMesh = new THREE.Mesh(textGeo, textMat);
-        textMesh.position.set(0, -60, 25);
-        doorGroup.add(textMesh);
-    }
-
-    /**
-     * 継ぎ目に沿ったディテールパーツ（リブ、ボルト等）を生成するやで！
-     */
-    createSeamDetail(phi, phiEnd, theta, isVertical) {
-        const detailMat = new THREE.MeshStandardMaterial({
-            color: 0x333333,
-            metalness: 0.7,
-            roughness: 0.3,
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.8
-        });
-
-        if (isVertical) {
-            // 縦の継ぎ目に沿った補強リブ（配管は削除して隙間を強調！）
-            const steps = 12;
-            const points = [];
-
-            for (let i = 0; i <= steps; i++) {
-                const p = phi + (phiEnd - phi) * (i / steps);
-                const pos = new THREE.Vector3(
-                    this.coreRadius * Math.sin(p) * Math.cos(theta),
-                    this.coreRadius * Math.cos(p),
-                    this.coreRadius * Math.sin(p) * Math.sin(theta)
-                );
-                points.push(pos);
-
-                const normal = pos.clone().normalize();
-                
-                // 等間隔にクランプ（固定具）を配置
-                if (i % 2 === 0) {
-                    const clampGeo = new THREE.BoxGeometry(60, 30, 60);
-                    const clamp = new THREE.Mesh(clampGeo, detailMat);
-                    // 少し沈めて、隙間から光が漏れるのを邪魔しないようにする
-                    clamp.position.copy(pos.clone().add(normal.multiplyScalar(5)));
-                    clamp.lookAt(pos.clone().add(normal));
-                    this.centralSphere.add(clamp);
-                }
-            }
-            // 配管（TubeGeometry）の生成を削除！
-
-        } else {
-            // 横の継ぎ目に沿ったリングフレーム（配管束は削除！）
-            // 1. メインのリング（少し細くして隙間を見せる）
-            const ringGeo = new THREE.TorusGeometry(this.coreRadius * Math.sin(phi), 12, 16, 100);
-            const ring = new THREE.Mesh(ringGeo, detailMat);
-            ring.rotation.x = Math.PI / 2;
-            ring.position.y = this.coreRadius * Math.cos(phi);
-            this.centralSphere.add(ring);
-            
-            // 2. 周囲を走る細い配管束を削除！
-
-            // リング上の固定ユニット
-            for (let i = 0; i < 16; i++) {
-                const angle = (i / 16) * Math.PI * 2;
-                const boltPos = new THREE.Vector3(
-                    (this.coreRadius + 10) * Math.sin(phi) * Math.cos(angle),
-                    this.coreRadius * Math.cos(phi),
-                    (this.coreRadius + 10) * Math.sin(phi) * Math.sin(angle)
-                );
-                
-                const unitGroup = new THREE.Group();
-                unitGroup.position.copy(boltPos);
-                unitGroup.lookAt(new THREE.Vector3(0, boltPos.y, 0));
-                unitGroup.rotateX(Math.PI / 2);
-                
-                const baseGeo = new THREE.BoxGeometry(30, 30, 15);
-                const base = new THREE.Mesh(baseGeo, detailMat);
-                unitGroup.add(base);
-                
-                const boltGeo = new THREE.CylinderGeometry(10, 10, 30, 8);
-                const bolt = new THREE.Mesh(boltGeo, detailMat);
-                bolt.position.set(0, 0, 10);
-                unitGroup.add(bolt);
-                
-                this.centralSphere.add(unitGroup);
-            }
-        }
-    }
-
-    /**
-     * 球体の一部（パーツ）を生成して centralSphere に追加するやで！
-     */
-    createSpherePart(phiStart, phiLength, thetaStart, thetaLength, material) {
-        // 隙間（継ぎ目）を少し広げて、光が漏れやすくする！ (0.005 -> 0.015)
-        const gap = 0.015; 
-        const geo = new THREE.SphereGeometry(
-            this.coreRadius, 
-            64, 64, 
-            thetaStart + gap, thetaLength - gap * 2, 
-            phiStart + gap, phiLength - gap * 2
-        );
-        
-        const mesh = new THREE.Mesh(geo, material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        
-        const normal = new THREE.Vector3(
-            Math.sin(phiStart + phiLength/2) * Math.cos(thetaStart + thetaLength/2),
-            Math.cos(phiStart + phiLength/2),
-            Math.sin(phiStart + phiLength/2) * Math.sin(thetaStart + thetaLength/2)
-        );
-        // パーツを少し浮かせて隙間をハッキリさせる (1.0 -> 2.0)
-        mesh.position.add(normal.multiplyScalar(2.0)); 
-
-        this.centralSphere.add(mesh);
     }
 
     generateDirtyTextures(size = 512, baseColor = 0xffffff, isMatte = false) {
@@ -825,240 +1118,224 @@ export class Scene18 extends SceneBase {
         return { map, bumpMap };
     }
 
-    createSphereDetails() {
-        const clusterCount = 150; // 100 -> 150 (パーツをさらに増量！)
-        this.clusterPositions = []; // 初期化
-        
-        // ジオメトリをマージするための準備
-        const geometriesByColor = {
-            dark: [],
-            mid: [],
-            light: []
-        };
+    /**
+     * 鉄骨用：黄×黒の縞（画像は横帯＝y が進むと交互。Box のデフォ UV で各面に素直に乗る）
+     */
+    generateRepaintedYellowSteelTextures(size = 1024) {
+        const colorCanvas = document.createElement('canvas');
+        colorCanvas.width = size;
+        colorCanvas.height = size;
+        const cCtx = colorCanvas.getContext('2d');
 
-        let junctionUnitCount = 0;
-        let switchPanelCount = 0;
-        const maxSwitchPanels = 4 + Math.floor(Math.random() * 4); // 1〜2 -> 4〜8個に増加！
+        const bumpCanvas = document.createElement('canvas');
+        bumpCanvas.width = size;
+        bumpCanvas.height = size;
+        const bCtx = bumpCanvas.getContext('2d');
 
-        for (let i = 0; i < clusterCount; i++) {
-            const phi = Math.random() * Math.PI * 2;
-            const theta = Math.random() * Math.PI;
-            
-            const x = this.coreRadius * Math.sin(theta) * Math.cos(phi);
-            const y = this.coreRadius * Math.cos(theta) + this.coreCenterY;
-            const z = this.coreRadius * Math.sin(theta) * Math.sin(phi);
-            const pos = new THREE.Vector3(x, y, z);
-            const normal = pos.clone().sub(new THREE.Vector3(0, this.coreCenterY, 0)).normalize();
-
-            // 球体全体に散らす（下半分への集中を少し緩和）
-            if (y > (this.coreCenterY + 400) && Math.random() > 0.6) continue; 
-
-            // --- パーツ同士の衝突判定 ---
-            let isTooClose = false;
-            for (const clusterPos of this.clusterPositions) {
-                if (pos.distanceTo(clusterPos) < 350) { // 450 -> 350 (少し密集を許容)
-                    isTooClose = true;
-                    break;
+        const rnd = () => Math.random();
+        const yR = 255;
+        const yG = 214;
+        const yB = 0;
+        const kR = 18;
+        const kG = 18;
+        const kB = 20;
+        // 横帯（画像の y が進むと黄/黒が交互）— stripeH 大きいほど帯が太い
+        const stripeH = 128;
+        const imgData = cCtx.createImageData(size, size);
+        const d = imgData.data;
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const band = Math.floor(y / stripeH) % 2;
+                const i = (y * size + x) * 4;
+                if (band === 0) {
+                    d[i] = yR;
+                    d[i + 1] = yG;
+                    d[i + 2] = yB;
+                } else {
+                    d[i] = kR;
+                    d[i + 1] = kG;
+                    d[i + 2] = kB;
                 }
-            }
-            if (isTooClose) continue;
-
-            // --- パーツの選別ロジック ---
-            let clusterType = -1;
-            const rand = Math.random();
-            
-            // 低確率で「高層パーツ」化フラグを立てる（約15%）
-            const isTall = Math.random() < 0.15;
-            // 面積（幅・高さ）は控えめに（1.0〜1.2倍）、厚み（高さ）を大幅に（3.0〜8.0倍）ブースト
-            const sizeScale = isTall ? (1.0 + Math.random() * 0.2) : 1.0;
-            const heightScale = isTall ? (3.0 + Math.random() * 5.0) : 1.0;
-
-            if (rand < 0.15) {
-                clusterType = 0; // スイッチパネル
-            } else if (rand < 0.25) {
-                clusterType = 3; // ジャンクション/サブケーブル
-            } else if (rand < 0.45) {
-                clusterType = 4; // 平べったいBox + 追加パーツ
-            } else if (rand < 0.65) {
-                clusterType = 5; // 電子機器っぽい形状
-            }
-
-            if (clusterType === -1) continue; 
-
-            this.clusterPositions.push(pos); 
-
-            const dummy = new THREE.Object3D();
-            dummy.position.copy(pos);
-            dummy.lookAt(pos.clone().add(normal));
-            dummy.updateMatrix();
-
-            const colorTypeRand = Math.random();
-            let targetList;
-            if (colorTypeRand < 0.4) targetList = geometriesByColor.dark;
-            else if (colorTypeRand < 0.8) targetList = geometriesByColor.mid;
-            else targetList = geometriesByColor.light;
-
-            if (clusterType === 0) {
-                // --- スイッチパネルユニット（リベット付き） ---
-                const baseWidth = (200 + Math.random() * 200) * sizeScale;
-                const baseHeight = (200 + Math.random() * 200) * sizeScale;
-                const baseDepth = 30 * heightScale;
-                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
-                baseGeo.applyMatrix4(dummy.matrix);
-                targetList.push(baseGeo);
-
-                // パネルの四隅にリベット
-                const rivetGeo = new THREE.SphereGeometry(10 * sizeScale, 8, 8);
-                const corners = [
-                    {x: 0.4, y: 0.4}, {x: -0.4, y: 0.4},
-                    {x: 0.4, y: -0.4}, {x: -0.4, y: -0.4}
-                ];
-                corners.forEach(c => {
-                    const rGeo = rivetGeo.clone();
-                    const rMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
-                        c.x * baseWidth, c.y * baseHeight, baseDepth / 2
-                    ));
-                    rGeo.applyMatrix4(rMatrix);
-                    targetList.push(rGeo);
-                });
-
-                // スイッチ
-                const switchCount = 2 + Math.floor(Math.random() * 3);
-                const switchGeo = new THREE.CylinderGeometry(15 * sizeScale, 15 * sizeScale, 40 * heightScale, 16);
-                for (let j = 0; j < switchCount; j++) {
-                    const sGeo = switchGeo.clone();
-                    const sMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
-                        (j / (switchCount - 1) - 0.5) * baseWidth * 0.6,
-                        0,
-                        baseDepth / 2 + 10
-                    ));
-                    sMatrix.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-                    sGeo.applyMatrix4(sMatrix);
-                    targetList.push(sGeo);
-                }
-            } else if (clusterType === 3) {
-                // --- ジャンクションユニット ---
-                const boxSize = (150 + Math.random() * 150) * sizeScale;
-                const baseDepth = 60 * heightScale;
-                const baseGeo = new THREE.BoxGeometry(boxSize, boxSize, baseDepth);
-                baseGeo.applyMatrix4(dummy.matrix);
-                targetList.push(baseGeo);
-
-                const subRadius = (15 + Math.random() * 10) * sizeScale;
-                const subPoints = [
-                    new THREE.Vector3(0, 0, baseDepth / 2).applyMatrix4(dummy.matrix),
-                    new THREE.Vector3(0, 0, 150 * heightScale).applyMatrix4(dummy.matrix).add(normal.clone().multiplyScalar(100))
-                ];
-                const subCurve = new THREE.CatmullRomCurve3(subPoints);
-                const subGeo = new THREE.TubeGeometry(subCurve, 8, subRadius, 8, false);
-                targetList.push(subGeo);
-            } else if (clusterType === 4) {
-                // --- 平べったいBox + 追加パーツ ---
-                const baseSize = (250 + Math.random() * 200) * sizeScale;
-                const baseDepth = 20 * heightScale;
-                const baseGeo = new THREE.BoxGeometry(baseSize, baseSize, baseDepth);
-                baseGeo.applyMatrix4(dummy.matrix);
-                targetList.push(baseGeo);
-
-                // その上に乗る小さなBoxやシリンダー
-                const topGeo = Math.random() > 0.5 ? 
-                    new THREE.BoxGeometry(baseSize * 0.4, baseSize * 0.4, 40 * heightScale) :
-                    new THREE.CylinderGeometry(baseSize * 0.2, baseSize * 0.2, 40 * heightScale, 16);
-                const topMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
-                    (Math.random() - 0.5) * baseSize * 0.4,
-                    (Math.random() - 0.5) * baseSize * 0.4,
-                    baseDepth / 2 + 10
-                ));
-                if (!(topGeo instanceof THREE.BoxGeometry)) topMatrix.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2));
-                topGeo.applyMatrix4(topMatrix);
-                targetList.push(topGeo);
-            } else if (clusterType === 5) {
-                // --- 電子機器っぽいパーツ（フィンやコネクタ） ---
-                const baseWidth = (150 + Math.random() * 150) * sizeScale;
-                const baseHeight = (200 + Math.random() * 200) * sizeScale;
-                const baseDepth = 40 * heightScale;
-                const baseGeo = new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth);
-                baseGeo.applyMatrix4(dummy.matrix);
-                targetList.push(baseGeo);
-
-                // 冷却フィンっぽい薄い板を並べる
-                const finGeo = new THREE.BoxGeometry(baseWidth * 0.8, 10 * sizeScale, 30 * heightScale);
-                for (let j = 0; j < 5; j++) {
-                    const fGeo = finGeo.clone();
-                    const fMatrix = dummy.matrix.clone().multiply(new THREE.Matrix4().makeTranslation(
-                        0, (j / 4 - 0.5) * baseHeight * 0.7, baseDepth / 2 + 10
-                    ));
-                    fGeo.applyMatrix4(fMatrix);
-                    targetList.push(fGeo);
-                }
+                d[i + 3] = 255;
             }
         }
+        cCtx.putImageData(imgData, 0, 0);
+        // soft-light 等は黄と黒の差を潰してストライプが消えるので載せない
 
-        // 色ごとのマテリアル作成とメッシュ生成
-        const colors = {
-            dark: 0x606060,
-            mid: 0x808080,
-            light: 0xa0a0a0
-        };
+        // --- bump: 明るさから高さ＋微細ノイズ ---
+        const out = cCtx.getImageData(0, 0, size, size);
+        const od = out.data;
+        const bumpImg = bCtx.createImageData(size, size);
+        const bd = bumpImg.data;
+        for (let i = 0; i < od.length; i += 4) {
+            const L = 0.299 * od[i] + 0.587 * od[i + 1] + 0.114 * od[i + 2];
+            const pi = i >> 2;
+            const px = pi % size;
+            const py = (pi / size) | 0;
+            const wobble = Math.sin(px * 0.031) * Math.sin(py * 0.027) * 8;
+            let h = 65 + (L / 255) * 165 + wobble;
+            h = Math.max(35, Math.min(245, h));
+            bd[i] = bd[i + 1] = bd[i + 2] = h;
+            bd[i + 3] = 255;
+        }
+        bCtx.putImageData(bumpImg, 0, 0);
+        for (let n = 0; n < 1200; n++) {
+            const x = rnd() * size;
+            const y = rnd() * size;
+            const r = rnd() * 0.85;
+            const v = 128 + (rnd() - 0.5) * 28;
+            bCtx.fillStyle = `rgb(${v},${v},${v})`;
+            bCtx.beginPath();
+            bCtx.arc(x, y, r, 0, Math.PI * 2);
+            bCtx.fill();
+        }
 
-        this.detailMaterials = []; 
+        const map = new THREE.CanvasTexture(colorCanvas);
+        const bumpMap = new THREE.CanvasTexture(bumpCanvas);
+        map.wrapS = map.wrapT = THREE.RepeatWrapping;
+        bumpMap.wrapS = bumpMap.wrapT = THREE.RepeatWrapping;
+        // 黄黒の細線がミップで灰色に平均化されないようミップオフ＋シャープフィルタ
+        map.generateMipmaps = false;
+        bumpMap.generateMipmaps = false;
+        map.minFilter = THREE.LinearFilter;
+        map.magFilter = THREE.LinearFilter;
+        bumpMap.minFilter = THREE.LinearFilter;
+        bumpMap.magFilter = THREE.LinearFilter;
+        // V に縞（太め）：repeat.v を抑えて一帯あたりの幅を出す
+        map.repeat.set(5, 20);
+        bumpMap.repeat.set(5, 20);
+        map.colorSpace = THREE.SRGBColorSpace;
+        bumpMap.colorSpace = THREE.NoColorSpace;
+        const maxA = this.renderer?.capabilities?.getMaxAnisotropy?.() ?? 8;
+        map.anisotropy = maxA;
+        bumpMap.anisotropy = maxA;
 
-        for (const [key, geoList] of Object.entries(geometriesByColor)) {
-            if (geoList.length > 0) {
-                const color = colors[key];
-                const textures = this.generateDirtyTextures(512, color, false);
-                const mat = new THREE.MeshStandardMaterial({
-                    color: color,
-                    map: textures.map,
-                    bumpMap: textures.bumpMap,
-                    bumpScale: 6.0,
-                    emissive: 0x222222,
-                    emissiveIntensity: 0.1,
-                    metalness: 0.4,
-                    roughness: 0.6,
-                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                    envMapIntensity: 0.5
-                });
-                this.detailMaterials.push(mat);
+        return { map, bumpMap };
+    }
 
-                const mergedGeo = BufferGeometryUtils.mergeGeometries(geoList);
-                const mergedMesh = new THREE.Mesh(mergedGeo, mat);
-                mergedMesh.castShadow = true;
-                mergedMesh.receiveShadow = true;
-                this.detailGroup.add(mergedMesh);
-            }
+    _ensureUv2(geometry) {
+        const uv = geometry.attributes.uv;
+        if (uv && !geometry.attributes.uv2) {
+            geometry.setAttribute('uv2', uv.clone());
         }
     }
 
-    createCableRings(curve, cableRadius, ringColor) {
-        const ringCount = 2 + Math.floor(Math.random() * 4); 
-        const ringMat = new THREE.MeshStandardMaterial({
-            color: ringColor,
-            metalness: 0.5, 
-            roughness: 0.6, 
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.0 
-        });
+    /** sRGB ベースの相対輝度 0〜1（Three r160 の Color#getLuminance 非対応のため自前） */
+    _srgbLuminance(hex) {
+        const c = new THREE.Color(hex);
+        return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    }
 
+    /**
+     * チューブ本体・床側終端リング・中間リング／ジョイント用。
+     * 球殻の陶器っぽさとは別にマット絶縁被覆＋細かい汚れの質感。cableColor は白/黒などベース色。
+     */
+    _applyCableSleeveMaterial(material, cableColor = 0xffffff) {
+        const tex = this._cableLabGrungeTextures;
+        if (!tex) return;
+        material.map = null;
+        material.normalMap = tex.normalMap;
+        material.normalScale = new THREE.Vector2(0.52, 0.4);
+        material.roughnessMap = tex.roughnessMap;
+        material.aoMap = tex.aoMap;
+        material.aoMapIntensity = 0.36;
+        const isDark = this._srgbLuminance(cableColor) < 0.22;
+        material.color.set(cableColor);
+        material.roughness = isDark ? 0.78 : 0.74;
+        material.metalness = 0.02;
+        material.clearcoat = 0;
+        material.clearcoatRoughness = 0.55;
+        material.envMapIntensity = isDark ? 0.26 : 0.17;
+        material.sheen = isDark ? 0.22 : 0.36;
+        material.sheenRoughness = 0.64;
+        material.sheenColor.set(cableColor);
+        material.specularIntensity = isDark ? 0.65 : 0.82;
+        material.needsUpdate = true;
+    }
+
+    _initCableConcreteTexturesIfNeeded() {
+        if (this._cableConcreteTextures) return;
+        const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+        this._cableConcreteTextures = generateConcretePBRTextures(1024, maxAniso, { tileOverlay: false });
+        ['map', 'normalMap', 'roughnessMap', 'aoMap'].forEach((key) => {
+            const t = this._cableConcreteTextures[key];
+            if (t) {
+                t.wrapS = t.wrapT = THREE.RepeatWrapping;
+            }
+        });
+    }
+
+    /**
+     * Scene21 床と同じプロシージャル PBR をケーブルに載せる（map / normal / roughness / ao）
+     */
+    _applyCableConcreteToMaterial(material, glowing) {
+        const tex = this._cableConcreteTextures;
+        if (!tex) return;
+        material.map = tex.map;
+        material.normalMap = tex.normalMap;
+        material.normalScale = new THREE.Vector2(0.38, 0.38);
+        material.roughnessMap = tex.roughnessMap;
+        material.roughness = glowing ? 0.88 : 0.93;
+        material.metalness = glowing ? 0.78 : 0.0;
+        material.aoMap = tex.aoMap;
+        material.aoMapIntensity = glowing ? 0.46 : 0.78;
+        material.bumpMap = null;
+        material.envMap = this.scene.environment;
+        material.envMapIntensity = glowing ? 2.0 : 0.0;
+        // 非発光は emissive が乗るとテクスの汚れが全部飛ぶので必ずオフ
+        if (!glowing) {
+            material.emissive.setHex(0x000000);
+            material.emissiveIntensity = 0;
+        }
+    }
+
+    _stripCableConcreteTextureRefs() {
+        const t = this._cableConcreteTextures;
+        if (!t) return;
+        const strip = (m) => {
+            if (!m) return;
+            if (m.map === t.map) m.map = null;
+            if (m.normalMap === t.normalMap) m.normalMap = null;
+            if (m.roughnessMap === t.roughnessMap) m.roughnessMap = null;
+            if (m.aoMap === t.aoMap) m.aoMap = null;
+        };
+        this.cables.forEach((c) => strip(c.mesh.material));
+        if (this.detailGroup) {
+            this.detailGroup.traverse((o) => {
+                if (o.isMesh) strip(o.material);
+            });
+        }
+    }
+
+    /** 球体表面のランダムギズモ群は省略（ケーブル根本・入口ランプ等のみ detailGroup に載せる） */
+    createSphereDetails() {
+        this.clusterPositions = [];
+    }
+
+    /**
+     * ケーブル中間のリング／ジョイント（床・壁の終端リングとは別）
+     */
+    createCableRings(curve, cableRadius, sleeveColor = 0xffffff) {
+        const mat = this.sharedWhiteShellMaterial.clone();
+        this._applyCableSleeveMaterial(mat, sleeveColor);
+        const ringCount = 2 + Math.floor(Math.random() * 4);
         for (let i = 0; i < ringCount; i++) {
-            const t = 0.1 + Math.random() * 0.8; // 根本と先端を避ける
+            const t = 0.1 + Math.random() * 0.8;
             const pos = curve.getPointAt(t);
             const tangent = curve.getTangentAt(t);
 
-            const ringGeo = new THREE.TorusGeometry(cableRadius * 1.2, cableRadius * 0.2, 12, 24);
-            const ring = new THREE.Mesh(ringGeo, ringMat);
-            
+            const ringGeo = new THREE.TorusGeometry(cableRadius * 1.2, cableRadius * 0.2, 24, 48);
+            this._ensureUv2(ringGeo);
+            const ring = new THREE.Mesh(ringGeo, mat);
             ring.position.copy(pos);
             ring.lookAt(pos.clone().add(tangent));
-            
             ring.castShadow = true;
             ring.receiveShadow = true;
             this.detailGroup.add(ring);
         }
 
-        // --- たまに「継ぎ目（シリンダー）」を追加するやで！ ---
-        if (Math.random() > 0.7) { // 30%の確率で継ぎ目出現
-            const t = 0.3 + Math.random() * 0.4; // 中間あたり
+        if (Math.random() > 0.7) {
+            const t = 0.3 + Math.random() * 0.4;
             const pos = curve.getPointAt(t);
             const tangent = curve.getTangentAt(t);
 
@@ -1067,36 +1344,35 @@ export class Scene18 extends SceneBase {
             jointGroup.lookAt(pos.clone().add(tangent));
             this.detailGroup.add(jointGroup);
 
-            // メインのシリンダー
-            const jointGeo = new THREE.CylinderGeometry(cableRadius * 1.8, cableRadius * 1.8, cableRadius * 4, 16);
-            const jointMat = new THREE.MeshStandardMaterial({
-                color: 0x444444,
-                metalness: 0.8,
-                roughness: 0.3,
-                envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                envMapIntensity: 1.0
-            });
+            const jointMat = this.sharedWhiteShellMaterial.clone();
+            this._applyCableSleeveMaterial(jointMat, sleeveColor);
+            const jointGeo = new THREE.CylinderGeometry(cableRadius * 1.8, cableRadius * 1.8, cableRadius * 4, 48, 4);
+            this._ensureUv2(jointGeo);
             const joint = new THREE.Mesh(jointGeo, jointMat);
             joint.rotateX(Math.PI / 2);
+            joint.castShadow = true;
+            joint.receiveShadow = true;
             jointGroup.add(joint);
 
-            // 両端のボルトリング
-            const boltRingGeo = new THREE.TorusGeometry(cableRadius * 2.0, cableRadius * 0.3, 8, 16);
+            const boltRingGeo = new THREE.TorusGeometry(cableRadius * 2.0, cableRadius * 0.3, 20, 32);
+            this._ensureUv2(boltRingGeo);
             const boltRing1 = new THREE.Mesh(boltRingGeo, jointMat);
             boltRing1.position.z = cableRadius * 1.5;
+            boltRing1.castShadow = true;
+            boltRing1.receiveShadow = true;
             jointGroup.add(boltRing1);
 
             const boltRing2 = new THREE.Mesh(boltRingGeo, jointMat);
             boltRing2.position.z = -cableRadius * 1.5;
+            boltRing2.castShadow = true;
+            boltRing2.receiveShadow = true;
             jointGroup.add(boltRing2);
         }
     }
 
     createCables() {
-        const cableColor = 0x222222; // ケーブルはかなり黒く
         this.scene.add(this.cableGroup);
         const floorY = -498;
-        const cableTextures = this.generateDirtyTextures(1024, cableColor, false); 
 
         let generatedCount = 0;
         let attempts = 0;
@@ -1140,27 +1416,10 @@ export class Scene18 extends SceneBase {
                 // 1. 入口ユニットとの距離チェック
                 if (this.entrancePos && startPos.distanceTo(this.entrancePos) < 600) continue;
 
-                // 2. 属性決定（太さを先に決める）
+                // 2. 属性決定（太さを先に決める）— 白/黒ランダム、発光/非発光は別乱数
                 const colorRand = Math.random();
-                let finalCableColor;
-                let isWhiteNonGlowing = false;
-                let isGreyNonGlowing = false;
-                let isBlackNonGlowing = false;
-
-                if (colorRand < 0.15) {
-                    finalCableColor = 0xffffff;
-                    isWhiteNonGlowing = true;
-                } else if (colorRand < 0.35) {
-                    finalCableColor = 0x666666;
-                    isGreyNonGlowing = true;
-                } else if (colorRand < 0.45) {
-                    finalCableColor = 0x222222;
-                    isBlackNonGlowing = true;
-                } else {
-                    finalCableColor = 0x111111;
-                }
-
-                const isNonGlowing = isWhiteNonGlowing || isGreyNonGlowing || isBlackNonGlowing;
+                const isNonGlowing = colorRand < 0.45;
+                const finalCableColor = Math.random() < 0.5 ? 0xffffff : 0x0c0c0e;
 
                 let radius;
                 const isSuperThick = Math.random() < 0.025;
@@ -1191,39 +1450,46 @@ export class Scene18 extends SceneBase {
                 generatedCount++;
                 cableRootPositions.push({ pos: startPos.clone(), radius: radius });
 
-                // --- 接続ユニット（大型化！） ---
+                // --- 接続ユニット：小さめのリングを数枚重ねただけ（ローカル +Z がケーブル方向） ---
                 const unitGroup = new THREE.Group();
                 unitGroup.position.copy(startPos);
                 unitGroup.lookAt(startPos.clone().add(normal));
                 this.detailGroup.add(unitGroup);
 
-                const flangeGeo = new THREE.CylinderGeometry(radius * 3.5, radius * 3.5, 30, 8); // 2.0 -> 3.5, 15 -> 30
-                const unitMat = new THREE.MeshStandardMaterial({
-                    color: isNonGlowing ? finalCableColor : 0x444444, 
-                    metalness: isNonGlowing ? 0.0 : 0.6,
-                    roughness: isNonGlowing ? 1.0 : 0.4,
-                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                    envMapIntensity: isNonGlowing ? 0.1 : 1.0
-                });
-                const flange = new THREE.Mesh(flangeGeo, unitMat);
-                flange.rotateX(Math.PI / 2);
-                unitGroup.add(flange);
+                const unitMat = this.sharedWhiteShellMaterial.clone();
+                unitMat.map = null;
+                unitMat.aoMap = null;
+                unitMat.color.set(finalCableColor);
+                unitMat.envMapIntensity = this._srgbLuminance(finalCableColor) < 0.22 ? 0.38 : 0.52;
 
-                const coreGeo = new THREE.CylinderGeometry(radius * 2.0, radius * 2.5, 60, 16); // 1.4/1.6 -> 2.0/2.5, 30 -> 60
-                const coreSocket = new THREE.Mesh(coreGeo, unitMat);
-                coreSocket.rotateX(Math.PI / 2);
-                coreSocket.position.z = 30; // 15 -> 30
-                unitGroup.add(coreSocket);
-
-                // ボルトを追加してメカ感をアップ！
-                const boltGeo = new THREE.CylinderGeometry(radius * 0.3, radius * 0.3, 20, 8);
-                for (let j = 0; j < 6; j++) {
-                    const angle = (j / 6) * Math.PI * 2;
-                    const bolt = new THREE.Mesh(boltGeo, unitMat);
-                    bolt.position.set(Math.cos(angle) * radius * 2.8, Math.sin(angle) * radius * 2.8, 15);
-                    bolt.rotateX(Math.PI / 2);
-                    unitGroup.add(bolt);
+                const r = radius;
+                const tube = Math.max(2.8, Math.min(r * 0.09, 9));
+                const majorMax = Math.min(Math.max(r + tube * 2.2, r * 1.28), r + 48);
+                const ringZs = [0, 5, 10, 15];
+                const majors = [majorMax, majorMax * 0.93, majorMax * 0.87, majorMax * 0.81];
+                for (let ri = 0; ri < ringZs.length; ri++) {
+                    const torusGeo = new THREE.TorusGeometry(majors[ri], tube * (0.96 - ri * 0.05), 20, 48);
+                    this._ensureUv2(torusGeo);
+                    const ring = new THREE.Mesh(torusGeo, unitMat);
+                    ring.position.z = ringZs[ri];
+                    unitGroup.add(ring);
                 }
+
+                const ferruleH = Math.max(7, Math.min(r * 0.4, 20));
+                const ferruleGeo = new THREE.CylinderGeometry(
+                    r * 0.92,
+                    r * 0.82,
+                    ferruleH,
+                    48,
+                    3,
+                    false
+                );
+                this._ensureUv2(ferruleGeo);
+                const ferrule = new THREE.Mesh(ferruleGeo, unitMat);
+                ferrule.rotation.x = Math.PI / 2;
+                const zLast = ringZs[ringZs.length - 1];
+                ferrule.position.z = zLast + tube * 2.1 + ferruleH * 0.5;
+                unitGroup.add(ferrule);
 
                 const points = [];
                 points.push(startPos.clone());
@@ -1308,27 +1574,19 @@ export class Scene18 extends SceneBase {
                 // --- バグ修正：TubeGeometryの生成に失敗する場合の安全策 ---
                 let geometry;
                 try {
-                    const segments = radius > 60 ? 140 : 70;
-                    geometry = new THREE.TubeGeometry(curve, segments, radius, 10, false); 
+                    const segments = radius > 60 ? 180 : 96;
+                    geometry = new THREE.TubeGeometry(curve, segments, radius, 20, false); 
                 } catch (e) {
                     continue; // このケーブルの生成をスキップ
                 }
                 
-                const material = new THREE.MeshStandardMaterial({
-                    color: finalCableColor,
-                    bumpScale: 2.5,
-                    emissive: isWhiteNonGlowing ? 0xffffff : (isGreyNonGlowing ? 0x666666 : (isBlackNonGlowing ? 0x111111 : 0x000000)), 
-                    emissiveIntensity: isWhiteNonGlowing ? 0.15 : (isGreyNonGlowing ? 0.08 : (isBlackNonGlowing ? 0.02 : 0.0)),
-                    metalness: isNonGlowing ? 0.0 : 0.8, 
-                    roughness: isNonGlowing ? 1.0 : 0.2, 
-                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                    envMapIntensity: isNonGlowing ? 0.0 : 2.0 
-                });
-                
-                if (!isNonGlowing) {
-                    material.map = cableTextures.map;
-                    material.bumpMap = cableTextures.bumpMap;
+                const material = this.sharedWhiteShellMaterial.clone();
+                this._applyCableSleeveMaterial(material, finalCableColor);
+                if (isNonGlowing) {
+                    material.emissive.setHex(0x000000);
+                    material.emissiveIntensity = 0;
                 }
+                this._ensureUv2(geometry);
 
                 if (!isNonGlowing) {
                     material.onBeforeCompile = (shader) => {
@@ -1375,14 +1633,10 @@ export class Scene18 extends SceneBase {
                 this.cableGroup.add(mesh);
                 this.cables.push({ mesh, material, isGlowing: !isNonGlowing });
 
-                const endRingGeo = new THREE.TorusGeometry(radius * 1.3, radius * 0.3, 10, 20);
-                const endRingMat = new THREE.MeshStandardMaterial({
-                    color: finalCableColor,
-                    metalness: 0.5, 
-                    roughness: 0.6, 
-                    envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-                    envMapIntensity: 1.0 
-                });
+                const endRingMat = this.sharedWhiteShellMaterial.clone();
+                this._applyCableSleeveMaterial(endRingMat, finalCableColor);
+                const endRingGeo = new THREE.TorusGeometry(radius * 1.3, radius * 0.3, 20, 40);
+                this._ensureUv2(endRingGeo);
                 const endRing = new THREE.Mesh(endRingGeo, endRingMat);
                 endRing.position.copy(endPos);
                 endRing.rotateX(Math.PI / 2);
@@ -1402,9 +1656,6 @@ export class Scene18 extends SceneBase {
         const entranceGroup = new THREE.Group();
         const radius = this.coreRadius + 5; 
         
-        // テクスチャを生成（プレート用）
-        const textures = this.generateDirtyTextures(512, 0x444444, false);
-        
         // --- 位置の調整（真ん中よりちょい上！） ---
         const yOffset = 500; 
         const zPos = Math.sqrt(radius * radius - yOffset * yOffset);
@@ -1415,14 +1666,17 @@ export class Scene18 extends SceneBase {
         entranceGroup.lookAt(lookTarget);
         this.scene.add(entranceGroup);
 
-        // 1. ベースプレート（復活！でもより洗練されたデザインにするで）
+        // 1. ベースプレート（ノーマル＋ラフで角・スクラッチを汚す）
         const plateGeo = new THREE.BoxGeometry(450, 180, 15);
-        const plateMat = new THREE.MeshStandardMaterial({ 
-            color: 0x444444, 
-            metalness: 0.5, 
-            roughness: 0.4,
-            bumpMap: textures.bumpMap, // 球体と同じバンプを適用して馴染ませる
-            bumpScale: 4.0
+        plateGeo.computeTangents();
+        this._entrancePlateTextures = this._generateEntrancePlateWearTextures(512);
+        const plateMat = this._createCeramicHullMaterial({
+            color: new THREE.Color(this.charcoalHex),
+            envMapIntensity: 0.58,
+            normalMap: this._entrancePlateTextures.normalMap,
+            normalScale: new THREE.Vector2(0.85, 0.85),
+            roughnessMap: this._entrancePlateTextures.roughnessMap,
+            roughness: 1
         });
         const plate = new THREE.Mesh(plateGeo, plateMat);
         plate.position.set(0, 20, 0); // 少し上にずらしてランプとテキストを乗せる
@@ -1430,12 +1684,16 @@ export class Scene18 extends SceneBase {
         plate.receiveShadow = true;
         entranceGroup.add(plate);
 
-        // 2. 赤いランプ（中央に1つだけ）
-        const lampGeo = new THREE.SphereGeometry(10, 16, 16); 
-        const lampMat = new THREE.MeshStandardMaterial({
-            color: 0xff0000,
-            emissive: 0xff0000,
-            emissiveIntensity: 10.0 
+        // 2. 表示ランプ（球体まわりはケーブル以外すべて白で統一）
+        const lampGeo = new THREE.SphereGeometry(10, 16, 16);
+        const lampEm = new THREE.Color(0x25262c);
+        const lampMat = this._createCeramicHullMaterial({
+            color: new THREE.Color(this.charcoalHex),
+            roughness: 0.22,
+            clearcoat: 0.52,
+            envMapIntensity: 0.66,
+            emissive: lampEm,
+            emissiveIntensity: 0.16
         });
         
         const lamp = new THREE.Mesh(lampGeo, lampMat);
@@ -1451,8 +1709,8 @@ export class Scene18 extends SceneBase {
         // 背景なし（透明）
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
-        // テキスト描画（濃いめのグレー）
-        ctx.fillStyle = '#ffffff'; // #111111 -> #ffffff (真っ白にして視認性アップ！)
+        // テキスト描画（黒）
+        ctx.fillStyle = '#0a0a0a';
         ctx.font = 'bold 60px Arial'; // 90px -> 60px (小さくしたで！)
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -1478,38 +1736,18 @@ export class Scene18 extends SceneBase {
         this.stabilizerPipes = pipeGroup; // 管理用に追加
         this.scene.add(pipeGroup);
 
-        // --- 無彩色のスチール風テクスチャ ---
-        const beamBaseColor = 0x989898;
-        const beamTextures = this.generateDirtyTextures(512, beamBaseColor, true);
-
-        const beamMat = new THREE.MeshStandardMaterial({
-            color: beamBaseColor,
-            map: beamTextures.map,
-            bumpMap: beamTextures.bumpMap,
-            bumpScale: 10.0,
-            metalness: 0.3,
-            roughness: 0.9,
-            emissive: 0x202020,
-            emissiveIntensity: 0.2,
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.3 // 1.5 -> 0.3 (映り込みを最小限にしてマット感を出す)
-        });
-
-        // 設置パーツ用のマテリアル（こちらもマットに！）
-        const connectorColor = 0x858585;
-        const connectorTextures = this.generateDirtyTextures(256, connectorColor, true);
-        const connectorMat = new THREE.MeshStandardMaterial({
-            color: connectorColor,
-            map: connectorTextures.map,
-            bumpMap: connectorTextures.bumpMap,
-            bumpScale: 6.0,
-            metalness: 0.4,
-            roughness: 0.8,
-            emissive: 0x181818,
-            emissiveIntensity: 0.1,
-            envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 0.4
-        });
+        this._stabilizerSteelTextures = this.generateRepaintedYellowSteelTextures(1024);
+        const mkSteelMat = () =>
+            new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: this._stabilizerSteelTextures.map,
+                bumpMap: this._stabilizerSteelTextures.bumpMap,
+                bumpScale: 6,
+                metalness: 0.05,
+                roughness: 0.92,
+                envMap: this.scene.environment,
+                envMapIntensity: 0.14
+            });
 
         const roomLimit = 4800; // 壁の位置
         const corners = [
@@ -1540,17 +1778,18 @@ export class Scene18 extends SceneBase {
                 pipeGroup.add(beamGroup);
 
                 // H鋼のメインプレート（中央）
+                const steelMat = mkSteelMat();
                 const webGeo = new THREE.BoxGeometry(beamSize * 0.1, distToSurface, beamSize * 0.8);
-                const web = new THREE.Mesh(webGeo, beamMat);
+                const web = new THREE.Mesh(webGeo, steelMat);
                 beamGroup.add(web);
 
                 // H鋼のフランジ（両端）
                 const flangeGeo = new THREE.BoxGeometry(beamSize, distToSurface, beamSize * 0.1);
-                const flange1 = new THREE.Mesh(flangeGeo, beamMat);
+                const flange1 = new THREE.Mesh(flangeGeo, steelMat);
                 flange1.position.z = beamSize * 0.4;
                 beamGroup.add(flange1);
 
-                const flange2 = new THREE.Mesh(flangeGeo, beamMat);
+                const flange2 = new THREE.Mesh(flangeGeo, steelMat);
                 flange2.position.z = -beamSize * 0.4;
                 beamGroup.add(flange2);
 
@@ -1559,17 +1798,17 @@ export class Scene18 extends SceneBase {
                 const trussGeo = new THREE.BoxGeometry(beamSize * 0.05, beamSize * 1.2, beamSize * 0.05);
                 for (let i = 0; i < trussCount; i++) {
                     const t = (i / (trussCount - 1) - 0.5) * distToSurface * 0.8;
-                    const truss = new THREE.Mesh(trussGeo, beamMat);
+                    const truss = new THREE.Mesh(trussGeo, steelMat);
                     truss.position.y = t;
                     truss.rotation.z = Math.PI / 4 * (i % 2 === 0 ? 1 : -1);
                     beamGroup.add(truss);
                 }
 
                 // 壁側の設置パーツ
-                this.createPipeConnector(startPos, dir, beamSize * 0.5, connectorMat, pipeGroup);
+                this.createPipeConnector(startPos, dir, beamSize * 0.5, steelMat, pipeGroup);
 
                 // 球体側の設置パーツ
-                this.createPipeConnector(endPos, dir.clone().negate(), beamSize * 0.5, connectorMat, pipeGroup);
+                this.createPipeConnector(endPos, dir.clone().negate(), beamSize * 0.5, steelMat, pipeGroup);
             });
         });
     }
@@ -1584,18 +1823,18 @@ export class Scene18 extends SceneBase {
         group.add(connectorGroup);
 
         // ベースフランジ（大型化！ pipeRadius * 3 -> * 5）
-        const baseGeo = new THREE.CylinderGeometry(pipeRadius * 5, pipeRadius * 5.5, 40, 16); // 3/3.5 -> 5/5.5, 20 -> 40
+        const baseGeo = new THREE.CylinderGeometry(pipeRadius * 5, pipeRadius * 5.5, 40, 40, 4);
         const base = new THREE.Mesh(baseGeo, material);
         base.rotateX(Math.PI / 2);
         connectorGroup.add(base);
 
         // 補強リング（大型化！）
-        const ringGeo = new THREE.TorusGeometry(pipeRadius * 3.5, pipeRadius * 0.8, 12, 24); // 2 -> 3.5, 0.5 -> 0.8
+        const ringGeo = new THREE.TorusGeometry(pipeRadius * 3.5, pipeRadius * 0.8, 24, 48);
         const ring = new THREE.Mesh(ringGeo, material);
         connectorGroup.add(ring);
 
         // 固定ボルト（大型化！）
-        const boltGeo = new THREE.CylinderGeometry(15, 15, 60, 8); // 8 -> 15, 30 -> 60
+        const boltGeo = new THREE.CylinderGeometry(15, 15, 60, 20);
         for (let i = 0; i < 8; i++) { // 6 -> 8本に増量！
             const angle = (i / 8) * Math.PI * 2;
             const bolt = new THREE.Mesh(boltGeo, material);
@@ -1617,15 +1856,15 @@ export class Scene18 extends SceneBase {
 
         // --- インナーグロウ（球体内部の発光）の更新 ---
         if (this.innerSphere && this.innerSphere.material) {
-            // 徐々に減衰させる
             this.innerSphere.material.emissiveIntensity *= 0.92;
-            this.innerSphere.material.emissive.copy(this.pulseColor);
+            const eb = Math.min(1, this.lightIntensity * 2.5);
+            this.innerSphere.material.emissive.lerpColors(this.innerVividEmissive, this.pulseColor, eb);
             this.innerSphere.material.needsUpdate = true;
         }
         if (this.coreGlow && this.coreGlow.material) {
-            // 徐々に減衰させる
             this.coreGlow.material.opacity *= 0.9;
-            this.coreGlow.material.color.copy(this.pulseColor);
+            const cw = Math.min(1, this.lightIntensity * 2.5);
+            this.coreGlow.material.color.lerpColors(this.coreGlowVividColor, this.pulseColor, cw * 0.55);
             this.coreGlow.material.needsUpdate = true;
         }
 
@@ -1634,6 +1873,7 @@ export class Scene18 extends SceneBase {
         if (this.centralSphere) {
             this.centralSphere.traverse(child => {
                 if (child === this.innerSphere || child === this.coreGlow) return;
+                if (child.material?.userData?.sphereCeramicShell) return;
                 if (child.isMesh && child.material && child.material.emissive) {
                     const current = child.material.emissiveIntensity;
                     child.material.emissiveIntensity = current + (sphereEmissiveTarget - current) * 0.1;
@@ -1644,10 +1884,10 @@ export class Scene18 extends SceneBase {
 
         // ライト強度の補間（パルス連動）
         this.lightIntensity += (this.targetLightIntensity - this.lightIntensity) * 0.15;
-        if (this.pointLight) {
-            this.pointLight.intensity = this.lightIntensity;
-            // ライトの色もパルス色に合わせる！
-            this.pointLight.color.copy(this.pulseColor);
+        if (this.spotLight) {
+            this.spotLight.intensity = this.spotBaseIntensity + this.lightIntensity;
+            const w = Math.min(1, this.lightIntensity * 2.5);
+            this.spotLight.color.lerpColors(new THREE.Color(0xffffff), this.pulseColor, w);
         }
         // ライトもすぐに暗く戻ろうとする
         this.targetLightIntensity += (0.0 - this.targetLightIntensity) * 0.1;
@@ -1672,18 +1912,28 @@ export class Scene18 extends SceneBase {
             }
         });
 
-        // CubeCamera 更新頻度を下げて軽量化（4fに1回 → 8fに1回）
-        if (this.cubeCamera && Math.floor(this.time * 60) % 8 === 0) {
-            this.cubeCamera.update(this.renderer, this.scene);
+        const aoPass = this.ssaoPass;
+        if (aoPass) {
+            const focusPos = new THREE.Vector3(0, this.coreCenterY, 0);
+            const camDist = this.camera.position.distanceTo(focusPos);
+            const nearD = 900;
+            const farD = 6200;
+            const t = THREE.MathUtils.clamp((camDist - nearD) / (farD - nearD), 0, 1);
+            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t);
+            if ('kernelRadius' in aoPass) aoPass.kernelRadius = this.ssaoNearKernelRadius * aoScale;
+            if ('minDistance' in aoPass) aoPass.minDistance = this.ssaoNearMinDistance * aoScale;
+            if ('maxDistance' in aoPass) aoPass.maxDistance = this.ssaoNearMaxDistance * aoScale;
+            this._syncAODepthAndCameraUniforms(aoPass);
         }
 
         this._updateAmbientParticles(deltaTime);
+        this._updatePinkSpillSpheres(deltaTime);
 
         if (this.fogNoisePass) {
             this.fogNoisePass.uniforms.time.value = this.time;
         }
 
-        this.updateAutoFocus();
+        // DOF は Scene21 同様に固定 focus（球体表面追従はミニチュアCG感が強すぎるためオフ）
 
         // --- 2Dコールアウトの更新（共通システムを使用） ---
         if (this.calloutSystem) {
@@ -1718,6 +1968,7 @@ export class Scene18 extends SceneBase {
         if (this.centralSphere) {
             this.centralSphere.traverse(child => {
                 if (child === this.innerSphere || child === this.coreGlow) return;
+                if (child.material?.userData?.sphereCeramicShell) return;
                 if (child.isMesh && child.material && child.material.emissive) {
                     child.material.emissiveIntensity = sphereEmissiveTarget;
                     child.material.needsUpdate = true;
@@ -1725,15 +1976,13 @@ export class Scene18 extends SceneBase {
             });
         }
 
-        // 点光源も最小限（球体の周辺がほんのり明るくなる程度）
-        const flashIntensity = (velocity / 127.0) * 1.5; // 4.0 -> 1.5
-        if (this.pointLight) {
-            this.pointLight.intensity = flashIntensity;
-            this.pointLight.color.copy(this.pulseColor);
+        // スポットにパルスを乗せる（ベース＋フラッシュ）
+        const flashIntensity = (velocity / 127.0) * 1.5;
+        this.targetLightIntensity = flashIntensity;
+        if (this.spotLight) {
+            this.spotLight.intensity = this.spotBaseIntensity + flashIntensity;
+            this.spotLight.color.copy(this.pulseColor);
         }
-
-        // ライトを光らせる（ターゲット強度を設定して補間させる）
-        this.targetLightIntensity = flashIntensity; 
     }
 
     _createComposerRenderTargets() {
@@ -1778,25 +2027,27 @@ export class Scene18 extends SceneBase {
         }
         if (this.useSSAO && !this.ssaoPass) {
             this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
-            this.ssaoPass.kernelRadius = 8;
-            this.ssaoPass.minDistance = 0.005;
-            this.ssaoPass.maxDistance = 0.12;
+            this.ssaoPass.kernelRadius = this.ssaoNearKernelRadius;
+            this.ssaoPass.minDistance = this.ssaoNearMinDistance;
+            this.ssaoPass.maxDistance = this.ssaoNearMaxDistance;
             this.composer.addPass(this.ssaoPass);
+            this._syncAODepthAndCameraUniforms(this.ssaoPass);
         }
         if (this.useBloom && !this.bloomPass) {
             this.bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.14,
-                0.68,
-                0.64
+                0.038,
+                0.72,
+                0.78
             );
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
+            // Scene21 と同値（固定ピント。被写界深度は弱めの実写寄りに）
             this.initDOF({
-                focus: 2000,
-                aperture: 0.0000045,
-                maxblur: 0.0028
+                focus: 2100,
+                aperture: 0.0000044,
+                maxblur: 0.0031
             });
         }
         if (!this.outputPass) {
@@ -1804,6 +2055,38 @@ export class Scene18 extends SceneBase {
             this.composer.addPass(this.outputPass);
         }
         this.addFilmGrainIfEnabled(0.22, false);
+    }
+
+    /**
+     * FogNoisePass が composer の深度（HalfFloat 系）を読むため、
+     * renderTarget の depthTexture を SSAO 用に差し替えない（霧が死ぬのを防ぐ）。
+     */
+    _syncAODepthAndCameraUniforms(aoPass) {
+        if (!aoPass) return;
+
+        const candidateDepth =
+            aoPass.beautyRenderTarget?.depthTexture ||
+            aoPass.normalRenderTarget?.depthTexture ||
+            aoPass.depthRenderTarget?.depthTexture ||
+            this.composer?.renderTarget1?.depthTexture ||
+            this.composer?.renderTarget2?.depthTexture ||
+            null;
+
+        const maybeMaterials = [
+            aoPass.ssaoMaterial,
+            aoPass.saoMaterial,
+            aoPass.materialAO,
+            aoPass.vBlurMaterial,
+            aoPass.hBlurMaterial
+        ];
+
+        for (const m of maybeMaterials) {
+            const u = m?.uniforms;
+            if (!u) continue;
+            if (u.cameraNear) u.cameraNear.value = this.camera.near;
+            if (u.cameraFar) u.cameraFar.value = this.camera.far;
+            if (u.tDepth && candidateDepth) u.tDepth.value = candidateDepth;
+        }
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -1859,38 +2142,12 @@ export class Scene18 extends SceneBase {
         }
     }
 
-    updateAutoFocus() {
-        if (!this.useDOF || !this.bokehPass || !this.centralSphere) return;
-        
-        // カメラのワールド座標を確実に取得
-        const cameraWorldPos = new THREE.Vector3();
-        this.camera.getWorldPosition(cameraWorldPos);
-        
-        // 球体（核）の中心座標（動的に取得するように変更！）
-        const coreCenter = new THREE.Vector3();
-        this.centralSphere.getWorldPosition(coreCenter);
-        
-        // カメラから球体中心までの距離
-        const distToCenter = cameraWorldPos.distanceTo(coreCenter);
-        
-        // 【重要】中心ではなく「球体の表面」にピントを合わせるやで！
-        // 距離から半径を引くことで、カメラに一番近い表面にフォーカスが来るはずや！
-        let focusDist = distToCenter - this.coreRadius;
-        
-        // 万が一カメラが球体の中に入ったり近すぎたりした時のための安全策
-        if (focusDist < 10) focusDist = 10;
-        
-        // フォーカスを滑らかに補間（0.08で程よい速さ）
-        const currentFocus = this.bokehPass.uniforms.focus.value;
-        this.bokehPass.uniforms.focus.value = currentFocus + (focusDist - currentFocus) * 0.08;
-    }
-
     render() {
         if (this.strobeActive) {
             const isWhite = Math.floor(performance.now() / 32) % 2 === 0;
             this.renderer.setClearColor(isWhite ? 0xffffff : 0x000000);
         } else {
-            this.renderer.setClearColor(0x0a0a0a);
+            this.renderer.setClearColor(0x010102);
         }
         super.render();
     }
@@ -1933,14 +2190,34 @@ export class Scene18 extends SceneBase {
         }
         this.ambientParticles = [];
 
+        this._stripCableConcreteTextureRefs();
+
         if (this.studio) this.studio.dispose();
-        if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
+        if (this._roomEnvTexture) {
+            this._roomEnvTexture.dispose();
+            this._roomEnvTexture = null;
+        }
+        if (this.pmremGenerator) {
+            this.pmremGenerator.dispose();
+            this.pmremGenerator = null;
+        }
+        this.scene.environment = null;
         if (this.centralSphere) {
             this.scene.remove(this.centralSphere);
-            this.centralSphere.children.forEach(child => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
+            const disposedMats = new Set();
+            this.centralSphere.traverse((obj) => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    mats.forEach((m) => {
+                        if (!disposedMats.has(m)) {
+                            disposedMats.add(m);
+                            m.dispose();
+                        }
+                    });
+                }
             });
+            this._sphereLabGrungeTextures = null;
         }
         // detailGroup の子を確実に削除・破棄（シーン復帰時に古いリングが浮くのを防ぐ）
         if (this.detailGroup) {
@@ -1961,39 +2238,70 @@ export class Scene18 extends SceneBase {
         });
         this.cables = [];
         this.scene.remove(this.cableGroup);
+        if (this._cableLabGrungeTextures) {
+            const t = this._cableLabGrungeTextures;
+            ['map', 'normalMap', 'roughnessMap', 'aoMap', 'bumpMap'].forEach((k) => {
+                if (t[k] && t[k].dispose) t[k].dispose();
+            });
+            this._cableLabGrungeTextures = null;
+        }
+        if (this._cableConcreteTextures) {
+            const t = this._cableConcreteTextures;
+            t.map.dispose();
+            t.normalMap.dispose();
+            t.roughnessMap.dispose();
+            t.aoMap.dispose();
+            this._cableConcreteTextures = null;
+        }
         if (this.entranceUnit) {
             this.scene.remove(this.entranceUnit);
-            this.entranceUnit.children.forEach(child => {
+            this.entranceUnit.children.forEach((child) => {
                 if (child.geometry) child.geometry.dispose();
                 if (child.material) {
-                    if (Array.isArray(child.material)) {
-                        child.material.forEach(m => {
-                            if (m.map) m.map.dispose();
-                            m.dispose();
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    mats.forEach((m) => {
+                        ['map', 'normalMap', 'bumpMap', 'roughnessMap', 'aoMap'].forEach((k) => {
+                            if (m[k] && m[k].dispose) m[k].dispose();
                         });
-                    } else {
-                        if (child.material.map) child.material.map.dispose();
-                        child.material.dispose();
-                    }
+                        m.dispose();
+                    });
                 }
             });
+            this._entrancePlateTextures = null;
         }
         if (this.calloutSystem) {
             this.calloutSystem.setScene(null);
         }
         if (this.stabilizerPipes) {
-            this.scene.remove(this.stabilizerPipes);
-            this.stabilizerPipes.children.forEach(child => {
-                if (child.geometry) child.geometry.dispose();
-                if (child.material) child.material.dispose();
-                // Group（コネクタ）の中身も再帰的に処理
-                if (child.children) {
-                    child.children.forEach(grandChild => {
-                        if (grandChild.geometry) grandChild.geometry.dispose();
-                        if (grandChild.material) grandChild.material.dispose();
-                    });
+            this.stabilizerPipes.traverse((o) => {
+                if (o.material) {
+                    if (o.material.map) o.material.map = null;
+                    if (o.material.bumpMap) o.material.bumpMap = null;
+                    o.material.dispose();
                 }
+                if (o.geometry) o.geometry.dispose();
             });
+            this.scene.remove(this.stabilizerPipes);
+            this.stabilizerPipes = null;
+        }
+        if (this._stabilizerSteelTextures) {
+            this._stabilizerSteelTextures.map.dispose();
+            this._stabilizerSteelTextures.bumpMap.dispose();
+            this._stabilizerSteelTextures = null;
+        }
+        this._stabilizerSteelMaterial = null;
+        if (this.spillInstManager) {
+            this.spillInstManager.dispose();
+            this.spillInstManager = null;
+        }
+        this._spillSphereGeo = null;
+        this._spillBloomAttr = null;
+        this.spillParticles = [];
+        if (this.spotLight) {
+            this.scene.remove(this.spotLight.target);
+            this.scene.remove(this.spotLight);
+            this.spotLight.dispose();
+            this.spotLight = null;
         }
         super.dispose();
     }

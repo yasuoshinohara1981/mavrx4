@@ -14,7 +14,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
-import { FilmPass } from 'three/examples/jsm/postprocessing/FilmPass.js';
+import { SensorFilmGrainPass } from '../lib/SensorFilmGrainPass.js';
+import { FilmLookPass } from '../lib/FilmLookPass.js';
 import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { createFlareTexture, createGhostTexture } from '../lib/LensflareTextures.js';
 import { SkyDome } from '../lib/SkyDome.js';
@@ -75,6 +76,7 @@ export class SceneBase {
         
         this.bokehPass = null; // 被写界深度（DOF）用のパス
         this.useDOF = false;   // サブクラスで有効化するためのフラグ
+        this.filmLookPass = null;  // 軽いCA＋ソフト（フィルムグレイン直前）
         this.filmPass = null;  // フィルムグレイン用のパス
         this.useFilmGrain = false;  // サブクラスで有効化するためのフラグ（Scene12以降でON）
         this.lensFlare = null;      // レンズフレアオブジェクト
@@ -304,9 +306,20 @@ export class SceneBase {
             this.composer.addPass(new RenderPass(this.scene, this.camera));
         }
         if (this.filmPass) return; // 既に追加済み
-        this.filmPass = new FilmPass(intensity, grayscale);
+        // 色収差のみ（soften=0）。ぼかし混ぜは縦横筋の原因になるのでデフォルトオフ。
+        const filmLookCa = 0.0004;
+        const filmLookSoften = 0.0;
+        if (!this.filmLookPass && (filmLookCa > 0.0 || filmLookSoften > 0.0)) {
+            this.filmLookPass = new FilmLookPass({ caAmount: filmLookCa, soften: filmLookSoften });
+            this.composer.addPass(this.filmLookPass);
+            debugLog('effect', 'FilmLookPass (CA only) added');
+        }
+        this.filmPass = new SensorFilmGrainPass(intensity, grayscale);
+        if (this.bokehPass) {
+            this.filmPass.bindBokehPass(this.bokehPass, () => this.useDOF && this.bokehPass && this.bokehPass.enabled);
+        }
         this.composer.addPass(this.filmPass);
-        debugLog('effect', 'FilmGrain (FilmPass) added');
+        debugLog('effect', 'FilmGrain (SensorFilmGrainPass) added');
     }
 
     /**
@@ -1196,6 +1209,16 @@ export class SceneBase {
         if (this.lensFlareLight && this.scene) {
             this.scene.remove(this.lensFlareLight);
             this.lensFlareLight = null;
+        }
+
+        // フィルムルック（CA+ソフト）の破棄
+        if (this.filmLookPass) {
+            this.filmLookPass.dispose();
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.filmLookPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            this.filmLookPass = null;
         }
 
         // フィルムグレインの破棄

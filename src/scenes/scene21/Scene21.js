@@ -25,7 +25,15 @@ import { Scene16Particle } from '../scene16/Scene16Particle.js';
 export class Scene21 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'Xenomist';
+        this.title = 'mathym | Xenomist';
+        /** 南壁 3D テキスト（helvetiker はラテン only - 日本語は文字化けする） */
+        this.promoReleaseInfoLines = [
+            '2025 SPRING - Live / installation visual suite',
+            'OSC / actual_tick sync; tracks 5-9. Metal shards, cylinders, spheres, red burst -',
+            'spawned in real time. DOF, SSAO, bloom, fog tied to concrete room lighting.',
+            'Mastering, credits, full notes: release notes and official site.',
+            'Adjust volume and brightness for your venue. mathym / Xenomist'
+        ];
         this.initialized = false;
         this.sceneNumber = 21;
         this.kitNo = 21;
@@ -45,7 +53,7 @@ export class Scene21 extends SceneBase {
         /** トラック5金属片・トラック6シリンダのサイズ倍率（比率を保ったまま拡大） */
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
-        this.sceneLightingScale = 0.14;
+        this.sceneLightingScale = 0.32;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -103,6 +111,12 @@ export class Scene21 extends SceneBase {
 
         this.useDOF = true;
         this.useBloom = true;
+        /** false でシーンの FogExp2 をオフ */
+        this.useSceneFog = true;
+        /** FogExp2 の密度（小さいほど薄い）— 以前 0.00017 より控えめ */
+        this.sceneFogDensity = 0.00009;
+        /** 暖色系に寄せた霞（クール灰 0xd5d9df より R 寄り・B 弱め） */
+        this.sceneFogColor = 0xdfcfc2;
         // フォグと併用するため、黒縁が出にくい弱め設定で SSAO を使う
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -2307,9 +2321,11 @@ float cylinderSurfH( vec3 v ) {
         this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        /** グレー寄りフォグ */
+        /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
         this.scene.background = new THREE.Color(0x151820);
-        this.scene.fog = new THREE.FogExp2(0xd5d9df, 0.00017);
+        this.scene.fog = this.useSceneFog
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00009)
+            : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -2548,34 +2564,42 @@ float cylinderSurfH( vec3 v ) {
         });
 
         this.promoTextGroup = new THREE.Group();
-        const lines = [this.title];
-        const size = 400;
-        const extrudeHeight = 92;
+        const headline = this.title || 'mathym | Xenomist';
+        const releaseLines = this.promoReleaseInfoLines ?? [];
+        const mainSize = 400;
+        const mainExtrude = 92;
+        const subSize = 148;
+        const subExtrude = 34;
+        const gapAfterHeadline = 96;
+        const lineGapSub = 40;
         let yCursor = 0;
-        const lineGap = 72;
 
-        for (let i = 0; i < lines.length; i++) {
-            const geo = new TextGeometry(lines[i], {
+        const addLine = (text, size, height, bevelT, bevelS, gapAfter) => {
+            const geo = new TextGeometry(text, {
                 font,
                 size,
-                height: extrudeHeight,
-                curveSegments: 10,
+                height,
+                curveSegments: size > 200 ? 10 : 8,
                 bevelEnabled: true,
-                bevelThickness: 9,
-                bevelSize: 3.8,
+                bevelThickness: bevelT,
+                bevelSize: bevelS,
                 bevelOffset: 0,
                 bevelSegments: 2
             });
             geo.computeBoundingBox();
             const bx = geo.boundingBox;
-            const cx = -(bx.max.x + bx.min.x) * 0.5;
             const cy = -(bx.max.y + bx.min.y) * 0.5;
             const cz = -(bx.max.z + bx.min.z) * 0.5;
-            geo.translate(cx, cy, cz);
+            geo.translate(-bx.min.x, cy, cz);
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.y = yCursor;
-            yCursor -= size + lineGap;
+            yCursor -= size + gapAfter;
             this.promoTextGroup.add(mesh);
+        };
+
+        addLine(headline, mainSize, mainExtrude, 9, 3.8, gapAfterHeadline);
+        for (let j = 0; j < releaseLines.length; j++) {
+            addLine(releaseLines[j], subSize, subExtrude, 3.2, 1.35, lineGapSub);
         }
 
         this.promoTextGroup.updateMatrixWorld(true);

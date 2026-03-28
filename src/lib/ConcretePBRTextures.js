@@ -3,7 +3,7 @@
  * オプションで目地・赤十字オーバーレイを省略（ケーブル等に流用する場合）。
  */
 import * as THREE from 'three';
-import { drawGroutLines, drawRedCrossesAndLabels } from './studioBoxGrout.js';
+import { drawGroutLines, drawGroutNumberLabels, drawRedCrossesAndLabels } from './studioBoxGrout.js';
 
 export const TILE_OVERLAY_DIVISIONS = 26;
 
@@ -249,6 +249,8 @@ export function generateConcretePBRTextures(size = 1024, maxAnisotropy = 8, opti
             lineWidth: 1.2
         });
         wallACtx.restore();
+        /** multiply で薄く潰れた番号を、壁用に source-over で濃く重ねて復活 */
+        drawGroutNumberLabels(wallACtx, size, tileDiv, { fillAlpha: 0.52 });
     }
 
     hCtx.putImageData(nImg, 0, 0);

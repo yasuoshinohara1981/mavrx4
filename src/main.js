@@ -29,6 +29,31 @@ let sceneManager;
 let oscManager;
 let sharedResourceManager;
 
+/** osc-server の WebSocket ポート（osc-server.js の WS_PORT と一致） */
+const OSC_WS_PORT = 8080;
+
+/** WebSocket URL（DEV は Vite 経由、ビルド後は osc-server 8080 直） */
+function resolveOscWsUrl() {
+    const fromEnv = typeof import.meta !== 'undefined' && import.meta.env?.VITE_OSC_WS_URL;
+    if (fromEnv) return fromEnv;
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const h = window.location.hostname;
+
+    if (typeof import.meta !== 'undefined' && import.meta.env.DEV) {
+        return `${proto}//${host}/__osc_ws`;
+    }
+
+    if (h === 'localhost' || h === '127.0.0.1') {
+        return `ws://127.0.0.1:${OSC_WS_PORT}`;
+    }
+    return `${proto}//${h}:${OSC_WS_PORT}`;
+}
+
+/** SharedResourceManager 待ちのあいだに届いた OSC（sceneManager なしで捨てない） */
+let _oscPending = [];
+const OSC_PENDING_MAX = 2000;
+
 // アニメーションループ用
 let time = 0;
 let lastTime = performance.now();
@@ -87,12 +112,17 @@ function initCamera() {
 // ============================================
 
 function initOSC() {
+    const wsUrl = resolveOscWsUrl();
     oscManager = new OSCManager({
-        wsUrl: 'ws://127.0.0.1:8080',
+        wsUrl,
         onMessage: (message) => {
-            // シーンマネージャーにOSCメッセージを転送
             if (sceneManager) {
                 sceneManager.handleOSC(message);
+            } else {
+                if (_oscPending.length >= OSC_PENDING_MAX) {
+                    _oscPending.shift();
+                }
+                _oscPending.push(message);
             }
         },
         onStatusChange: (status) => {
@@ -458,7 +488,12 @@ async function init() {
     
     // その後、シーンマネージャーを初期化
     initSceneManager();
-    
+
+    for (let i = 0; i < _oscPending.length; i++) {
+        sceneManager.handleOSC(_oscPending[i]);
+    }
+    _oscPending = [];
+
     window.addEventListener('resize', onWindowResize);
     
     // デフォルトでフルスクリーンにする

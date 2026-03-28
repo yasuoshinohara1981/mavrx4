@@ -5,7 +5,15 @@ export default defineConfig({
     port: 3000,
     strictPort: true,
     host: true,
-    open: false
+    open: false,
+    // ブラウザは常に「ページと同じホスト:3000」だけ見ればよい（8080 直は DEV では使わない）
+    proxy: {
+      '/__osc_ws': {
+        target: 'http://127.0.0.1:8080',
+        ws: true,
+        changeOrigin: true
+      }
+    }
   },
   build: {
     outDir: 'dist',

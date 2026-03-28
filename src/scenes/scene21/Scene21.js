@@ -1,10 +1,10 @@
 /**
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
- * メインオブジェクト：トラック5で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
- * トラック5/6 のワールド位置は OSC /actual_tick の差分×定数＋シーケンスに応じたジッター。トラック6は args[2] デュレーション中に間隔スポーン可（cylinderSpawnDuringDuration）
- * トラック9：部屋中心付近からスフィア（flesh テクスチャ＋チャコール寄せ color）を物理演算でスポーン。args[2]=デュレーションms、track9SpawnDuringDuration でデュレ中に間隔スポーン可
+ * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
+ * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
  * 床・壁は PBR コンクリート、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ
+ * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -20,6 +20,9 @@ import { StudioBox } from '../../lib/StudioBox.js';
 import { generateConcretePBRTextures } from '../../lib/ConcretePBRTextures.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene16Particle } from '../scene16/Scene16Particle.js';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
 
 export class Scene21 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -33,15 +36,18 @@ export class Scene21 extends SceneBase {
         this.studio = null;
         this.roomGroup = null;
         this.ceilingMesh = null;
+        /** 北壁の extruded 3D タイトル（Helvetiker / 艶・反射） */
+        this.wallTitleGroup = null;
+        this._wallTitleMaterial = null;
 
         this.cubeRenderTarget = null;
         this.cubeCamera = null;
 
-        /** トラック5で生える金属片（tick ベースパス）— GPU インスタンス（1 InstancedMesh） */
+        /** トラック9で生える金属片 — GPU インスタンス（1 InstancedMesh） */
         this.shards = [];
         /** この個数を超えたら古い順に削除（安全上限）。普段は shardLifetimeMs で消える */
         this.maxShards = 2000;
-        /** トラック5金属片・トラック6シリンダのサイズ倍率（比率を保ったまま拡大） */
+        /** トラック9金属片・トラック5シリンダのサイズ倍率（比率を保ったまま拡大） */
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
         this.sceneLightingScale = 0.32;
@@ -53,10 +59,10 @@ export class Scene21 extends SceneBase {
         /** 生成時に 0→目標サイズへ伸びる時間（ms） */
         this.shardGrowInMs = 420;
         this.cylinderGrowInMs = 420;
-        this._shardOpacityAttr = null;
         this._cylinderOpacityAttr = null;
         this.shardGroup = null;
         this.shardInstMesh = null;
+        this._shardOpacityAttr = null;
         /** インスタンススロットの空きスタック（0..maxShards-1） */
         this._shardFreeSlots = [];
         this._metalShardMaterial = null;
@@ -77,14 +83,22 @@ export class Scene21 extends SceneBase {
         this._trailCenter = new THREE.Vector3(0, 1200, 0);
         this._trailSpeed = 720;
         this._trailSpeedShard = 760;
-        this._trailSpeedCylinder = 690;
+        this._trailSpeedCylinder = 1040;
         this._trailCurlFreq = 0.00135;
         this._trailCurlFreqShard = 0.00165;
-        this._trailCurlFreqCylinder = 0.00195;
+        this._trailCurlFreqCylinder = 0.0068;
         this._trailCurlStrength = 2.6;
         this._trailCurlStrengthShard = 4.2;
-        this._trailCurlStrengthCylinder = 6.4;
+        this._trailCurlStrengthCylinder = 11.5;
+        /** 金属片：部屋中央付近に留める引力 */
         this._trailCenterPull = 0.7;
+        /** 赤シリンダー：センタープルは円環周回の主因なのでオフ（カールのみ） */
+        this._trailCenterPullCylinder = 0;
+        /** カール入力座標の固定オフセット（原点対称の渦を避ける） */
+        this._cylinderCurlFieldOffset = new THREE.Vector3(831.2, -1949.5, 722.4);
+        this._curlCylPosScratch = new THREE.Vector3();
+        /** シリンダー用カールの数値微分ステップ（freq とセットで空間スケールに合わせる） */
+        this._trailCurlEpsCylinder = 5.2;
         this._trailYawAmp = 0.42;
         this._trailPitchAmp = 0.28;
         this._trailRollAmp = 0.36;
@@ -96,6 +110,12 @@ export class Scene21 extends SceneBase {
         this._snakeIndex = 0;
         this._shardSeed = Math.random() * 1000;
         this._shardHeatColor = new THREE.Color();
+        this._cylinderTintTemp = new THREE.Color();
+        this._instanceWhite = new THREE.Color(0xffffff);
+        this._instanceBlack = new THREE.Color(0x000000);
+        /** トラック9スフィアの基準色（濃淡ランダムの中心） */
+        this._track9SphereColorAtMax = new THREE.Color(0xd5d9df);
+        this._track9SphereEmissiveAtMax = new THREE.Color(0x2a2d32);
         /** ニュートラルグレー（R 偏重を避け赤みを出さない） */
         this._shardMetalDark = new THREE.Color(0x5a5a5a);
         this._shardMetalMid = new THREE.Color(0x9e9e9e);
@@ -129,17 +149,17 @@ export class Scene21 extends SceneBase {
         this.sceneFogDensity = 0.00009;
         /** 暖色系に寄せた霞（クール灰 0xd5d9df より R 寄り・B 弱め） */
         this.sceneFogColor = 0xdfcfc2;
-        // フォグと併用するため、黒縁が出にくい弱め設定で SSAO を使う
+        // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;
         this.ssaoPass = null;
         this.saoPass = null;
         this.aoDepthTexture = null;
-        this.ssaoNearKernelRadius = 8.0;
-        this.ssaoNearMinDistance = 0.007;
-        this.ssaoNearMaxDistance = 0.16;
-        this.ssaoFarAttenuation = 0.28;
+        this.ssaoNearKernelRadius = 5.5;
+        this.ssaoNearMinDistance = 0.024;
+        this.ssaoNearMaxDistance = 0.11;
+        this.ssaoFarAttenuation = 0.38;
         // Scene21 は固定DOFを優先（オートフォーカスで効きが薄く見えるのを防ぐ）
         this.useAutoFocusDOF = false;
         /** composer では最後に必須：renderer.toneMapping / 出力色空間を画面に適用 */
@@ -169,8 +189,8 @@ export class Scene21 extends SceneBase {
         this.floorTopY = -498;
         this.ceilingY = 5500;
 
-        /** Scene16 と同様：OSC のトラック強度（6=力, 7=色相系） */
-        this.trackValues = { 6: 0, 7: 0 };
+        /** Scene16 と同様：OSC のトラック強度（5/6=力, 7=色相系） */
+        this.trackValues = { 5: 0, 6: 0, 7: 0 };
         this.smoothTrack7Color = 0;
         this.cableHomeY = 550;
         this.cableBlobParticle = null;
@@ -191,35 +211,31 @@ export class Scene21 extends SceneBase {
         this._ambientHidePos = new THREE.Vector3(0, -1e6, 0);
         this._ambientIdRot = new THREE.Euler(0, 0, 0);
 
-        /** トラック6：赤い細シリンダ（InstancedMesh） */
-        this.cylinderGroup = null;
+        /** 赤いシリンダ（InstancedMesh、scene 直下ワールド座標。OSC はトラック5） */
         this.cylinderInstMesh = null;
         this.cylinders = [];
         this.maxCylinders = 640;
-        /** true: args[2] のデュレーション（ms）が終わるまで一定間隔でスポーン。false: ノートオンで1回のみ */
-        this.cylinderSpawnDuringDuration = true;
-        /** デュレーション中スポーンの間隔（ms） */
-        this.cylinderDurationSpawnIntervalMs = 52;
-        this._cylinderSpawnWindowEndMs = 0;
-        this._cylinderSpawnWindowVelocity = 127;
-        this._cylinderSpawnWindowNoteNumber = 64;
-        this._cylinderSpawnWindowDurationMs = 180;
-        this._cylinderLastDurationSpawnMs = 0;
+        /** 赤シリンダー：長さはベロシティ、半径（細さ）はデュレーション */
         this.cylinderLifetimeMs = 180000;
         this._cylinderFreeSlots = [];
         this._redCylinderMaterial = null;
         this._cylinderMatrixTemp = new THREE.Matrix4();
         this._cylinderQuatTemp = new THREE.Quaternion();
+        this._cylinderRollQuat = new THREE.Quaternion();
+        /** 進行方向に直交する横軸（side）周りのチルト用 */
+        this._cylinderTiltXQuat = new THREE.Quaternion();
+        /** DNA 螺旋の「塩基対」みたいに、スポーンごとに進行方向周りの位相が一定ずつ進む */
+        this._cylinderHelixPhase = 0;
+        this._cylinderHelixTwistPerSpawn = 0.055;
         this._cylinderScaleTemp = new THREE.Vector3();
         this._cylinderPosTemp = new THREE.Vector3();
         this._cylinderDirTemp = new THREE.Vector3();
         this._cylinderSideTemp = new THREE.Vector3();
-        this._cylinderPerpTemp = new THREE.Vector3();
         this._cylinderFallbackAxis = new THREE.Vector3(1, 0, 0);
         this._cylinderAxisUp = new THREE.Vector3(0, 1, 0);
         this._lastCylinderWorldPos = new THREE.Vector3(0, 550, 0);
         this._cylinderPathDir = new THREE.Vector3(0, 0.1, 1).normalize();
-        /** OSC actual_tick ベースのスポーン（トラック6） */
+        /** OSC actual_tick ベースのスポーン予約（シリンダ＝トラック5） */
         this._lastSpawnTickTrack6 = null;
         /** シリンダー生成時の石バースト（インスタンシング5000粒） */
         this.redBurstParticleCount = 5000;
@@ -281,14 +297,19 @@ export class Scene21 extends SceneBase {
         this._track9FleshTextures = null;
         this.track9PhysicsGrid = new Map();
         this.track9GridSize = 240;
-        this._track9Gravity = new THREE.Vector3(0, -38, 0);
+        /** 弱め＝床に吸われにくく漂いやすい（ドリフト加速度と併用） */
+        this._track9Gravity = new THREE.Vector3(0, -9, 0);
         this._track9SpawnPos = new THREE.Vector3();
         /** トラック9：アンビエントBoxと同じ部屋内の基準高さ（ワールド中心＝XZ=0） */
         this._track9WorldCenter = new THREE.Vector3(0, 0, 0);
         this._track9Diff = new THREE.Vector3();
+        /** スフィア漂い用の加速度（毎フレーム計算） */
+        this._track9SphereDrift = new THREE.Vector3();
         this._track9SubSteps = 2;
         /** スポーン直後、半径が 0→目標まで伸びる時間（秒） */
         this._track9BirthGrowSec = 0.42;
+        /** メッシュ・物理半径の全体倍率（見た目の大きさ） */
+        this._track9SphereVisualScale = 0.65;
 
         /** 南壁レーザー用スポットの注視点 */
         this.promoWallFillLight = null;
@@ -521,19 +542,31 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * デュレーション → シリンダ長。極短と極長で長さ比が ~3.5 倍程度に収まるよう log で圧縮
+     * ベロシティ（0〜127）→ シリンダ長。弱打ち〜強打ちで差を付ける
      */
-    _cylinderLengthFromDurationMs(durationMs) {
+    _cylinderLengthFromVelocityMidi(vMidi) {
+        const v = THREE.MathUtils.clamp(Number(vMidi) || 0, 0, 127);
+        const tLin = v / 127;
+        const tLog = Math.log1p(v) / Math.log1p(127);
+        const t = THREE.MathUtils.lerp(tLog, tLin, 0.72);
+        const lenMin = 88;
+        const lenMax = 340;
+        return THREE.MathUtils.lerp(lenMin, lenMax, t);
+    }
+
+    /**
+     * デュレーション（ms）→ 半径（細さ）。極短・極長で差が出過ぎないよう log で圧縮
+     */
+    _cylinderRadiusFromDurationMs(durationMs) {
         const d = Math.max(8, Number(durationMs) || 180);
         const dMin = 20;
         const dMax = 2400;
         const tLin = THREE.MathUtils.clamp((d - dMin) / (dMax - dMin), 0, 1);
         const tLog = THREE.MathUtils.clamp(Math.log(d / dMin) / Math.log(dMax / dMin), 0, 1);
-        /** log より線形寄り（0.85 でかなり線形に近い） */
         const t = THREE.MathUtils.lerp(tLog, tLin, 0.85);
-        const lenMin = 140;
-        const lenMax = 540;
-        return THREE.MathUtils.lerp(lenMin, lenMax, t);
+        const radMin = 10;
+        const radMax = 34;
+        return THREE.MathUtils.lerp(radMin, radMax, t);
     }
 
     /** 床・壁タイルの目地分割（小さいほど1枚が大きく見える）。drawGroutLines と一致させる */
@@ -564,12 +597,12 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * トラック5/6 の「最後に生えた」インスタンスのワールド位置を注視にする。
+     * 金属片（トラック9）とシリンダ（トラック5）の「最後に生えた」インスタンスのワールド位置を注視にする。
      * 両方そろっているときはスポーン時刻の新しさで重み付けブレンドし、どちらか一方だけを追う切替で迷わないようにする。
      */
     _updateCameraFocusFromSpawns() {
         const hasS = this.shards.length > 0 && this.shardInstMesh && this.shardGroup;
-        const hasC = this.cylinders.length > 0 && this.cylinderInstMesh && this.cylinderGroup;
+        const hasC = this.cylinders.length > 0 && this.cylinderInstMesh;
 
         if (!hasS && !hasC) {
             if (this.cableBlobParticle) {
@@ -591,8 +624,6 @@ float cylinderSurfH( vec3 v ) {
             const c = this.cylinders[this.cylinders.length - 1];
             this.cylinderInstMesh.getMatrixAt(c.slotIndex, this._cylinderMatrixTemp);
             this._cylinderPosTemp.setFromMatrixPosition(this._cylinderMatrixTemp);
-            this.cylinderGroup.updateMatrixWorld(true);
-            this.cylinderGroup.localToWorld(this._cylinderPosTemp);
         }
 
         if (hasS && hasC) {
@@ -810,6 +841,90 @@ float cylinderSurfH( vec3 v ) {
         this.scene.add(this.roomGroup);
     }
 
+    /**
+     * 北壁（カメラ側から見て奥）に Helvetiker 風 extruded テキスト。厚み＋ベベル。艶・環境反射強め。
+     */
+    _initWallMatteBlack3DText() {
+        if (this.wallTitleGroup) return Promise.resolve();
+
+        return new Promise((resolve) => {
+            const loader = new FontLoader();
+            loader.load(
+                helvetikerFontUrl,
+                (font) => {
+                    const mat = new THREE.MeshStandardMaterial({
+                        color: 0x101318,
+                        roughness: 0.22,
+                        metalness: 0.22,
+                        envMapIntensity: 1.05,
+                        clearcoat: 0.88,
+                        clearcoatRoughness: 0.14,
+                        flatShading: false,
+                        fog: true
+                    });
+                    this._wallTitleMaterial = mat;
+
+                    const group = new THREE.Group();
+                    const hd = this.roomHalfD;
+                    const wallH = this.ceilingY - this.floorTopY;
+                    const wallCenterY = this.floorTopY + wallH * 0.5;
+                    /** 内壁は z = -roomHalfD 付近。手前に少し浮かせて Z-fight 回避 */
+                    const zText = -hd + 95;
+
+                    /** height = Z 方向の押し出し量。ベベルで縁が立体的に見える */
+                    const addLine = (text, size, extrudeDepth, y) => {
+                        const bt = Math.max(3, size * 0.05);
+                        const bs = Math.max(2.2, size * 0.038);
+                        const geo = new TextGeometry(text, {
+                            font,
+                            size,
+                            height: extrudeDepth,
+                            curveSegments: 12,
+                            bevelEnabled: true,
+                            bevelThickness: bt,
+                            bevelSize: bs,
+                            bevelOffset: 0,
+                            bevelSegments: 4
+                        });
+                        geo.computeBoundingBox();
+                        const mesh = new THREE.Mesh(geo, mat);
+                        const bb = geo.boundingBox;
+                        mesh.position.set(-0.5 * (bb.max.x + bb.min.x), y, 0);
+                        /** 壁に落ちるギザ影・コーナー付近の縞を減らすためテキストは影を落とさない */
+                        mesh.castShadow = false;
+                        mesh.receiveShadow = true;
+                        group.add(mesh);
+                        return bb.max.y - bb.min.y;
+                    };
+
+                    let y = 180;
+                    const titleH = addLine('mathym | Xenomist', 280, 118, y);
+                    y -= titleH * 1.05 + 140;
+
+                    const bodyLines = [
+                        'Real-time WebGL (Three.js). Live OSC / MIDI maps tracks to GPU effects:',
+                        'instanced debris, cylinders, spheres; PBR concrete room, HDR environment.',
+                        'Pipeline: SSAO, bloom, DOF, ACES tone map, film grain. Procedural noise fields,',
+                        'audio-reactive spawn, instancing, and camera focus driven by scene activity.'
+                    ];
+                    for (const line of bodyLines) {
+                        const h = addLine(line, 68, 34, y);
+                        y -= h * 1.12 + 28;
+                    }
+
+                    group.position.set(0, wallCenterY + wallH * 0.02, zText);
+                    this.wallTitleGroup = group;
+                    this.scene.add(group);
+                    resolve();
+                },
+                undefined,
+                () => {
+                    resolve();
+                }
+            );
+        });
+    }
+
     _shardNoise(x, y, z) {
         const n = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
         return n - Math.floor(n);
@@ -826,6 +941,23 @@ float cylinderSurfH( vec3 v ) {
         const dy = n(px, py + e, pz) - n(px, py - e, pz);
         const dz = n(px, py, pz + e) - n(px, py, pz - e);
         return new THREE.Vector3(dy - dz, dz - dx, dx - dy);
+    }
+
+    /** 多オクターブ＋座標オフセットで単純な中心周りの渦を避ける */
+    _sampleCurlNoiseVectorCylinderBlend(pos, time, freq, eps) {
+        const p = this._curlCylPosScratch.copy(pos).add(this._cylinderCurlFieldOffset);
+        const a = this._sampleCurlNoiseVector(p, time, freq, eps);
+        const b = this._sampleCurlNoiseVector(p, time + 19.3, freq * 2.15, eps * 0.92);
+        const c = this._sampleCurlNoiseVector(p, time + 41.7, freq * 0.48, eps * 1.06);
+        if (a.lengthSq() > 1e-12) a.normalize();
+        if (b.lengthSq() > 1e-12) b.normalize();
+        if (c.lengthSq() > 1e-12) c.normalize();
+        a.multiplyScalar(0.48);
+        b.multiplyScalar(0.32);
+        c.multiplyScalar(0.2);
+        a.add(b).add(c);
+        if (a.lengthSq() > 1e-12) a.normalize();
+        return a;
     }
 
     _sampleCurlNoiseVectorInto(out, x, y, z, time, freq = 0.001, eps = 7.5, seed = 0) {
@@ -857,23 +989,35 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * @param {object} [yVary] シリンダー軌道だけ高さ揺れを強める（時間周波数＋第2ノイズ）
-     * @param {number} [yVary.timeScale] yTarget の主ノイズの時間倍率
-     * @param {number} [yVary.extraAmp] 追加ノイズの 0〜1 相当係数（620 に掛ける）
+     * @param {object|boolean|null} [yVary] truthy のとき赤シリンダー用軌道（フル3Dカール。Y を yTarget で潰さない）
      */
     _updateTrailHeadSingle(pos, dir, deltaTime, timeOffset, speed, curlFreq, curlStrength, yVary = null) {
         const dt = Math.min(Math.max(deltaTime, 0), 0.05);
-        const curl = this._sampleCurlNoiseVector(pos, this.time + timeOffset, curlFreq);
+        const isCylinderTrail = !!yVary;
+        const curl = isCylinderTrail
+            ? this._sampleCurlNoiseVectorCylinderBlend(
+                  pos,
+                  this.time + timeOffset,
+                  curlFreq,
+                  this._trailCurlEpsCylinder ?? 7.5
+              )
+            : this._sampleCurlNoiseVector(pos, this.time + timeOffset, curlFreq);
         if (curl.lengthSq() > 1e-9) curl.normalize();
 
-        const toCenter = this._trailCenter.clone().sub(pos);
-        const centerDist = Math.max(1, toCenter.length());
-        toCenter.normalize();
-        const centerPull = this._trailCenterPull * THREE.MathUtils.clamp(centerDist / 2400, 0.08, 1.0);
-
         dir.addScaledVector(curl, curlStrength * dt);
-        dir.addScaledVector(toCenter, centerPull * dt);
-        dir.y *= yVary ? 0.88 : 0.92;
+        const pullMag = isCylinderTrail ? (this._trailCenterPullCylinder ?? 0) : this._trailCenterPull;
+        if (pullMag > 1e-6) {
+            const toCenter = this._trailCenter.clone().sub(pos);
+            if (isCylinderTrail) toCenter.y = 0;
+            const centerDist = Math.max(1, toCenter.length());
+            if (toCenter.lengthSq() > 1e-12) {
+                toCenter.normalize();
+                const centerPull = pullMag * THREE.MathUtils.clamp(centerDist / 2400, 0.08, 1.0);
+                dir.addScaledVector(toCenter, centerPull * dt);
+            }
+        }
+        // シリンダーは Y 成分もカール任せ（減衰・yTarget lerp 禁止＝横円環の主因だった）
+        if (!isCylinderTrail) dir.y *= 0.92;
         dir.normalize();
 
         pos.addScaledVector(dir, speed * dt);
@@ -884,19 +1028,19 @@ float cylinderSurfH( vec3 v ) {
         pos.z = THREE.MathUtils.clamp(pos.z, -zLim, zLim);
         const yMin = this.floorTopY + 130;
         const yMax = this.ceilingY * 0.43;
-        const ts = yVary?.timeScale ?? 1.0;
-        const base =
-            (this._shardNoise((this.time + timeOffset) * 0.08 * ts, 9.1, 4.2) - 0.5) * 620;
-        const extra =
-            yVary && yVary.extraAmp > 0
-                ? (this._shardNoise((this.time + timeOffset) * 0.29 * ts, 2.4, 7.8) - 0.5) * 620 * yVary.extraAmp
-                : 0;
-        const yTarget = this._trailCenter.y + base + extra;
-        pos.y = THREE.MathUtils.clamp(
-            THREE.MathUtils.lerp(pos.y, yTarget, (yVary ? 0.44 : 0.38) * dt * 60),
-            yMin,
-            yMax
-        );
+
+        if (isCylinderTrail) {
+            pos.y = THREE.MathUtils.clamp(pos.y, yMin, yMax);
+        } else {
+            const base =
+                (this._shardNoise((this.time + timeOffset) * 0.08, 9.1, 4.2) - 0.5) * 620;
+            const yTarget = this._trailCenter.y + base;
+            pos.y = THREE.MathUtils.clamp(
+                THREE.MathUtils.lerp(pos.y, yTarget, 0.38 * dt * 60),
+                yMin,
+                yMax
+            );
+        }
     }
 
     _updateTrailHeadMotion(deltaTime) {
@@ -917,7 +1061,7 @@ float cylinderSurfH( vec3 v ) {
             this._trailSpeedCylinder ?? this._trailSpeed,
             this._trailCurlFreqCylinder ?? this._trailCurlFreq,
             this._trailCurlStrengthCylinder ?? this._trailCurlStrength,
-            { timeScale: 2.35, extraAmp: 0.62 }
+            true
         );
 
         this._trailHeadPos.copy(this._trailHeadPosShard);
@@ -933,6 +1077,21 @@ float cylinderSurfH( vec3 v ) {
         if (!Number.isFinite(n)) return 127;
         if (n >= 0 && n <= 1) return Math.round(n * 127);
         return THREE.MathUtils.clamp(Math.round(n), 0, 127);
+    }
+
+    /** トラック9：従来のチャコール調を保ちつつ近い範囲で濃淡ランダム */
+    _applyTrack9SphereRandomTint(material) {
+        material.color.copy(this._track9SphereColorAtMax);
+        material.color.offsetHSL(0, (Math.random() - 0.5) * 0.035, (Math.random() - 0.5) * 0.07);
+        material.emissive.copy(this._track9SphereEmissiveAtMax);
+        material.emissive.offsetHSL(0, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.09);
+        material.emissiveIntensity = THREE.MathUtils.clamp(0.17 + (Math.random() - 0.5) * 0.08, 0.12, 0.24);
+    }
+
+    /** 赤シリンダー：基準 #cc4624 付近で濃淡（instanceColor フル色、マテは白） */
+    _randomCylinderTintNearBase(out) {
+        out.setHex(0xcc4624);
+        out.offsetHSL(0, (Math.random() - 0.5) * 0.06, (Math.random() - 0.5) * 0.11);
     }
 
     /** ベロシティでスチール〜シルバーの金属トーン（暗→明） */
@@ -959,8 +1118,17 @@ float cylinderSurfH( vec3 v ) {
         return new THREE.Vector3(u * hw, ymin + (w * 0.5 + 0.5) * (ymax - ymin), v * hd);
     }
 
+    _allocShardSlot() {
+        if (this.shards.length >= this.maxShards) {
+            const old = this.shards.shift();
+            this._clearShardSlot(old.slotIndex);
+            return old.slotIndex;
+        }
+        return this._shardFreeSlots.pop();
+    }
+
     /**
-     * トラック5：常時移動する残像ヘッド位置に金属片を生成。
+     * 常時移動する残像ヘッド位置に金属片を生成（OSC はトラック9）。
      * durationMs: デュレーション（ms）でスケール。velocity: 金属色の明るさ。
      */
     spawnMetalShardFromTrack5(velocity, durationMs = 180) {
@@ -1008,6 +1176,8 @@ float cylinderSurfH( vec3 v ) {
             s;
 
         const slotIndex = this._allocShardSlot();
+        if (slotIndex === undefined) return;
+
         this.velocityToMetalShardColor(vMidi, this._shardHeatColor, si);
         this.shardInstMesh.setColorAt(slotIndex, this._shardHeatColor);
         if (this.shardInstMesh.instanceColor) {
@@ -1045,16 +1215,6 @@ float cylinderSurfH( vec3 v ) {
         this._spawnAmbientParticlesBurst(newPos, this.ambientParticlesPerShard);
     }
 
-    /** 空きスロットを取得（上限時は最古を再利用） */
-    _allocShardSlot() {
-        if (this.shards.length >= this.maxShards) {
-            const old = this.shards.shift();
-            this._clearShardSlot(old.slotIndex);
-            return old.slotIndex;
-        }
-        return this._shardFreeSlots.pop();
-    }
-
     /** 非表示：スケール0（ドローコスト抑制） */
     _clearShardSlot(slotIndex) {
         if (!this.shardInstMesh || slotIndex < 0 || slotIndex >= this.maxShards) return;
@@ -1067,6 +1227,7 @@ float cylinderSurfH( vec3 v ) {
             this._shardOpacityAttr.array[slotIndex] = 0;
             this._shardOpacityAttr.needsUpdate = true;
         }
+        this.shardInstMesh.instanceMatrix.needsUpdate = true;
     }
 
     /** 寿命超えの破片を削除（毎フレーム） */
@@ -1125,31 +1286,24 @@ float cylinderSurfH( vec3 v ) {
         this.shardGroup.add(this.shardInstMesh);
 
         this._shardFreeSlots = [];
+        const hideColor = new THREE.Color(0x000000);
         for (let i = this.maxShards - 1; i >= 0; i--) {
             this._shardFreeSlots.push(i);
         }
         for (let i = 0; i < this.maxShards; i++) {
             this._clearShardSlot(i);
-        }
-        this.shardInstMesh.instanceMatrix.needsUpdate = true;
-
-        const hideColor = new THREE.Color(0x000000);
-        for (let i = 0; i < this.maxShards; i++) {
             this.shardInstMesh.setColorAt(i, hideColor);
         }
         if (this.shardInstMesh.instanceColor) {
             this.shardInstMesh.instanceColor.needsUpdate = true;
         }
+        this.shardInstMesh.instanceMatrix.needsUpdate = true;
     }
 
     initRedCylinderSystem() {
-        this.cylinderGroup = new THREE.Group();
-        this.cylinderGroup.position.set(0, 0, 0);
-        this.scene.add(this.cylinderGroup);
-
-        /** 赤橙は color 主役。emissive は実質オフ寄り（フォグと馴染ませる） */
+        /** 個体色は instanceColor（濃淡）。親グループなし＝ワールド座標で行列（cable 追従なし） */
         this._redCylinderMaterial = new THREE.MeshStandardMaterial({
-            color: 0xcc4624,
+            color: 0xffffff,
             emissive: 0x000000,
             emissiveIntensity: 0,
             metalness: 0,
@@ -1167,7 +1321,7 @@ float cylinderSurfH( vec3 v ) {
         this.cylinderInstMesh.frustumCulled = false;
         this.cylinderInstMesh.castShadow = true;
         this.cylinderInstMesh.receiveShadow = true;
-        this.cylinderGroup.add(this.cylinderInstMesh);
+        this.scene.add(this.cylinderInstMesh);
 
         this._cylinderFreeSlots = [];
         for (let i = this.maxCylinders - 1; i >= 0; i--) {
@@ -1175,22 +1329,26 @@ float cylinderSurfH( vec3 v ) {
         }
         for (let i = 0; i < this.maxCylinders; i++) {
             this._clearCylinderSlot(i);
+            this.cylinderInstMesh.setColorAt(i, this._instanceWhite);
+        }
+        if (this.cylinderInstMesh.instanceColor) {
+            this.cylinderInstMesh.instanceColor.needsUpdate = true;
         }
         this.cylinderInstMesh.instanceMatrix.needsUpdate = true;
     }
 
     /**
-     * トラック6：赤いシリンダ。常時移動する残像ヘッド位置で生成。
-     * デュレーション→長さ（緩いマッピング）、ベロシティ→半径。noteNumber は傾き種（args[0]）
+     * 赤いシリンダ（OSC トラック5）。常時移動する残像ヘッド位置で生成。
+     * ベロシティ→長さ、デュレーション→半径（細さ）。デュレーションは伸び立ち上がりにも使用。
      */
     spawnRedCylinderFromTrack6(velocity, durationMs = 180, noteNumber = 64) {
-        if (!this.cylinderGroup || !this.cylinderInstMesh || !this._redCylinderMaterial) return;
+        if (!this.cylinderInstMesh || !this._redCylinderMaterial) return;
 
         const vMidi = this.normalizeMidiVelocity(velocity);
         const dur = Math.max(1, Number(durationMs) || 180);
         const s = this.shardCylinderVisualScale ?? 1;
-        const length = THREE.MathUtils.clamp(this._cylinderLengthFromDurationMs(dur), 110, 720) * s;
-        const radius = THREE.MathUtils.clamp(0.48 + (vMidi / 127) * 15.2, 0.28, 18) * s;
+        const length = THREE.MathUtils.clamp(this._cylinderLengthFromVelocityMidi(vMidi), 72, 355) * s;
+        const radius = THREE.MathUtils.clamp(this._cylinderRadiusFromDurationMs(dur), 8, 38) * s;
 
         const slotIndex = this._allocCylinderSlot();
 
@@ -1223,27 +1381,25 @@ float cylinderSurfH( vec3 v ) {
         );
         this._lastCylinderWorldPos.copy(this._cylinderPosTemp);
 
-        const n = Number(noteNumber);
-        const nJ = Number.isFinite(n) ? n : 64;
-        const tiltBase = THREE.MathUtils.lerp(0.08, 0.92, vMidi / 127);
-        const tiltNoise = this._shardNoise(nJ * 0.07, ci * 0.13, this.time * 0.06);
-        const tiltT = THREE.MathUtils.clamp(tiltBase * 0.62 + tiltNoise * 0.38, 0, 1);
-        const tiltRad = THREE.MathUtils.lerp(0.0, Math.PI * 0.44, tiltT);
         this._cylinderSideTemp.crossVectors(this._trailHeadDirCylinder, this._cylinderAxisUp);
         if (this._cylinderSideTemp.lengthSq() < 1e-8) {
             this._cylinderSideTemp.crossVectors(this._trailHeadDirCylinder, this._cylinderFallbackAxis);
         }
         this._cylinderSideTemp.normalize();
-        // 基準姿勢は進行方向に対して垂直（forward への直交ベクトル）
-        this._cylinderPerpTemp.crossVectors(this._cylinderSideTemp, this._trailHeadDirCylinder).normalize();
-        // そこから forward 側へ倒し角を与える
-        this._cylinderDirTemp.copy(this._cylinderPerpTemp).multiplyScalar(Math.cos(tiltRad));
-        this._cylinderDirTemp.addScaledVector(this._trailHeadDirCylinder, Math.sin(tiltRad));
-        this._cylinderDirTemp.normalize();
+        // 長軸は進行方向に垂直。進行方向周りの回転は螺旋位相のみ（角度ノイズなし）
+        this._cylinderDirTemp.crossVectors(this._cylinderSideTemp, this._trailHeadDirCylinder).normalize();
         this._cylinderQuatTemp.setFromUnitVectors(this._cylinderAxisUp, this._cylinderDirTemp);
-        this._cylinderQuatTemp.multiply(this._composeTrailNoiseQuat(ci * 0.53 + this.time * 0.17));
-        this.cylinderGroup.updateMatrixWorld(true);
-        this.cylinderGroup.worldToLocal(this._cylinderPosTemp);
+        // 進行方向に直交する横軸（side ≒ トラベル基準の X）周りのノイズ回転
+        const tiltXRad =
+            (this._shardNoise(ci * 0.13, this.time * 0.03, 1.07) - 0.5) * 0.55;
+        this._cylinderTiltXQuat.setFromAxisAngle(this._cylinderSideTemp, tiltXRad);
+        this._cylinderQuatTemp.premultiply(this._cylinderTiltXQuat);
+        const rollRad = this._cylinderHelixPhase;
+        this._cylinderRollQuat.setFromAxisAngle(this._trailHeadDirCylinder, rollRad);
+        this._cylinderHelixPhase += this._cylinderHelixTwistPerSpawn;
+        this._cylinderHelixPhase =
+            THREE.MathUtils.euclideanModulo(this._cylinderHelixPhase + Math.PI, Math.PI * 2) - Math.PI;
+        this._cylinderQuatTemp.premultiply(this._cylinderRollQuat);
 
         this._cylinderScaleTemp.set(radius * 0.02, length * 0.02, radius * 0.02);
         this._cylinderMatrixTemp.compose(this._cylinderPosTemp, this._cylinderQuatTemp, this._cylinderScaleTemp);
@@ -1252,6 +1408,11 @@ float cylinderSurfH( vec3 v ) {
         if (this._cylinderOpacityAttr) {
             this._cylinderOpacityAttr.array[slotIndex] = 1;
             this._cylinderOpacityAttr.needsUpdate = true;
+        }
+        this._randomCylinderTintNearBase(this._cylinderTintTemp);
+        this.cylinderInstMesh.setColorAt(slotIndex, this._cylinderTintTemp);
+        if (this.cylinderInstMesh.instanceColor) {
+            this.cylinderInstMesh.instanceColor.needsUpdate = true;
         }
 
         this.cylinders.push({
@@ -1287,10 +1448,14 @@ float cylinderSurfH( vec3 v ) {
             this._cylinderOpacityAttr.array[slotIndex] = 0;
             this._cylinderOpacityAttr.needsUpdate = true;
         }
+        this.cylinderInstMesh.setColorAt(slotIndex, this._instanceWhite);
+        if (this.cylinderInstMesh.instanceColor) {
+            this.cylinderInstMesh.instanceColor.needsUpdate = true;
+        }
     }
 
     pruneExpiredCylinders() {
-        if (!this.cylinders.length || !this.cylinderGroup) return;
+        if (!this.cylinders.length || !this.cylinderInstMesh) return;
         const now = performance.now();
         const life = this.cylinderLifetimeMs;
         let matrixDirty = false;
@@ -1781,7 +1946,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * track9SpawnDuringDuration がオンのとき、デュレーション窓が生きている間に一定間隔でスポーン。
+     * track9SpawnDuringDuration がオンのとき、デュレーション窓が生きている間に一定間隔でスポーン（OSC トラック6）。
      * ノートオン時の1発目は handleTrackNumber 側で行う。
      */
     _tickTrack9DurationSpawn() {
@@ -1795,25 +1960,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * cylinderSpawnDuringDuration がオンのとき、デュレーション窓が生きている間に一定間隔でスポーン。
-     * ノートオン時の1発目は handleTrackNumber 側で行う。
-     */
-    _tickCylinderDurationSpawn() {
-        if (!this.cylinderSpawnDuringDuration) return;
-        const now = performance.now();
-        if (now >= this._cylinderSpawnWindowEndMs) return;
-        const intv = Math.max(16, Number(this.cylinderDurationSpawnIntervalMs) || 52);
-        if (now - this._cylinderLastDurationSpawnMs < intv) return;
-        this._cylinderLastDurationSpawnMs = now;
-        this.spawnRedCylinderFromTrack6(
-            this._cylinderSpawnWindowVelocity,
-            this._cylinderSpawnWindowDurationMs,
-            this._cylinderSpawnWindowNoteNumber
-        );
-    }
-
-    /**
-     * ワールド中心（XZ=0）＋部屋内の代表高さ付近にスフィアを出す（アンビエントBoxと同ゾーン）。velocity で半径と初速。
+     * ワールド中心（XZ=0）＋部屋内の代表高さ付近にスフィアを出す（OSC はトラック6）。velocity で半径と初速。
      */
     spawnTrack9SphereFromWorldCenter(velocity) {
         if (!this.track9SphereGroup || !this.track9SharedGeo || !this._track9SphereMaterial) return;
@@ -1830,7 +1977,9 @@ float cylinderSurfH( vec3 v ) {
         this._track9SpawnPos.y += (Math.random() - 0.5) * 260;
         this._track9SpawnPos.z += (Math.random() - 0.5) * 160;
 
-        const mesh = new THREE.Mesh(this.track9SharedGeo, this._track9SphereMaterial);
+        const sphereMat = this._track9SphereMaterial.clone();
+        this._applyTrack9SphereRandomTint(sphereMat);
+        const mesh = new THREE.Mesh(this.track9SharedGeo, sphereMat);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
@@ -1841,7 +1990,7 @@ float cylinderSurfH( vec3 v ) {
             vel.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
         }
         vel.normalize();
-        const speed = 125 + (vMidi / 127) * 340;
+        const speed = 92 + (vMidi / 127) * 260;
         vel.multiplyScalar(speed);
 
         const angularVelocity = new THREE.Vector3(
@@ -1856,7 +2005,8 @@ float cylinderSurfH( vec3 v ) {
             Math.random() * Math.PI * 2
         );
         mesh.position.copy(position);
-        mesh.scale.setScalar(radius * 0.015);
+        const vs = this._track9SphereVisualScale;
+        mesh.scale.setScalar(radius * 0.015 * vs);
 
         this.track9SphereGroup.add(mesh);
         this.track9Spheres.push({
@@ -1864,33 +2014,38 @@ float cylinderSurfH( vec3 v ) {
             position,
             velocity: vel,
             radius,
-            radiusNow: radius * 0.015,
+            radiusNow: radius * 0.015 * vs,
             birthAge: 0,
-            angularVelocity
+            angularVelocity,
+            driftSeed: Math.random() * 4000 + this.track9Spheres.length * 0.37
         });
         this._spawnAmbientParticlesBurst(position, this.ambientParticlesPerTrack9);
 
         while (this.track9Spheres.length > this.maxTrack9Spheres) {
             const old = this.track9Spheres.shift();
             this.track9SphereGroup.remove(old.mesh);
+            if (old.mesh.material) old.mesh.material.dispose();
         }
     }
 
     _updateTrack9SpherePhysics(deltaTime) {
         if (!this.track9Spheres.length) return;
         const growSec = this._track9BirthGrowSec;
+        const vs = this._track9SphereVisualScale;
         for (const sp of this.track9Spheres) {
             sp.birthAge = (sp.birthAge ?? 0) + deltaTime;
             const t = Math.min(1, sp.birthAge / growSec);
             const u = t * t * (3 - 2 * t);
-            sp.radiusNow = sp.radius * Math.max(u, 0.015);
+            sp.radiusNow = sp.radius * vs * Math.max(u, 0.015);
         }
 
         const sub = this._track9SubSteps;
         const dt = deltaTime / sub;
         const grav = this._track9Gravity;
+        const drift = this._track9SphereDrift;
         const diff = this._track9Diff;
         const margin = 140;
+        const tPhys = this.time;
 
         for (let s = 0; s < sub; s++) {
             this.track9PhysicsGrid.clear();
@@ -1904,9 +2059,18 @@ float cylinderSurfH( vec3 v ) {
             });
 
             this.track9Spheres.forEach((sp) => {
+                const ds = sp.driftSeed ?? 0;
+                const ampXZ = 24;
+                const ampY = 13;
+                drift.set(
+                    (this._shardNoise(ds * 0.11, tPhys * 0.52, 0.07) - 0.5) * 2 * ampXZ,
+                    (this._shardNoise(ds * 0.19 + 2.1, tPhys * 0.46, 0.11) - 0.5) * 2 * ampY + 6,
+                    (this._shardNoise(ds * 0.13 + 7.1, tPhys * 0.49, 0.09) - 0.5) * 2 * ampXZ
+                );
                 sp.velocity.addScaledVector(grav, dt);
+                sp.velocity.addScaledVector(drift, dt);
                 sp.position.addScaledVector(sp.velocity, dt);
-                sp.velocity.multiplyScalar(0.997);
+                sp.velocity.multiplyScalar(0.9984);
 
                 const r = sp.radiusNow;
                 const x0 = -this.roomHalfW + margin + r;
@@ -2111,10 +2275,12 @@ float cylinderSurfH( vec3 v ) {
         this.promoWallFillLight.castShadow = true;
         this.promoWallFillLight.target = this.promoWallLightTarget;
 
-        this.promoWallFillLight.shadow.mapSize.width = 2048;
-        this.promoWallFillLight.shadow.mapSize.height = 2048;
-        this.promoWallFillLight.shadow.radius = 4;
-        this.promoWallFillLight.shadow.bias = -0.00025;
+        /** 部屋スケールが大きいので normalBias で面取り、バイアスで縞・コーナーの黒ずみを抑える */
+        this.promoWallFillLight.shadow.mapSize.width = 4096;
+        this.promoWallFillLight.shadow.mapSize.height = 4096;
+        this.promoWallFillLight.shadow.radius = 6;
+        this.promoWallFillLight.shadow.bias = -0.0009;
+        this.promoWallFillLight.shadow.normalBias = 2.8;
         this.promoWallFillLight.shadow.camera.near = 100;
         this.promoWallFillLight.shadow.camera.far = 12000;
 
@@ -2233,9 +2399,12 @@ float cylinderSurfH( vec3 v ) {
         this._trailHeadPosShard.copy(this._trailHeadPos);
         this._trailHeadDirShard.copy(this._trailHeadDir);
         this._trailHeadPosCylinder.copy(this._trailHeadPos).add(new THREE.Vector3(140, 40, -120));
-        this._trailHeadDirCylinder.set(0.1, 0.04, 1).normalize();
+        this._trailHeadDirCylinder
+            .set(0.35 + Math.random() * 0.4, 0.25 + Math.random() * 0.35, 0.75 + Math.random() * 0.25)
+            .normalize();
         this._lastShardPos.copy(this._trailHeadPosShard);
         this._lastCylinderWorldPos.copy(this._trailHeadPosCylinder);
+        this._cylinderHelixPhase = 0;
 
         this.setupEnvironment();
 
@@ -2260,6 +2429,7 @@ float cylinderSurfH( vec3 v ) {
         const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
         const textures = generateConcretePBRTextures(1024, maxAniso);
         this.buildRoom(textures);
+        await this._initWallMatteBlack3DText();
 
         const floorMat = this.roomGroup.children[0].material;
         const wallMat = this.roomGroup.children[1].material;
@@ -2280,9 +2450,7 @@ float cylinderSurfH( vec3 v ) {
         if (this.cableBlobParticle && this.shardGroup) {
             this.shardGroup.position.copy(this.cableBlobParticle.position);
         }
-        if (this.cableBlobParticle && this.cylinderGroup) {
-            this.cylinderGroup.position.copy(this.cableBlobParticle.position);
-        }
+        // シリンダーは scene 原点固定。cable に親追従させると全体が剛体移動し、カール軌道が見えなくなる
         if (this.cableBlobParticle) {
             this._spawnFocusWorld.copy(this.cableBlobParticle.position);
             this._cameraFocusSmoothed.copy(this._spawnFocusWorld);
@@ -2314,7 +2482,6 @@ float cylinderSurfH( vec3 v ) {
             this._spawnAmbientParticlesBurst(p, this.ambientMinLiving - this._ambientLiving.length);
         }
         this._tickTrack9DurationSpawn();
-        this._tickCylinderDurationSpawn();
         this._updateTrack9SpherePhysics(deltaTime);
 
         const targetTrack7 = this.trackEffects[7] ? this.trackValues[7] || 0 : 0;
@@ -2374,9 +2541,6 @@ float cylinderSurfH( vec3 v ) {
             }
             this.cableBlobParticle.update(deltaTime);
             this.shardGroup.position.copy(this.cableBlobParticle.position);
-            if (this.cylinderGroup) {
-                this.cylinderGroup.position.copy(this.cableBlobParticle.position);
-            }
 
             const heartbeat = Math.pow(Math.sin(this.time * 1.0), 8.0);
             const baseScale = 1.0 + Math.sin(this.time * 0.055) * 0.045;
@@ -2406,7 +2570,7 @@ float cylinderSurfH( vec3 v ) {
         }
         this.updateCamera();
         const focusTargets = [this.roomGroup, this.shardGroup];
-        if (this.cylinderGroup) focusTargets.push(this.cylinderGroup);
+        if (this.cylinderInstMesh) focusTargets.push(this.cylinderInstMesh);
         if (this.track9SphereGroup) focusTargets.push(this.track9SphereGroup);
         if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
         if (this.useAutoFocusDOF) {
@@ -2530,36 +2694,16 @@ float cylinderSurfH( vec3 v ) {
         const value = velocity / 127.0;
 
         if (tn === 5) {
-            /** args[2]: デュレーション（ms）。未指定は 180 */
-            if (velocity > 0) {
-                const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
-                const durationMs = Number.isFinite(durRaw) ? durRaw : 180;
-                this.spawnMetalShardFromTrack5(velocity, durationMs);
-            }
-        } else if (tn === 6) {
-            this.trackValues[6] = value;
+            this.trackValues[5] = value;
             const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
             const durationMs = Number.isFinite(durRaw) ? Math.max(1, durRaw) : 180;
             const noteRaw = args[0] !== undefined ? Number(args[0]) : 64;
             const noteNumber = Number.isFinite(noteRaw) ? noteRaw : 64;
             if (velocity > 0) {
-                this._cylinderSpawnWindowVelocity = velocity;
-                this._cylinderSpawnWindowNoteNumber = noteNumber;
-                this._cylinderSpawnWindowDurationMs = durationMs;
-                if (this.cylinderSpawnDuringDuration) {
-                    this._cylinderSpawnWindowEndMs = performance.now() + durationMs;
-                    this._cylinderLastDurationSpawnMs = performance.now();
-                }
                 this.spawnRedCylinderFromTrack6(velocity, durationMs, noteNumber);
-            } else {
-                this._cylinderSpawnWindowEndMs = 0;
             }
-        } else if (tn === 7) {
-            this.trackValues[7] = value;
-            if (velocity > 0) {
-                this.colorIndex = (this.colorIndex + 1) % this.colors.length;
-            }
-        } else if (tn === 9) {
+        } else if (tn === 6) {
+            this.trackValues[6] = value;
             const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
             const durationMs = Number.isFinite(durRaw) ? Math.max(1, durRaw) : 180;
             if (velocity > 0) {
@@ -2571,6 +2715,18 @@ float cylinderSurfH( vec3 v ) {
                 this.spawnTrack9SphereFromWorldCenter(velocity);
             } else {
                 this._track9SpawnWindowEndMs = 0;
+            }
+        } else if (tn === 7) {
+            this.trackValues[7] = value;
+            if (velocity > 0) {
+                this.colorIndex = (this.colorIndex + 1) % this.colors.length;
+            }
+        } else if (tn === 9) {
+            /** args[2]: デュレーション（ms）。未指定は 180 */
+            if (velocity > 0) {
+                const durRaw = args[2] !== undefined ? Number(args[2]) : 180;
+                const durationMs = Number.isFinite(durRaw) ? durRaw : 180;
+                this.spawnMetalShardFromTrack5(velocity, durationMs);
             }
         }
     }
@@ -2719,28 +2875,39 @@ float cylinderSurfH( vec3 v ) {
             this.studio = null;
         }
 
+        if (this.wallTitleGroup) {
+            this.scene.remove(this.wallTitleGroup);
+            this.wallTitleGroup.traverse((o) => {
+                if (o.geometry) o.geometry.dispose();
+            });
+            this.wallTitleGroup = null;
+        }
+        if (this._wallTitleMaterial) {
+            this._wallTitleMaterial.dispose();
+            this._wallTitleMaterial = null;
+        }
+
         if (this.shardGroup) {
             this.scene.remove(this.shardGroup);
             this.shards = [];
-            this._shardFreeSlots = [];
             if (this.shardInstMesh) {
+                if (this.shardInstMesh.geometry) this.shardInstMesh.geometry.dispose();
                 this.shardInstMesh.dispose();
                 this.shardInstMesh = null;
             }
+            this._shardOpacityAttr = null;
+            this._shardFreeSlots = [];
             this._metalShardMaterial = null;
             this.shardGroup = null;
         }
 
-        if (this.cylinderGroup) {
-            this.scene.remove(this.cylinderGroup);
+        if (this.cylinderInstMesh) {
+            this.scene.remove(this.cylinderInstMesh);
+            this.cylinderInstMesh.dispose();
+            this.cylinderInstMesh = null;
             this.cylinders = [];
             this._cylinderFreeSlots = [];
-            if (this.cylinderInstMesh) {
-                this.cylinderInstMesh.dispose();
-                this.cylinderInstMesh = null;
-            }
             this._redCylinderMaterial = null;
-            this.cylinderGroup = null;
         }
         if (this.redBurstInstMesh) {
             this.scene.remove(this.redBurstInstMesh);
@@ -2793,6 +2960,9 @@ float cylinderSurfH( vec3 v ) {
 
         if (this.track9SphereGroup) {
             this.scene.remove(this.track9SphereGroup);
+            for (const sp of this.track9Spheres) {
+                if (sp.mesh && sp.mesh.material) sp.mesh.material.dispose();
+            }
             this.track9Spheres = [];
             if (this.track9SharedGeo) {
                 this.track9SharedGeo.dispose();

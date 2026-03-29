@@ -25,6 +25,7 @@ import { Scene18 } from '../scenes/scene18/Scene18.js';
 import { Scene19 } from '../scenes/scene19/Scene19.js';
 import { Scene20 } from '../scenes/scene20/Scene20.js';
 import { Scene21 } from '../scenes/scene21/Scene21.js';
+import { Scene22 } from '../scenes/scene22/Scene22.js';
 
 /** シーンバンク数（[]で切替）。10バンク × 10スロット = 100シーンまでUI上指定可能 */
 export const SCENE_BANK_COUNT = 10;
@@ -135,6 +136,9 @@ export class SceneManager {
             case 20:
                 scene = new Scene21(this.renderer, this.camera, this.sharedResourceManager);
                 break;
+            case 21:
+                scene = new Scene22(this.renderer, this.camera, this.sharedResourceManager);
+                break;
             default:
                 console.warn(`無効なシーンインデックス: ${index}`);
                 return null;
@@ -177,6 +181,7 @@ this.createScene(this.defaultSceneIndex);
             this.scenes.push(new Scene19(this.renderer, this.camera, this.sharedResourceManager));
             this.scenes.push(new Scene20(this.renderer, this.camera, this.sharedResourceManager));
             this.scenes.push(new Scene21(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene22(this.renderer, this.camera, this.sharedResourceManager));
             
             // デフォルトシーンに設定
             this.currentSceneIndex = this.defaultSceneIndex;

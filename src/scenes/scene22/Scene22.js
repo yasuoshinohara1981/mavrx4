@@ -16,6 +16,8 @@ import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
+import { getTerrainHeight as sseTerrainHeight } from './TerrainSampler.js';
+import { createSSETerrainGPUMaterial } from './SSETerrainGPUMaterial.js';
 
 export class Scene22 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -199,6 +201,13 @@ export class Scene22 extends SceneBase {
         this._terrainChunkDepth = 0;
         /** @type {{ mesh: THREE.Mesh, geometry: THREE.BufferGeometry }[]} */
         this._terrainChunks = [];
+        /** 1枚地形メッシュ + GPU 変位 */
+        this._terrainMesh = null;
+        this._terrainMat = null;
+        /** GPU uniform への参照（value は THREE.Vector2）。フローティングオリジン用 */
+        this._terrainOffsetUniform = null;
+        /** フローティングオリジンの閾値（メッシュの behind 範囲の半分程度） */
+        this._terrainSnapThreshold = 4000;
         this._terrainFloorMat = null;
         this._floorWorldTexTile = 95;
         /** 道床チャンクの横方向分割 */
@@ -263,23 +272,23 @@ export class Scene22 extends SceneBase {
         /** 俯瞰ブレンドの主周期・補助うねり（rad/s） */
         this.roadCameraRigOrbitSpeed = 0.058;
         this.roadCameraRigWobbleSpeed = 0.175;
-        /** 高いほど遠くを見る（lookAhead の伸縮） */
-        this.roadLookAheadMin = 3000;
-        this.roadLookAheadMax = 7800;
+        /** 高いほど遠くを見る（lookAhead の伸縮）。低め＝視錐が狭く GPU 負荷と SSE 帯を抑えやすい */
+        this.roadLookAheadMin = 2200;
+        this.roadLookAheadMax = 5200;
         /** 横のうねり（roadHalfW に対する比率） */
         this.roadCameraSwayAmp = 0.085;
-        /** 低いカメラ＝広角っぽく／俯瞰＝やや望遠 */
-        this.roadCameraFovLow = 51;
-        this.roadCameraFovHigh = 34;
+        /** 低いカメラ＝やや広角／高めに上がったときだけ絞る */
+        this.roadCameraFovLow = 50;
+        this.roadCameraFovHigh = 38;
         /** 道中心線の横オフセット X = f(worldZ)。複数 sin で左右に蛇行 */
         this.roadCurveAmp1 = 440;
         this.roadCurveFreq1 = 0.00036;
         this.roadCurveAmp2 = 190;
         this.roadCurveFreq2 = 0.00084;
         this.roadCurvePhase2 = 1.85;
-        /** 地形の上に乗る目線オフセット（リグ blend で最低〜最高） */
-        this.roadCameraEyeAboveGroundMin = 95;
-        this.roadCameraEyeAboveGroundMax = 2550;
+        /** 地形の上に乗る目線オフセット（リグ blend で最低〜最高）。俯瞰を抑えて描画範囲を絞る */
+        this.roadCameraEyeAboveGroundMin = 72;
+        this.roadCameraEyeAboveGroundMax = 520;
         /** 路面法線に追従する up の平滑化（大きいほどヌルッと） */
         this.roadCameraUpLerp = 0.2;
         /** 地形勾配サンプル（world） */
@@ -715,8 +724,8 @@ float cylinderSurfH( vec3 v ) {
         }
         const h = this.roadCameraEyeY ?? 420;
         const laF = THREE.MathUtils.lerp(
-            this.roadLookAheadMin ?? 3000,
-            this.roadLookAheadMax ?? 7800,
+            this.roadLookAheadMin ?? 2200,
+            this.roadLookAheadMax ?? 5200,
             0.45
         );
         const fz = this._roadCameraZ + laF * 0.45;
@@ -726,10 +735,11 @@ float cylinderSurfH( vec3 v ) {
 
     updateCamera() {
         const cz = this.roadCameraFixedZ ?? 0;
+        const oZ = this._terrainOffsetUniform?.value?.y ?? 0;
         const t = this.time ?? 0;
 
-        const yAboveMin = this.roadCameraEyeAboveGroundMin ?? 95;
-        const yAboveMax = this.roadCameraEyeAboveGroundMax ?? 2550;
+        const yAboveMin = this.roadCameraEyeAboveGroundMin ?? 72;
+        const yAboveMax = this.roadCameraEyeAboveGroundMax ?? 520;
         const oSp = this.roadCameraRigOrbitSpeed ?? 0.058;
         const wSp = this.roadCameraRigWobbleSpeed ?? 0.175;
         const orbit = 0.5 + 0.5 * Math.sin(t * oSp);
@@ -741,13 +751,13 @@ float cylinderSurfH( vec3 v ) {
 
         const hAbove = THREE.MathUtils.lerp(yAboveMin, yAboveMax, blend);
 
-        const laMin = this.roadLookAheadMin ?? 3000;
-        const laMax = this.roadLookAheadMax ?? 7800;
+        const laMin = this.roadLookAheadMin ?? 2200;
+        const laMax = this.roadLookAheadMax ?? 5200;
         const la = THREE.MathUtils.lerp(laMin, laMax, blend);
 
-        const cx = this.roadCenterOffset(cz);
+        const cx = this.roadCenterOffset(cz + oZ);
         const zA = cz + la;
-        const xA = this.roadCenterOffset(zA);
+        const xA = this.roadCenterOffset(zA + oZ);
 
         const sway =
             Math.sin(t * 0.097) * this.roomHalfW * (this.roadCameraSwayAmp ?? 0.085) +
@@ -755,20 +765,20 @@ float cylinderSurfH( vec3 v ) {
 
         const eyeX = cx + sway;
         const eyeZ = cz;
-        const groundY = this.floorTopY + this.getTerrainHeight(eyeX, eyeZ);
+        const groundY = this.floorTopY + this.getTerrainHeight(eyeX, eyeZ + oZ);
         let h = groundY + hAbove;
         h = THREE.MathUtils.clamp(h, this.floorTopY + 72, this.ceilingY * 0.9);
         this.roadCameraEyeY = h;
 
-        const gAhead = this.floorTopY + this.getTerrainHeight(xA, zA);
+        const gAhead = this.floorTopY + this.getTerrainHeight(xA, zA + oZ);
         const lookJ = Math.sin(t * 0.41) * 95 * (0.55 + 0.45 * (1 - blend));
         const lookY = THREE.MathUtils.lerp(gAhead + 55, gAhead + 240, blend) + lookJ;
 
         const eps = this.roadCameraGroundSampleEps ?? 155;
         const dhx =
-            (this.getTerrainHeight(eyeX + eps, eyeZ) - this.getTerrainHeight(eyeX - eps, eyeZ)) / (2 * eps);
+            (this.getTerrainHeight(eyeX + eps, eyeZ + oZ) - this.getTerrainHeight(eyeX - eps, eyeZ + oZ)) / (2 * eps);
         const dhz =
-            (this.getTerrainHeight(eyeX, eyeZ + eps) - this.getTerrainHeight(eyeX, eyeZ - eps)) / (2 * eps);
+            (this.getTerrainHeight(eyeX, eyeZ + eps + oZ) - this.getTerrainHeight(eyeX, eyeZ - eps + oZ)) / (2 * eps);
         this._cameraTerrainUp.set(-dhx, 1, -dhz);
         if (this._cameraTerrainUp.lengthSq() > 1e-10) this._cameraTerrainUp.normalize();
         else this._cameraTerrainUp.set(0, 1, 0);
@@ -977,66 +987,14 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * ワールド固定の道床高さ。macro→region、起伏本体に別 FBM を2本掛けて偏り（time なし）。
+     * GPU シェーダー（TerrainSampler）と完全一致する地形高さ。
+     * シーン座標を受け取り、内部で _roadCameraZ オフセットを加味してワールド座標に変換。
      */
-    getTerrainHeight(worldX, worldZ) {
-        if (this._emptySceneFlatGround) return 0;
-        let wx = worldX;
-        let wz = worldZ;
-
-        if (this.terrainUseDomainWarp) {
-            const ws = this.terrainDomainWarpScale;
-            const amp = this.terrainDomainWarpAmp;
-            wx += (this._terrainFbm(worldX * ws + 19.2, worldZ * ws + 47.1, 2) - 0.5) * 2 * amp;
-            wz += (this._terrainFbm(worldX * ws + 233.7, worldZ * ws + 91.4, 2) - 0.5) * 2 * amp;
-        }
-
-        const mS = this.terrainMacroScale;
-        const macroF = this._terrainFbm(wx * mS, wz * mS, this.terrainMacroOctaves);
-        const macro01 = THREE.MathUtils.clamp(macroF, 0, 1);
-        const region = Math.pow(macro01, this.terrainMacroPow);
-
-        const maS = this.terrainModNoiseScale ?? 0.00088;
-        const mbS = this.terrainModNoiseScaleB ?? 0.0042;
-        const modA = THREE.MathUtils.clamp(this._terrainFbm(wx * maS, wz * maS, 4), 0, 1);
-        const modB = THREE.MathUtils.clamp(this._terrainFbm(wx * mbS, wz * mbS, 3), 0, 1);
-        const pA = this.terrainModPowA ?? 1.82;
-        const pB = this.terrainModPowB ?? 1.58;
-        /** pow で 0 側に寄せて「だいたい均一」を潰す → 低い帯と盛り上がりが分離 */
-        const a = Math.pow(modA, pA);
-        const b = Math.pow(modB, pB);
-        /** 下限を下げて動的レンジ拡大（掛け算でさらに二極化） */
-        const mul = (0.035 + 0.965 * a) * (0.045 + 0.955 * b);
-
-        const midS = this.terrainMidScale;
-        const mid = (this._terrainFbm(wx * midS, wz * midS, this.terrainMidOctaves) - 0.5) * 2;
-        const detS = this.terrainDetailScale;
-        const detail = (this._terrainFbm(wx * detS, wz * detS, this.terrainDetailOctaves) - 0.5) * 2;
-
-        const midW = this.terrainMidAmpBase + region * this.terrainMidAmpRegion;
-        const detW = this.terrainDetailAmpBase + region * this.terrainDetailAmpRegion;
-        const midGain = 0.42 + 0.72 * region;
-        const detGain = 0.12 + 0.88 * region;
-
-        let h = (mid * midW * midGain + detail * detW * detGain) * mul;
-
-        if (this.terrainUseRidgedNoise) {
-            const rs = this.terrainRidgeScale;
-            const rf = this._terrainFbm(wx * rs, wz * rs, this.terrainRidgeOctaves);
-            const ridged = 1.0 - Math.abs((rf - 0.5) * 2.0);
-            h += ridged * (this.terrainRidgeAmpBase + region * this.terrainRidgeAmpRegion) * mul;
-        }
-
-        const cS = this.terrainContinentScale ?? 0.00085;
-        const continent = (this._terrainFbm(wx * cS, wz * cS, 3) - 0.5) * 2;
-        const cBlend = this.terrainContinentMulBlend ?? 0.78;
-        const continentMul = 1.0 - cBlend + cBlend * mul;
-        h += continent * (this.terrainContinentAmp ?? 0.55) * (4.0 + region * 12.0) * continentMul;
-
-        return h * this.terrainHeightAmplitude * (this.terrainCompositeGain ?? 0.118);
+    getTerrainHeight(sceneX, sceneZ) {
+        return sseTerrainHeight(sceneX, sceneZ);
     }
 
-    /** 既存呼び出し向け。getTerrainHeight と同じ */
+    /** 既存呼び出し向け */
     _terrainHeight(x, z) {
         return this.getTerrainHeight(x, z);
     }
@@ -1206,6 +1164,45 @@ float cylinderSurfH( vec3 v ) {
                 this._redBurstPositions[i * 3 + 2] += scrollDz;
             }
         }
+    }
+
+    /** XZ 平面グリッド（Z 方向非対称）。y=0 で VS 変位前提。 */
+    _buildTerrainPlane(width, zMin, zMax, segX, segZ) {
+        const depth = zMax - zMin;
+        const vx = segX + 1;
+        const vz = segZ + 1;
+        const pos = new Float32Array(vx * vz * 3);
+        const nor = new Float32Array(vx * vz * 3);
+        const indices = [];
+        let pi = 0;
+        let ni = 0;
+        for (let iz = 0; iz <= segZ; iz++) {
+            const v = iz / segZ;
+            const z = zMin + v * depth;
+            for (let ix = 0; ix <= segX; ix++) {
+                const u = ix / segX;
+                pos[pi++] = (u - 0.5) * width;
+                pos[pi++] = 0;
+                pos[pi++] = z;
+                nor[ni++] = 0;
+                nor[ni++] = 1;
+                nor[ni++] = 0;
+            }
+        }
+        for (let iz = 0; iz < segZ; iz++) {
+            for (let ix = 0; ix < segX; ix++) {
+                const a = iz * vx + ix;
+                const b = a + 1;
+                const c = a + vx;
+                const d = c + 1;
+                indices.push(a, c, b, b, c, d);
+            }
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+        geo.setIndex(indices);
+        return geo;
     }
 
     /** 道床メッシュは張らない（空グループのみ。dispose／フォーカス用） */
@@ -2910,6 +2907,33 @@ float cylinderSurfH( vec3 v ) {
 
         this.buildRoom();
 
+        {
+            const tW = this.roadHalfWidth * 2 + 800;
+            const tBehind = 6000;
+            const tAhead = 16000;
+            const tDepth = tBehind + tAhead;
+            const segX = 128;
+            const segZ = 160;
+            const eps = Math.max(3.5, Math.min(tW / segX, tDepth / segZ) * 0.4);
+            this._terrainMat = createSSETerrainGPUMaterial({
+                yOffset: this.floorTopY ?? 0,
+                terrainEps: eps,
+                envMap: this.scene.environment,
+                envMapIntensity: THREE.MathUtils.lerp(0.04, 0.1, Lexp),
+                roughness: 1,
+                metalness: 0
+            });
+            this._terrainOffsetUniform = this._terrainMat.userData.worldOffsetUniform;
+            this._terrainOffsetUniform.value.set(0, this._roadCameraZ);
+
+            const geo = this._buildTerrainPlane(tW, -tBehind, tAhead, segX, segZ);
+            this._terrainMesh = new THREE.Mesh(geo, this._terrainMat);
+            this._terrainMesh.frustumCulled = false;
+            this._terrainMesh.receiveShadow = true;
+            this._terrainMesh.castShadow = false;
+            this.roomGroup.add(this._terrainMesh);
+        }
+
         this.setupLights();
 
         this._spawnFocusWorld.set(0, this.floorTopY + 380, this._roadCameraZ + this.roadLookAhead * 0.35);
@@ -2941,7 +2965,19 @@ float cylinderSurfH( vec3 v ) {
                 this._roadCameraZ = zMin;
                 this._pianoRollLaneIndex = 0;
             }
-            this._updateTerrainChunksScroll(deltaTime);
+
+            if (this._terrainMesh) {
+                this._terrainMesh.position.z -= dzWorld;
+
+                const snap = this._terrainSnapThreshold;
+                if (Math.abs(this._terrainMesh.position.z) > snap) {
+                    const jumpZ = this._terrainMesh.position.z;
+                    this._terrainMesh.position.z = 0;
+                    this._terrainOffsetUniform.value.y -= jumpZ;
+                }
+            }
+
+            this._applyRoadScrollDeltaToWorldObjects(-v * deltaTime);
         }
         super.update(deltaTime);
     }
@@ -3199,7 +3235,7 @@ float cylinderSurfH( vec3 v ) {
             this.outputPass = new OutputPass();
             this.composer.addPass(this.outputPass);
         }
-        this.addFilmGrainIfEnabled(0.22, false);
+        this.addFilmGrainIfEnabled(0.05, false);
     }
 
     _syncAODepthAndCameraUniforms(aoPass) {
@@ -3264,6 +3300,17 @@ float cylinderSurfH( vec3 v ) {
 
     dispose() {
         this.initialized = false;
+        if (this._terrainMesh) {
+            if (this._terrainMesh.parent) this._terrainMesh.parent.remove(this._terrainMesh);
+            this._terrainMesh.geometry.dispose();
+            this._terrainMesh = null;
+        }
+        if (this._terrainMat) {
+            if (this._terrainMat.customDepthMaterial) this._terrainMat.customDepthMaterial.dispose();
+            this._terrainMat.dispose();
+            this._terrainMat = null;
+        }
+        this._terrainOffsetUniform = null;
         this.scene.fog = null;
 
         if (this.ssaoPass) {

@@ -298,8 +298,9 @@ export class SceneBase {
      * initPostProcessingの最後で呼ぶこと
      * @param {number} [intensity=0.35] - グレイン強度
      * @param {boolean} [grayscale=false] - グレースケール化するか
+     * @param {number} [colorNoise=0] - 0〜1、RGB 別乱数の色ノイズ（クロマ粒）
      */
-    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false) {
+    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false, colorNoise = 0) {
         if (!this.useFilmGrain) return;
         if (!this.composer) {
             this.composer = new EffectComposer(this.renderer);
@@ -314,7 +315,7 @@ export class SceneBase {
             this.composer.addPass(this.filmLookPass);
             debugLog('effect', 'FilmLookPass (CA only) added');
         }
-        this.filmPass = new SensorFilmGrainPass(intensity, grayscale);
+        this.filmPass = new SensorFilmGrainPass(intensity, grayscale, colorNoise);
         if (this.bokehPass) {
             this.filmPass.bindBokehPass(this.bokehPass, () => this.useDOF && this.bokehPass && this.bokehPass.enabled);
         }
@@ -1606,7 +1607,7 @@ export class SceneBase {
             const base64data = tempCanvas.toDataURL('image/jpeg', 0.8);
             debugLog('init', `📤 送信中... (${(base64data.length / 1024).toFixed(0)} KB)`);
             
-            fetch('http://127.0.0.1:3001/api/screenshot', {
+            fetch('http://127.0.0.1:30338/api/screenshot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ filename, imageData: base64data })

@@ -309,6 +309,21 @@ export class StudioBox {
         return { map, bumpMap };
     }
 
+    /**
+     * Scene12 の床と同一の map + bump（generateTileTexture(false) と同一）。
+     * 他シーンで床だけ合わせる用途。
+     */
+    static createFloorTileTextures() {
+        return StudioBox.prototype.generateTileTexture(false);
+    }
+
+    /**
+     * Scene12 の壁と同一の map + bump（generateTileTexture(true) と同一。赤十字なし）。
+     */
+    static createWallTileTextures() {
+        return StudioBox.prototype.generateTileTexture(true);
+    }
+
     dispose() {
         if (this.studioBox) {
             this.scene.remove(this.studioBox);

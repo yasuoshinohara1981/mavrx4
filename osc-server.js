@@ -16,7 +16,8 @@ const __dirname = path.dirname(__filename);
 
 const OSC_PORT = 30337;  // Processingと同じポート
 const WS_PORT = 8080;    // WebSocket（ブラウザ↔OSCサーバー）
-const HTTP_PORT = 3001;  // スクリーンショット等（Vite は 3000）
+// 3001 は他プロジェクトの Vite と衝突しがちなので 30338 固定（30337 の「隣」）
+const HTTP_PORT = Number(process.env.OSC_HTTP_PORT) || 30338;
 
 // screenshotsフォルダを作成（存在しない場合）
 const screenshotsDir = path.join(__dirname, 'screenshots');
@@ -203,7 +204,17 @@ const httpServer = http.createServer((req, res) => {
     }
 });
 
-httpServer.listen(HTTP_PORT, () => {
+httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(
+            `[osc-server] HTTP ${HTTP_PORT} は使用中のため、スクリーンショット/テクスチャAPIのみ無効である。OSC(UDP ${OSC_PORT})とWebSocket(${WS_PORT})は継続する。別ポートは環境変数 OSC_HTTP_PORT を指定すること。`
+        );
+        return;
+    }
+    console.error('HTTPサーバーエラー:', err);
+});
+
+httpServer.listen(HTTP_PORT, '127.0.0.1', () => {
     console.log(`HTTPサーバー起動: http://127.0.0.1:${HTTP_PORT}`);
 });
 

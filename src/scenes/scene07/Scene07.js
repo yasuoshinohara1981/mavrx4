@@ -176,7 +176,7 @@ export class Scene07 extends SceneBase {
                     const base64data = reader.result;
                     
                     // サーバーに送信
-                    fetch('http://127.0.0.1:3001/api/save-texture', {
+                    fetch('http://127.0.0.1:30338/api/save-texture', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',

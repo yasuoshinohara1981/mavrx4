@@ -1,9 +1,9 @@
 /**
- * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
+ * Scene21: 床・壁は Scene12/22 と同一 StudioBox タイル、天井発光
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
- * 床・壁は PBR コンクリート、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ
+ * ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ（密度は Scene22 と共通）
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
@@ -17,7 +17,6 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { StudioBox } from '../../lib/StudioBox.js';
-import { generateConcretePBRTextures } from '../../lib/ConcretePBRTextures.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene16Particle } from '../scene16/Scene16Particle.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
@@ -50,7 +49,8 @@ export class Scene21 extends SceneBase {
         /** トラック9金属片・トラック5シリンダのサイズ倍率（比率を保ったまま拡大） */
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
-        this.sceneLightingScale = 0.32;
+        /** Scene22 と共通。下げると露出・天井・ライトがまとめて暗くなる */
+        this.sceneLightingScale = 0.22;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -145,8 +145,8 @@ export class Scene21 extends SceneBase {
         this.useBloom = true;
         /** false でシーンの FogExp2 をオフ */
         this.useSceneFog = true;
-        /** FogExp2 の密度（小さいほど薄い）— 以前 0.00017 より控えめ */
-        this.sceneFogDensity = 0.00009;
+        /** FogExp2 の密度（Scene22 と同一）。大きいほど濃い */
+        this.sceneFogDensity = 0.00015;
         /** 暖色系に寄せた霞（クール灰 0xd5d9df より R 寄り・B 弱め） */
         this.sceneFogColor = 0xdfcfc2;
         // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
@@ -314,6 +314,8 @@ export class Scene21 extends SceneBase {
         /** 南壁レーザー用スポットの注視点 */
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
+        /** 床・オブジェクト用シャドウ（平行光） */
+        this._shadowDirLight = null;
         /** 壁周りレーザースキャン（1 小節＝TICK_LOOP/96 tick で一周） */
         this.laserScanMesh = null;
         this._laserScanMaterial = null;
@@ -752,41 +754,33 @@ float cylinderSurfH( vec3 v ) {
         floorMat.envMap = envMap;
     }
 
-    ensureUv2(geometry) {
-        const uv = geometry.attributes.uv;
-        if (!geometry.attributes.uv2) {
-            geometry.setAttribute('uv2', uv.clone());
-        }
-    }
+    /**
+     * 床・壁：Scene12 の StudioBox と同一（Scene22 と同型）。
+     */
+    buildRoom() {
+        const floorTextures = StudioBox.createFloorTileTextures();
+        const wallTextures = StudioBox.createWallTileTextures();
 
-    buildRoom(textures) {
-        /** 小さいほどテクスチャ1周がワールドで広がり、タイル1枚が大きく見える */
-        const repeat = 1.55;
-        ['map', 'wallMap', 'normalMap', 'roughnessMap', 'aoMap'].forEach((k) => {
-            const t = textures[k];
-            if (t) {
-                t.repeat.set(repeat, repeat);
-            }
-        });
-
-        /** 床用。壁は正面から見えて法線が弱く見えるので別マテで凹凸を強める。壁は目地を一段濃くした wallMap */
-        const floorConcreteMat = new THREE.MeshStandardMaterial({
-            color: 0xe8eaee,
-            map: textures.map,
-            normalMap: textures.normalMap,
-            normalScale: new THREE.Vector2(0.44, 0.44),
-            roughnessMap: textures.roughnessMap,
-            roughness: 0.9,
-            metalness: 0,
-            aoMap: textures.aoMap,
-            aoMapIntensity: 0.5,
-            envMapIntensity: 0.95 * (0.55 + 0.45 * (this.sceneLightingScale ?? 1)),
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: floorTextures.map,
+            bumpMap: floorTextures.bumpMap,
+            bumpScale: 1.0,
+            roughness: 0.8 * 0.3,
+            metalness: 0.2,
+            envMapIntensity: 1.0 * 1.3,
             fog: true
         });
-        const wallConcreteMat = floorConcreteMat.clone();
-        wallConcreteMat.map = textures.wallMap || textures.map;
-        wallConcreteMat.normalScale = new THREE.Vector2(0.64, 0.64);
-        wallConcreteMat.roughness = 0.86;
+        const wallMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: wallTextures.map,
+            bumpMap: wallTextures.bumpMap,
+            bumpScale: 1.0,
+            roughness: 0.8 * 0.5,
+            metalness: 0.1,
+            envMapIntensity: 1.0,
+            fog: true
+        });
 
         this.roomGroup = new THREE.Group();
         const hw = this.roomHalfW;
@@ -797,18 +791,18 @@ float cylinderSurfH( vec3 v ) {
         const wallCenterY = floorTopY + wallH * 0.5;
         const slab = 24;
 
-        const floorGeo = new THREE.BoxGeometry(hw * 2, slab, hd * 2, 1, 1, 1);
-        this.ensureUv2(floorGeo);
-        const floor = new THREE.Mesh(floorGeo, floorConcreteMat);
-        floor.position.set(0, floorTopY - slab * 0.5, 0);
+        const floorSize = hw * 2;
+        const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.set(0, floorTopY, 0);
         floor.receiveShadow = true;
-        floor.castShadow = false;
+        floor.castShadow = true;
         this.roomGroup.add(floor);
 
         const mkWall = (w, height, d, px, py, pz) => {
             const geo = new THREE.BoxGeometry(w, height, d, 1, 1, 1);
-            this.ensureUv2(geo);
-            const mesh = new THREE.Mesh(geo, wallConcreteMat);
+            const mesh = new THREE.Mesh(geo, wallMat);
             mesh.position.set(px, py, pz);
             mesh.receiveShadow = true;
             mesh.castShadow = true;
@@ -828,7 +822,7 @@ float cylinderSurfH( vec3 v ) {
             roughness: 0.8,
             metalness: 0,
             emissive: 0xffffff,
-            emissiveIntensity: 8.5 * (this.sceneLightingScale ?? 1),
+            emissiveIntensity: 5.2 * (this.sceneLightingScale ?? 1),
             envMapIntensity: 1.0,
             fog: true
         });
@@ -853,10 +847,13 @@ float cylinderSurfH( vec3 v ) {
                 helvetikerFontUrl,
                 (font) => {
                     const mat = new THREE.MeshStandardMaterial({
-                        color: 0x101318,
+                        color: 0x1a1f28,
                         roughness: 0.22,
-                        metalness: 0.22,
+                        metalness: 0.24,
+                        envMap: this.scene.environment,
                         envMapIntensity: 1.05,
+                        emissive: 0x0a0c10,
+                        emissiveIntensity: 0.14,
                         clearcoat: 0.88,
                         clearcoatRoughness: 0.14,
                         flatShading: false,
@@ -869,7 +866,7 @@ float cylinderSurfH( vec3 v ) {
                     const wallH = this.ceilingY - this.floorTopY;
                     const wallCenterY = this.floorTopY + wallH * 0.5;
                     /** 内壁は z = -roomHalfD 付近。手前に少し浮かせて Z-fight 回避 */
-                    const zText = -hd + 95;
+                    const zText = -hd + 118;
 
                     /** height = Z 方向の押し出し量。ベベルで縁が立体的に見える */
                     const addLine = (text, size, extrudeDepth, y) => {
@@ -903,7 +900,7 @@ float cylinderSurfH( vec3 v ) {
 
                     const bodyLines = [
                         'Real-time WebGL (Three.js). Live OSC / MIDI maps tracks to GPU effects:',
-                        'instanced debris, cylinders, spheres; PBR concrete room, HDR environment.',
+                        'instanced debris, cylinders, spheres; Studio tile room, HDR environment.',
                         'Pipeline: SSAO, bloom, DOF, ACES tone map, film grain. Procedural noise fields,',
                         'audio-reactive spawn, instancing, and camera focus driven by scene activity.'
                     ];
@@ -2260,7 +2257,7 @@ float cylinderSurfH( vec3 v ) {
         this.scene.environment = this._roomEnvTexture;
     }
 
-    /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
+    /** Scene22 と同趣旨：補助（Spot）を弱め、主光を強めて影のコントラストを上げる */
     setupLights() {
         const L = this.sceneLightingScale ?? 1;
         this.fillPointLight = null;
@@ -2270,19 +2267,30 @@ float cylinderSurfH( vec3 v ) {
         this.promoWallLightTarget.position.set(0, 0, 0);
         this.scene.add(this.promoWallLightTarget);
 
-        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 2.0 * L, 26000, Math.PI / 5, 0.32, 1.0);
-        this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
-        this.promoWallFillLight.castShadow = true;
-        this.promoWallFillLight.target = this.promoWallLightTarget;
+        const dir = new THREE.DirectionalLight(0xffffff, 9.5 * L);
+        dir.position.set(2400, 5300, 2000);
+        dir.castShadow = true;
+        dir.shadow.mapSize.set(4096, 4096);
+        dir.shadow.radius = 2.5;
+        dir.shadow.bias = -0.00014;
+        dir.shadow.normalBias = 0.032;
+        const sh = dir.shadow.camera;
+        sh.left = -6500;
+        sh.right = 6500;
+        sh.top = 6500;
+        sh.bottom = -6500;
+        sh.near = 80;
+        sh.far = 17000;
+        sh.updateProjectionMatrix();
+        dir.target.position.set(0, 360, 0);
+        this.scene.add(dir.target);
+        this.scene.add(dir);
+        this._shadowDirLight = dir;
 
-        /** 部屋スケールが大きいので normalBias で面取り、バイアスで縞・コーナーの黒ずみを抑える */
-        this.promoWallFillLight.shadow.mapSize.width = 4096;
-        this.promoWallFillLight.shadow.mapSize.height = 4096;
-        this.promoWallFillLight.shadow.radius = 6;
-        this.promoWallFillLight.shadow.bias = -0.0009;
-        this.promoWallFillLight.shadow.normalBias = 2.8;
-        this.promoWallFillLight.shadow.camera.near = 100;
-        this.promoWallFillLight.shadow.camera.far = 12000;
+        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 0.45 * L, 26000, Math.PI / 5, 0.32, 1.0);
+        this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
+        this.promoWallFillLight.castShadow = false;
+        this.promoWallFillLight.target = this.promoWallLightTarget;
 
         this.scene.add(this.promoWallFillLight);
     }
@@ -2382,7 +2390,7 @@ float cylinderSurfH( vec3 v ) {
         /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00009)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
@@ -2426,16 +2434,19 @@ float cylinderSurfH( vec3 v ) {
             this.studio.studioBox.visible = false;
         }
 
-        const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
-        const textures = generateConcretePBRTextures(1024, maxAniso);
-        this.buildRoom(textures);
-        await this._initWallMatteBlack3DText();
+        this.buildRoom();
 
         const floorMat = this.roomGroup.children[0].material;
         const wallMat = this.roomGroup.children[1].material;
         this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
 
         this.setupLights();
+
+        await this._initWallMatteBlack3DText();
+        if (this._wallTitleMaterial && this.scene.environment) {
+            this._wallTitleMaterial.envMap = this.scene.environment;
+            this._wallTitleMaterial.needsUpdate = true;
+        }
 
         this.cableBlobParticle = new Scene16Particle(0, this.cableHomeY, 0);
         this.cableBlobParticle.maxSpeed = 7.0;
@@ -2756,9 +2767,9 @@ float cylinderSurfH( vec3 v ) {
         if (this.useBloom) {
             this.bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.14,
-                0.68,
-                0.64
+                0.09,
+                0.42,
+                0.92
             );
             this.composer.addPass(this.bloomPass);
         }
@@ -2978,6 +2989,11 @@ float cylinderSurfH( vec3 v ) {
             this.track9SphereGroup = null;
         }
 
+        if (this._shadowDirLight) {
+            this.scene.remove(this._shadowDirLight.target);
+            this.scene.remove(this._shadowDirLight);
+            this._shadowDirLight = null;
+        }
         if (this.promoWallFillLight) {
             this.scene.remove(this.promoWallFillLight);
             this.promoWallFillLight.dispose();
@@ -3026,7 +3042,7 @@ float cylinderSurfH( vec3 v ) {
                 if (o.material && !seenMats.has(o.material)) {
                     seenMats.add(o.material);
                     const m = o.material;
-                    for (const t of [m.map, m.normalMap, m.roughnessMap, m.aoMap]) {
+                    for (const t of [m.map, m.bumpMap, m.normalMap, m.roughnessMap, m.aoMap]) {
                         if (t && !seenTex.has(t)) {
                             seenTex.add(t);
                             t.dispose();

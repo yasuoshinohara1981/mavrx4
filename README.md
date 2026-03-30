@@ -34,7 +34,7 @@ npm run dev
 - **Vite**: `http://localhost:3000`（ブラウザが自動で開く）
 - **OSC受信**: `30337`（Max/Processingから送信先として指定）
 - **WebSocket**: `8080`（ブラウザ↔OSCサーバー）
-- **HTTP**: `3001`（スクリーンショット保存用）
+- **HTTP**: `30338`（スクリーンショット保存用。環境変数 `OSC_HTTP_PORT` で変更可）
 
 ### 4. OSC送信テスト
 

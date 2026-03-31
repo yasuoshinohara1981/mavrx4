@@ -284,22 +284,19 @@ export class StudioBox {
         bCanvas.width = size;
         bCanvas.height = size;
         const bCtx = bCanvas.getContext('2d');
-        
-        // タイル表面を高く（白）
-        bCtx.fillStyle = '#ffffff'; 
+
+        bCtx.fillStyle = '#ffffff';
         bCtx.fillRect(0, 0, size, size);
 
-        // --- 経年劣化風の凹凸（ノイズ）をバンプマップに追加（控えめに！） ---
         for (let i = 0; i < 4000; i++) {
             const x = Math.random() * size;
             const y = Math.random() * size;
             const s = Math.random() * 2 + 0.5;
-            const gray = Math.floor(Math.random() * 30 + 210); // 180-230 -> 210-240 (より白に近く＝凹みを浅く)
+            const gray = Math.floor(Math.random() * 30 + 210);
             bCtx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
             bCtx.fillRect(x, y, s, s);
         }
 
-        // 目地を細い線で描画（黒/グレーで低くする）
         StudioBox.drawGroutLines(bCtx, size, { strokeStyle: '#404040' });
 
         const bumpMap = new THREE.CanvasTexture(bCanvas);

@@ -1,5 +1,6 @@
 /**
- * Scene22: 床・壁は Scene12（StudioBox）と同一タイル＋GridRuler3D＋フォグ（密度は Scene21 と共通）。球 2500。運動モード11種（MODE_LISSAJOUS=非可換リサージュ）。OSC トラック6。WindDebrisPoints。
+ * Scene22: 床・壁は Scene12（StudioBox）と同一タイル＋GridRuler3D＋フォグ（密度は Scene21 と共通）。球 2500。
+ * 運動モード11種は全て独自実装（DRIFT_FIELD / UPTHRUST / HELIX_RAIL / LEMNISCATE / HONEYCOMB / BEAT_INTERFERENCE / BINARY_ROTATE / DNA_HELIX / TOROIDAL_VORTEX / TRIPLE_WELL / PRECESS_ORBIT）。OSC トラック6。WindDebrisPoints。
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -39,8 +40,8 @@ export class Scene22 extends SceneBase {
         this.useSceneFog = true;
         /** Scene21 と共通。大きいほどフォグ濃い */
         this.sceneFogDensity = 0.00015;
-        /** Scene21 同系の暖かい霞 */
-        this.sceneFogColor = 0xdfcfc2;
+        /** Scene21 と同じニュートラルグレーの霞 */
+        this.sceneFogColor = 0x9a9a9a;
         /** Scene21 と同じく SSAO オン */
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -81,7 +82,6 @@ export class Scene22 extends SceneBase {
         this.gridSize = 120;
         this.grid = new Map();
         this.expandSpheres = [];
-        this.gravityForce = new THREE.Vector3(0, -10.0, 0);
         this.modeTimer = 0;
         this.modeInterval = 10.0;
         this.totalModeCount = 11;
@@ -91,21 +91,21 @@ export class Scene22 extends SceneBase {
         this.useWallCollision = true;
         this.currentVisibleCount = this.sphereCount;
 
-        this.MODE_DEFAULT = 0;
-        this.MODE_GRAVITY = 1;
-        this.MODE_SPIRAL = 2;
-        this.MODE_TORUS = 3;
-        this.MODE_WALL = 4;
-        this.MODE_WAVE = 5;
-        this.MODE_BLACK_HOLE = 6;
-        this.MODE_PILLARS = 7;
-        this.MODE_CHAOS = 8;
-        this.MODE_DEFORM = 9;
-        /** 非可換な周波数比のリサージュ＋二重項（螺旋・波・格子・球歪みと軌道が被らない） */
-        this.MODE_LISSAJOUS = 10;
+        /** 以下 11 モードは旧実装から全面差し替え（番号のみ互換） */
+        this.MODE_DRIFT_FIELD = 0;
+        this.MODE_UPTHRUST = 1;
+        this.MODE_HELIX_RAIL = 2;
+        this.MODE_LEMNISCATE = 3;
+        this.MODE_HONEYCOMB = 4;
+        this.MODE_BEAT_INTERFERENCE = 5;
+        this.MODE_BINARY_ROTATE = 6;
+        this.MODE_DNA_HELIX = 7;
+        this.MODE_TOROIDAL_VORTEX = 8;
+        this.MODE_TRIPLE_WELL = 9;
+        this.MODE_PRECESS_ORBIT = 10;
 
-        this.currentMode = this.MODE_DEFAULT;
-        this.modeHistory = new Set([this.MODE_DEFAULT]);
+        this.currentMode = this.MODE_DRIFT_FIELD;
+        this.modeHistory = new Set([this.MODE_DRIFT_FIELD]);
 
         /** スタジオ空気感の塵（WindDebrisPoints） */
         this._windDebris = null;
@@ -476,133 +476,140 @@ export class Scene22 extends SceneBase {
             for (let idx = 0; idx < visibleCount; idx++) {
                 const p = this.particles[idx];
 
-                if (this.currentMode === this.MODE_SPIRAL) {
-                    const side = (idx % 2 === 0) ? 1 : -1;
-                    const rotationSpeed = 1.5;
-                    const radius = 800 * p.radiusOffset * p.strayRadiusOffset;
-                    const verticalSpeed = 15.0 * p.spiralSpeedFactor;
-                    p.position.y += verticalSpeed * dt * 60;
-                    const angle = (this.time * rotationSpeed) + (p.position.y * 0.006) + (side === 1 ? 0.3 : Math.PI + 0.3) + (p.phaseOffset * 0.05);
-                    const targetX = Math.cos(angle) * radius;
-                    const targetZ = Math.sin(angle) * radius;
+                if (this.currentMode === this.MODE_DRIFT_FIELD) {
+                    const x = p.position.x;
+                    const y = p.position.y;
+                    const z = p.position.z;
+                    const tt = this.time;
+                    const fx =
+                        Math.sin(y * 0.0011 + tt * 0.37) * Math.cos(z * 0.00085 + tt * 0.21);
+                    const fy =
+                        Math.sin(z * 0.001 + tt * 0.29) * Math.cos(x * 0.00092 + tt * 0.18);
+                    const fz =
+                        Math.sin(x * 0.00115 + tt * 0.33) * Math.cos(y * 0.00088 + tt * 0.24);
+                    tempVec.set(fx, fy, fz).multiplyScalar(38 * p.strayFactor);
+                    p.addForce(tempVec);
+                } else if (this.currentMode === this.MODE_UPTHRUST) {
+                    p.velocity.multiplyScalar(0.97);
+                    tempVec.set(0, 14 * p.strayFactor, 0);
+                    p.addForce(tempVec);
+                } else if (this.currentMode === this.MODE_HELIX_RAIL) {
+                    const R = 820 * p.strayRadiusOffset;
+                    const pitch = 0.42;
+                    const theta = idx * 0.12 + p.phaseOffset * 0.4 + this.time * 0.38;
+                    const ty = (theta * pitch * 180) % 4200 - 400;
+                    const tx = Math.cos(theta) * R;
+                    const tz = Math.sin(theta) * R;
                     p.velocity.y *= 0.9;
-                    const spiralSpringK = 0.05 * p.strayFactor;
-                    tempVec.set((targetX - p.position.x) * spiralSpringK, 0, (targetZ - p.position.z) * spiralSpringK);
+                    const spiralSpringK = 0.048 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * spiralSpringK, 0, (tz - p.position.z) * spiralSpringK);
                     p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_TORUS) {
-                    const mainRadius = 1200;
-                    const tubeRadius = 60 * p.radiusOffset * p.strayRadiusOffset;
-                    const theta = (idx / this.sphereCount) * Math.PI * 2 + (this.time * 0.2);
-                    const phi = (idx % 20) / 20 * Math.PI * 2 + (theta * 6.0) + (this.time * 1.5) + p.phaseOffset;
-                    const tx = (mainRadius + tubeRadius * Math.cos(phi)) * Math.cos(theta);
-                    const ty = tubeRadius * Math.sin(phi) + 300;
-                    const tz = (mainRadius + tubeRadius * Math.cos(phi)) * Math.sin(theta);
-                    const torusSpringK = 0.01 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * torusSpringK, (ty - p.position.y) * torusSpringK, (tz - p.position.z) * torusSpringK);
+                    const hSpring = 0.035 * p.strayFactor;
+                    tempVec.set(0, (ty - p.position.y) * hSpring, 0);
                     p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_WALL) {
-                    const cols = 200;
-                    const spacing = 40;
-                    const zOffset = p.isStray ? (p.targetOffset.z * 5.0) : (p.targetOffset.z * 0.2);
-                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
-                    const ty = (Math.floor(idx / cols) - (this.sphereCount / cols) * 0.5) * spacing + 500 + p.targetOffset.y * 0.05;
-                    const tz = 0 + zOffset;
-                    const wallSpringK = 0.01 * p.strayFactor;
+                } else if (this.currentMode === this.MODE_LEMNISCATE) {
+                    const t = this.time * 0.52 + idx * 0.0012 + p.phaseOffset;
+                    const a = 900 * p.strayRadiusOffset;
+                    const tx = (a * Math.sin(t)) / (1 + Math.sin(t) * Math.sin(t));
+                    const ty = 700 + a * 0.5 * Math.sin(t) * Math.cos(t);
+                    const tz = a * 0.55 * Math.sin(2 * t + 0.3);
+                    const springK = 0.012 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+                } else if (this.currentMode === this.MODE_HONEYCOMB) {
+                    const q = idx % 56;
+                    const r = Math.floor(idx / 56) % 44;
+                    const size = 95;
+                    const tx = size * (1.5 * q) + p.targetOffset.x * 0.04;
+                    const tz = size * (0.5 * Math.sqrt(3) * q + Math.sqrt(3) * r) + p.targetOffset.z * 0.04;
+                    const ty = (q * 0.12 + r * 0.09) * 55 + 520 + p.targetOffset.y * 0.05;
+                    const wallSpringK = 0.011 * p.strayFactor;
                     tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
                     p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_WAVE) {
+                } else if (this.currentMode === this.MODE_BEAT_INTERFERENCE) {
+                    const w1 = 1.07;
+                    const w2 = 1.19;
                     const cols = Math.floor(Math.sqrt(this.sphereCount));
-                    const spacing = 5000 / cols;
-                    const yOffset = p.isStray ? (p.targetOffset.y * 2.0) : (p.targetOffset.y * 0.05);
-                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.05;
-                    const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.05;
-                    const ty = Math.sin(tx * 0.001 + this.time) * Math.cos(tz * 0.001 + this.time) * 600 + 200 + yOffset;
+                    const spacing = 4200 / cols;
+                    const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.06;
+                    const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.06;
+                    const ty =
+                        820 +
+                        Math.sin(w1 * this.time + idx * 0.07) * 520 * p.strayRadiusOffset +
+                        Math.sin(w2 * this.time + idx * 0.11) * 380 * p.strayRadiusOffset;
                     const waveSpringK = 0.01 * p.strayFactor;
                     tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
                     p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_BLACK_HOLE) {
-                    if (idx % 10 < 7) {
-                        const radius = (idx / this.sphereCount) * 1200 + 50 + p.targetOffset.x * 0.5;
-                        const angle = (idx * 0.05) + (this.time * 3.0) + p.phaseOffset * 0.1;
-                        const tx = Math.cos(angle) * radius;
-                        const tz = Math.sin(angle) * radius;
-                        const ty = (Math.sin(radius * 0.01 - this.time * 2.0) * 50) + 200 + p.targetOffset.y * 0.2;
-                        const bhSpringK = 0.02 * p.strayFactor;
-                        tempVec.set((tx - p.position.x) * bhSpringK, (ty - p.position.y) * bhSpringK, (tz - p.position.z) * bhSpringK);
-                        p.addForce(tempVec);
-                    } else {
-                        const side = (idx % 2 === 0) ? 1 : -1;
-                        const tx = (Math.random() - 0.5) * 40 + p.targetOffset.x * 0.1;
-                        const tz = (Math.random() - 0.5) * 40 + p.targetOffset.z * 0.1;
-                        const ty = side * (((idx % 100) / 100) * 4000 + 200) + p.targetOffset.y * 0.5;
-                        const jetSpringK = 0.02 * p.strayFactor;
-                        tempVec.set((tx - p.position.x) * jetSpringK, (ty - p.position.y) * jetSpringK, (tz - p.position.z) * jetSpringK);
-                        p.addForce(tempVec);
-                    }
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_PILLARS) {
-                    const pillarIdx = idx % 5;
-                    const angle = (pillarIdx / 5) * Math.PI * 2;
-                    const pillarRadius = 1500;
-                    const px = Math.cos(angle) * pillarRadius;
-                    const pz = Math.sin(angle) * pillarRadius;
-                    const tx = px + (Math.sin(idx + this.time) * 100) + p.targetOffset.x * 0.5;
-                    const tz = pz + (Math.cos(idx + this.time) * 50) + p.targetOffset.z * 0.5;
-                    const ty = ((idx / 5) / (this.sphereCount / 5)) * 3000 - 1000 + p.targetOffset.y * 0.2;
-                    const pillarSpringK = 0.01 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_CHAOS) {
-                    const force = Math.sin(this.time * 2.0 + p.phaseOffset) * 0.5 * p.strayFactor;
-                    tempVec.copy(p.position).normalize().multiplyScalar(force);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_DEFORM) {
-                    const baseRadius = 600;
-                    const noiseSpeed = 0.5;
-                    const theta = (idx / this.sphereCount) * Math.PI * 2;
-                    const phi = Math.acos(2 * (idx / this.sphereCount) - 1);
-                    const nx = Math.cos(theta) * Math.sin(phi);
-                    const ny = Math.sin(theta) * Math.sin(phi);
-                    const nz = Math.cos(phi);
-                    const distortion = Math.sin(nx * 5.0 + this.time * noiseSpeed) *
-                        Math.cos(ny * 5.0 + this.time * noiseSpeed) *
-                        Math.sin(nz * 5.0 + this.time * noiseSpeed) * 100;
-                    const rr = (baseRadius + distortion) * p.radiusOffset;
-                    const tx = nx * rr;
-                    const ty = ny * rr + 300;
-                    const tz = nz * rr;
-                    const springK = 0.01 * p.strayFactor;
-                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                    p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_LISSAJOUS) {
-                    const t = this.time;
-                    const invPhi = 0.6180339887498949;
-                    const ax = 0.29 + (idx % 137) * 0.00055;
-                    const ay = 0.26 + (idx % 101) * 0.00062;
-                    const az = 0.31 + (idx % 149) * 0.00048;
-                    const px = p.phaseOffset * 0.92 + idx * 0.00137;
-                    const py = p.phaseOffset * 0.71 + idx * 0.00103;
-                    const pz = p.phaseOffset * 0.64 + idx * 0.00119;
-                    const amp = 720 * p.strayRadiusOffset + 60;
-                    const tx =
-                        Math.sin(ax * t + px) * amp +
-                        Math.sin(ax * invPhi * t + px * 1.83) * amp * 0.38;
-                    const ty =
-                        Math.sin(ay * t + py) * amp * 0.85 +
-                        Math.cos(ay * (1.0 + invPhi) * t + py * 0.41) * amp * 0.45 +
-                        720;
-                    const tz =
-                        Math.sin(az * t + pz) * amp +
-                        Math.cos(az * invPhi * 1.7 * t + pz * 0.27) * amp * 0.4;
-                    const ljSpringK = 0.0115 * p.strayFactor;
+                } else if (this.currentMode === this.MODE_BINARY_ROTATE) {
+                    const t = this.time * 0.24;
+                    const cx = Math.cos(t) * 780;
+                    const cz = Math.sin(t) * 780;
+                    const c1x = cx;
+                    const c1z = cz;
+                    const c2x = -cx;
+                    const c2z = -cz;
+                    const soft = 120;
+                    const d1 = Math.hypot(p.position.x - c1x, p.position.z - c1z) + soft;
+                    const d2 = Math.hypot(p.position.x - c2x, p.position.z - c2z) + soft;
+                    const pull = 52000 * p.strayFactor;
                     tempVec.set(
-                        (tx - p.position.x) * ljSpringK,
-                        (ty - p.position.y) * ljSpringK,
-                        (tz - p.position.z) * ljSpringK
+                        ((c1x - p.position.x) * pull) / (d1 * d1) + ((c2x - p.position.x) * pull) / (d2 * d2),
+                        ((900 - p.position.y) * 0.022 * p.strayFactor),
+                        ((c1z - p.position.z) * pull) / (d1 * d1) + ((c2z - p.position.z) * pull) / (d2 * d2)
                     );
                     p.addForce(tempVec);
-                } else if (this.currentMode === this.MODE_GRAVITY) {
-                    p.velocity.multiplyScalar(0.98);
+                } else if (this.currentMode === this.MODE_DNA_HELIX) {
+                    const strand = idx % 2;
+                    const along = Math.floor(idx / 2);
+                    const theta = along * 0.065 + this.time * 0.48 + p.phaseOffset;
+                    const R = 340 * p.strayRadiusOffset;
+                    const rise = along * 2.4 - 900;
+                    const tx = Math.cos(theta + strand * Math.PI) * R;
+                    const tz = Math.sin(theta + strand * Math.PI) * R;
+                    const ty = rise + strand * 55 + 1100;
+                    const pillarSpringK = 0.0115 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
+                    p.addForce(tempVec);
+                } else if (this.currentMode === this.MODE_TOROIDAL_VORTEX) {
+                    const xz = Math.sqrt(p.position.x * p.position.x + p.position.z * p.position.z) + 1e-4;
+                    const s = 0.016 * p.strayFactor;
+                    const fx = -p.position.z * s;
+                    const fz = p.position.x * s;
+                    const fy = Math.sin((xz - 820) * 0.0031 + this.time * 0.5) * 0.45 * p.strayFactor;
+                    tempVec.set(fx, fy, fz);
+                    p.addForce(tempVec);
+                } else if (this.currentMode === this.MODE_TRIPLE_WELL) {
+                    const wells = [
+                        [0, 900, 0],
+                        [-520, 750, 420],
+                        [480, 820, -380]
+                    ];
+                    let fx = 0;
+                    let fy = 0;
+                    let fz = 0;
+                    for (let w = 0; w < 3; w++) {
+                        const dx = wells[w][0] - p.position.x;
+                        const dy = wells[w][1] - p.position.y;
+                        const dz = wells[w][2] - p.position.z;
+                        const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 90;
+                        const pull = (420 * p.strayFactor) / d;
+                        fx += (dx / d) * pull;
+                        fy += (dy / d) * pull;
+                        fz += (dz / d) * pull;
+                    }
+                    tempVec.set(fx, fy, fz);
+                    p.addForce(tempVec);
+                } else if (this.currentMode === this.MODE_PRECESS_ORBIT) {
+                    const t = this.time * 0.44 + idx * 0.0011;
+                    const pre = this.time * 0.1 + p.phaseOffset * 0.2;
+                    const a = 640 * p.strayRadiusOffset;
+                    const b = 400 * p.strayRadiusOffset;
+                    const x0 = Math.cos(pre) * (a * Math.cos(t)) - Math.sin(pre) * (b * Math.sin(t));
+                    const z0 = Math.sin(pre) * (a * Math.cos(t)) + Math.cos(pre) * (b * Math.sin(t));
+                    const y0 = 920 + Math.sin(t * 2.1 + p.phaseOffset) * 220;
+                    const springK = 0.012 * p.strayFactor;
+                    tempVec.set((x0 - p.position.x) * springK, (y0 - p.position.y) * springK, (z0 - p.position.z) * springK);
+                    p.addForce(tempVec);
                 } else {
                     const tx = p.targetOffset.x;
                     const ty = p.targetOffset.y + 200;
@@ -612,10 +619,6 @@ export class Scene22 extends SceneBase {
                     p.addForce(tempVec);
                 }
 
-                if (this.currentMode === this.MODE_GRAVITY) {
-                    p.addForce(this.gravityForce);
-                }
-
                 p.update();
                 p.velocity.multiplyScalar(0.95);
 
@@ -623,7 +626,7 @@ export class Scene22 extends SceneBase {
                     if (p.position.x > halfSize) { p.position.x = halfSize; p.velocity.x *= -0.3; }
                     if (p.position.x < -halfSize) { p.position.x = -halfSize; p.velocity.x *= -0.3; }
                     if (p.position.y > 4500) {
-                        if (this.currentMode === this.MODE_SPIRAL) {
+                        if (this.currentMode === this.MODE_HELIX_RAIL) {
                             p.position.y = -450;
                             p.velocity.y *= 0.1;
                         } else {
@@ -701,35 +704,38 @@ export class Scene22 extends SceneBase {
         if (!cp) return;
         const mode = this.currentMode;
         switch (mode) {
-            case this.MODE_GRAVITY:
+            case this.MODE_DRIFT_FIELD:
+                cp.applyPreset('DEFAULT');
+                break;
+            case this.MODE_UPTHRUST:
                 cp.applyPreset('LOOK_UP');
                 break;
-            case this.MODE_SPIRAL:
+            case this.MODE_HELIX_RAIL:
                 cp.applyPreset('SKY_HIGH');
                 break;
-            case this.MODE_TORUS:
-                cp.applyPreset('WIDE_VIEW', { distance: 3000 });
+            case this.MODE_LEMNISCATE:
+                cp.applyPreset('WIDE_VIEW', { distance: 2900 });
                 break;
-            case this.MODE_WALL:
-                cp.applyPreset('FRONT_SIDE', { z: 1500, x: 3000 });
+            case this.MODE_HONEYCOMB:
+                cp.applyPreset('FRONT_SIDE', { z: 1600, x: 3100 });
                 break;
-            case this.MODE_WAVE:
-                cp.applyPreset('DRONE_SURFACE', { y: -300 });
+            case this.MODE_BEAT_INTERFERENCE:
+                cp.applyPreset('DRONE_SURFACE', { y: -280 });
                 break;
-            case this.MODE_BLACK_HOLE:
-                cp.applyPreset('CORE_JET', { height: 4000 });
+            case this.MODE_BINARY_ROTATE:
+                cp.applyPreset('WIDE_VIEW', { distance: 3200 });
                 break;
-            case this.MODE_PILLARS:
+            case this.MODE_DNA_HELIX:
                 cp.applyPreset('PILLAR_WALK');
                 break;
-            case this.MODE_CHAOS:
+            case this.MODE_TOROIDAL_VORTEX:
                 cp.applyPreset('CHAOTIC');
                 break;
-            case this.MODE_DEFORM:
-                cp.applyPreset('WIDE_VIEW', { distance: 2000 });
+            case this.MODE_TRIPLE_WELL:
+                cp.applyPreset('WIDE_VIEW', { distance: 2100 });
                 break;
-            case this.MODE_LISSAJOUS:
-                cp.applyPreset('WIDE_VIEW', { distance: 2650 });
+            case this.MODE_PRECESS_ORBIT:
+                cp.applyPreset('WIDE_VIEW', { distance: 2750 });
                 break;
             default:
                 cp.applyPreset('DEFAULT');
@@ -788,7 +794,7 @@ export class Scene22 extends SceneBase {
 
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0x9a9a9a, this.sceneFogDensity ?? 0.00015)
             : null;
 
         this.camera.near = 12;
@@ -927,15 +933,15 @@ export class Scene22 extends SceneBase {
                 this.modeHistory.clear();
                 this.modeHistory.add(this.currentMode);
             }
-            this.useGravity = (this.currentMode === this.MODE_GRAVITY);
-            this.spiralMode = (this.currentMode === this.MODE_SPIRAL);
-            this.torusMode = (this.currentMode === this.MODE_TORUS);
+            this.useGravity = false;
+            this.spiralMode = this.currentMode === this.MODE_HELIX_RAIL;
+            this.torusMode = false;
             this.applyCameraModeForMovement();
-            if (this.currentMode === this.MODE_GRAVITY) {
-                this.particles.forEach((p) => {
-                    if (p.velocity.y > 0) p.velocity.y = 0;
+            if (this.currentMode === this.MODE_UPTHRUST) {
+                this.particles.forEach((part) => {
+                    if (part.velocity.y < 0) part.velocity.y *= 0.65;
                 });
-            } else if (this.currentMode === this.MODE_SPIRAL) {
+            } else if (this.currentMode === this.MODE_HELIX_RAIL) {
                 this.particles.forEach((p) => {
                     const rr = Math.random() * this.spawnRadius;
                     const theta = Math.random() * Math.PI * 2;
@@ -1180,11 +1186,20 @@ export class Scene22 extends SceneBase {
 
         if (this.roomGroup) {
             this.scene.remove(this.roomGroup);
+            const seenMats = new Set();
+            const seenTex = new Set();
             this.roomGroup.traverse((o) => {
                 if (o.geometry) o.geometry.dispose();
-                if (o.material) {
-                    if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
-                    else o.material.dispose();
+                if (o.material && !seenMats.has(o.material)) {
+                    seenMats.add(o.material);
+                    const m = o.material;
+                    for (const t of [m.map, m.bumpMap, m.normalMap, m.roughnessMap, m.aoMap]) {
+                        if (t && !seenTex.has(t)) {
+                            seenTex.add(t);
+                            t.dispose();
+                        }
+                    }
+                    m.dispose();
                 }
             });
             this.roomGroup = null;

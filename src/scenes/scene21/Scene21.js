@@ -147,8 +147,8 @@ export class Scene21 extends SceneBase {
         this.useSceneFog = true;
         /** FogExp2 の密度（Scene22 と同一）。大きいほど濃い */
         this.sceneFogDensity = 0.00015;
-        /** 暖色系に寄せた霞（クール灰 0xd5d9df より R 寄り・B 弱め） */
-        this.sceneFogColor = 0xdfcfc2;
+        /** FogExp2 の色（ニュートラルグレー） */
+        this.sceneFogColor = 0x9a9a9a;
         // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -2390,7 +2390,7 @@ float cylinderSurfH( vec3 v ) {
         /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0x9a9a9a, this.sceneFogDensity ?? 0.00015)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {

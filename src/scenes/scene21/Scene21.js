@@ -47,8 +47,8 @@ export class Scene21 extends SceneBase {
         /** トラック9金属片・トラック5シリンダのサイズ倍率（比率を保ったまま拡大） */
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
-        /** Scene22 と共通。下げると露出・天井・ライトがまとめて暗くなる */
-        this.sceneLightingScale = 0.22;
+        /** Scene22 と共通。下げると露出・天井・ライトがまとめて暗くなる（21 は部屋をやや暗めに） */
+        this.sceneLightingScale = 0.12;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -143,21 +143,22 @@ export class Scene21 extends SceneBase {
         this.useBloom = true;
         /** false でシーンの FogExp2 をオフ */
         this.useSceneFog = true;
-        /** FogExp2 の密度（Scene22 と同一）。大きいほど濃い */
-        this.sceneFogDensity = 0.00015;
+        /** FogExp2 の密度。大きいほど濃い（22 よりかなり薄め） */
+        this.sceneFogDensity = 0.000055;
         /** FogExp2 の色（暖色系の霞） */
         this.sceneFogColor = 0xdfcfc2;
-        // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
+        // SSAO：巨大シーン用に kernel/max を大きめ。遠景で潰さないよう ease=0（距離スケール無効）
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;
         this.ssaoPass = null;
         this.saoPass = null;
         this.aoDepthTexture = null;
-        this.ssaoNearKernelRadius = 5.5;
-        this.ssaoNearMinDistance = 0.024;
-        this.ssaoNearMaxDistance = 0.11;
-        this.ssaoFarAttenuation = 0.38;
+        this.ssaoNearKernelRadius = 42;
+        this.ssaoNearMinDistance = 0.008;
+        this.ssaoNearMaxDistance = 0.72;
+        this.ssaoFarAttenuation = 1.0;
+        this.ssaoFarAttenuationEase = 0;
         // Scene21 は固定DOFを優先（オートフォーカスで効きが薄く見えるのを防ぐ）
         this.useAutoFocusDOF = false;
         /** composer では最後に必須：renderer.toneMapping / 出力色空間を画面に適用 */
@@ -2517,7 +2518,8 @@ float cylinderSurfH( vec3 v ) {
             const nearD = 900;
             const farD = 6200;
             const t = THREE.MathUtils.clamp((camDist - nearD) / (farD - nearD), 0, 1);
-            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t);
+            const ease = this.ssaoFarAttenuationEase ?? 1;
+            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t * ease);
             if ('kernelRadius' in aoPass) aoPass.kernelRadius = this.ssaoNearKernelRadius * aoScale;
             if ('minDistance' in aoPass) aoPass.minDistance = this.ssaoNearMinDistance * aoScale;
             if ('maxDistance' in aoPass) aoPass.maxDistance = this.ssaoNearMaxDistance * aoScale;
@@ -2682,24 +2684,25 @@ float cylinderSurfH( vec3 v ) {
             this.ssaoPass.kernelRadius = this.ssaoNearKernelRadius;
             this.ssaoPass.minDistance = this.ssaoNearMinDistance;
             this.ssaoPass.maxDistance = this.ssaoNearMaxDistance;
+            this.ssaoPass.enabled = true;
             this.composer.addPass(this.ssaoPass);
+            this._patchSSAOShaderContrastBoost();
             this._syncAODepthAndCameraUniforms(this.ssaoPass);
         }
         if (this.useBloom) {
             this.bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.09,
-                0.42,
-                0.92
+                0.16,
+                0.46,
+                0.86
             );
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            // ミニチュア感を避けるため、被写界深度を弱めてピント域を広げる。
             this.initDOF({
                 focus: 2100,
-                aperture: 0.0000044,
-                maxblur: 0.0031
+                aperture: 0.000007,
+                maxblur: 0.0054
             });
         }
         if (!this.outputPass) {
@@ -2709,8 +2712,26 @@ float cylinderSurfH( vec3 v ) {
         this.addFilmGrainIfEnabled(0.22, false);
     }
 
+    /**
+     * three の SSAO は 1.0-occlusion が控えめなので、オクルージョンを少し強めてコーナーが見えるようにする。
+     */
+    _patchSSAOShaderContrastBoost() {
+        const mat = this.ssaoPass?.ssaoMaterial;
+        if (!mat?.fragmentShader || mat.userData._aoContrastPatched) return;
+        const needle = 'gl_FragColor = vec4( vec3( 1.0 - occlusion ), 1.0 );';
+        if (!mat.fragmentShader.includes(needle)) return;
+        mat.fragmentShader = mat.fragmentShader.replace(
+            needle,
+            'float ao = clamp( 1.0 - occlusion * 1.35, 0.15, 1.0 );\n\t\t\t\tgl_FragColor = vec4( vec3( ao ), 1.0 );'
+        );
+        mat.needsUpdate = true;
+        mat.userData._aoContrastPatched = true;
+    }
+
     _syncAODepthAndCameraUniforms(aoPass) {
         if (!aoPass) return;
+        this.camera.updateProjectionMatrix();
+
         if (!this.aoDepthTexture && this.composer?.renderTarget1) {
             const size = this.renderer.getSize(new THREE.Vector2());
             const ratio = this.renderer.getPixelRatio();
@@ -2723,9 +2744,10 @@ float cylinderSurfH( vec3 v ) {
             this.composer.renderTarget1.depthBuffer = true;
         }
 
+        const nd = aoPass.normalRenderTarget?.depthTexture;
         const candidateDepth =
             aoPass.beautyRenderTarget?.depthTexture ||
-            aoPass.normalRenderTarget?.depthTexture ||
+            nd ||
             aoPass.depthRenderTarget?.depthTexture ||
             this.aoDepthTexture ||
             null;
@@ -2735,7 +2757,8 @@ float cylinderSurfH( vec3 v ) {
             aoPass.saoMaterial,
             aoPass.materialAO,
             aoPass.vBlurMaterial,
-            aoPass.hBlurMaterial
+            aoPass.hBlurMaterial,
+            aoPass.depthRenderMaterial
         ];
 
         for (const m of maybeMaterials) {
@@ -2743,7 +2766,19 @@ float cylinderSurfH( vec3 v ) {
             if (!u) continue;
             if (u.cameraNear) u.cameraNear.value = this.camera.near;
             if (u.cameraFar) u.cameraFar.value = this.camera.far;
-            if (u.tDepth && candidateDepth) u.tDepth.value = candidateDepth;
+            if (u.tDepth) {
+                if (nd && (m === aoPass.ssaoMaterial || m === aoPass.depthRenderMaterial)) {
+                    u.tDepth.value = nd;
+                } else if (candidateDepth) {
+                    u.tDepth.value = candidateDepth;
+                }
+            }
+        }
+
+        if (aoPass.ssaoMaterial?.uniforms) {
+            const u = aoPass.ssaoMaterial.uniforms;
+            u.cameraProjectionMatrix.value.copy(this.camera.projectionMatrix);
+            u.cameraInverseProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
         }
     }
 

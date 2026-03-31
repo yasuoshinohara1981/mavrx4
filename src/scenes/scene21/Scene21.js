@@ -1,9 +1,9 @@
 /**
- * Scene21: 床・壁は Scene12/22 と同一 StudioBox タイル、天井発光
+ * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
- * 部屋は Scene16 と同じ StudioBox（巨大箱＋床プレート）。ライトも同系（蛍光灯＋半球/環境/平行光/ポイント）
- * ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、暖色系フォグ（密度は Scene22 と共通）
+ * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
+ * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
@@ -33,6 +33,8 @@ export class Scene21 extends SceneBase {
         this.sharedResourceManager = sharedResourceManager;
 
         this.studio = null;
+        this.roomGroup = null;
+        this.ceilingMesh = null;
         /** 北壁の extruded 3D タイトル（Helvetiker / 艶・反射） */
         this.wallTitleGroup = null;
         this._wallTitleMaterial = null;
@@ -47,8 +49,7 @@ export class Scene21 extends SceneBase {
         /** トラック9金属片・トラック5シリンダのサイズ倍率（比率を保ったまま拡大） */
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
-        /** Scene22 と共通。下げると露出・天井・ライトがまとめて暗くなる（21 は部屋をやや暗めに） */
-        this.sceneLightingScale = 0.12;
+        this.sceneLightingScale = 0.32;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -143,22 +144,22 @@ export class Scene21 extends SceneBase {
         this.useBloom = true;
         /** false でシーンの FogExp2 をオフ */
         this.useSceneFog = true;
-        /** FogExp2 の密度。大きいほど濃い（22 よりかなり薄め） */
-        this.sceneFogDensity = 0.000055;
-        /** FogExp2 の色（暖色系の霞） */
+        /** FogExp2 の密度（小さいほど薄い）— 以前 0.00017 より控えめ */
+        this.sceneFogDensity = 0.00009;
+        /** 暖色系に寄せた霞（クール灰 0xd5d9df より R 寄り・B 弱め） */
         this.sceneFogColor = 0xdfcfc2;
-        // SSAO：巨大シーン用に kernel/max を大きめ。遠景で潰さないよう ease=0（距離スケール無効）
+        // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;
         this.ssaoPass = null;
         this.saoPass = null;
         this.aoDepthTexture = null;
-        this.ssaoNearKernelRadius = 42;
-        this.ssaoNearMinDistance = 0.008;
-        this.ssaoNearMaxDistance = 0.72;
-        this.ssaoFarAttenuation = 1.0;
-        this.ssaoFarAttenuationEase = 0;
+        /** SSAO を強め（kernel / 距離バンド / 遠景での減衰を緩める） */
+        this.ssaoNearKernelRadius = 9.2;
+        this.ssaoNearMinDistance = 0.018;
+        this.ssaoNearMaxDistance = 0.165;
+        this.ssaoFarAttenuation = 0.62;
         // Scene21 は固定DOFを優先（オートフォーカスで効きが薄く見えるのを防ぐ）
         this.useAutoFocusDOF = false;
         /** composer では最後に必須：renderer.toneMapping / 出力色空間を画面に適用 */
@@ -313,8 +314,8 @@ export class Scene21 extends SceneBase {
         /** 南壁レーザー用スポットの注視点 */
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
-        /** 床・オブジェクト用シャドウ（平行光） */
-        this._shadowDirLight = null;
+        /** 床・壁に落ちる主シャドウ（スポットはコーン外で弱いので平行光に任せる） */
+        this.mainDirectionalLight = null;
         /** 壁周りレーザースキャン（1 小節＝TICK_LOOP/96 tick で一周） */
         this.laserScanMesh = null;
         this._laserScanMaterial = null;
@@ -753,6 +754,84 @@ float cylinderSurfH( vec3 v ) {
         floorMat.envMap = envMap;
     }
 
+    buildRoom() {
+        /** Scene16 / StudioBox デフォルトと同じ canvas タイル（目地・床は赤十字＋番号テキスト） */
+        const floorTpl = StudioBox.createFloorTileTextures();
+        const wallTpl = StudioBox.createWallTileTextures();
+        const L = this.sceneLightingScale ?? 1;
+        const studioRough = 0.8;
+        const floorConcreteMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: floorTpl.map,
+            bumpMap: floorTpl.bumpMap,
+            bumpScale: 1.0,
+            roughness: studioRough * 0.3,
+            metalness: 0.2,
+            envMapIntensity: 1.0 * 1.3 * (0.55 + 0.45 * L),
+            fog: true
+        });
+        const wallConcreteMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            map: wallTpl.map,
+            bumpMap: wallTpl.bumpMap,
+            bumpScale: 1.0,
+            roughness: studioRough * 0.5,
+            metalness: 0.1,
+            envMapIntensity: 1.0 * (0.55 + 0.45 * L),
+            fog: true
+        });
+
+        this.roomGroup = new THREE.Group();
+        const hw = this.roomHalfW;
+        const hd = this.roomHalfD;
+        const floorTopY = this.floorTopY;
+        const ceilingY = this.ceilingY;
+        const wallH = ceilingY - floorTopY;
+        const wallCenterY = floorTopY + wallH * 0.5;
+        const slab = 24;
+
+        const floorGeo = new THREE.BoxGeometry(hw * 2, slab, hd * 2, 1, 1, 1);
+        const floor = new THREE.Mesh(floorGeo, floorConcreteMat);
+        floor.position.set(0, floorTopY - slab * 0.5, 0);
+        floor.receiveShadow = true;
+        floor.castShadow = false;
+        this.roomGroup.add(floor);
+
+        const mkWall = (w, height, d, px, py, pz) => {
+            const geo = new THREE.BoxGeometry(w, height, d, 1, 1, 1);
+            const mesh = new THREE.Mesh(geo, wallConcreteMat);
+            mesh.position.set(px, py, pz);
+            mesh.receiveShadow = true;
+            mesh.castShadow = true;
+            this.roomGroup.add(mesh);
+        };
+
+        mkWall(slab, wallH, hd * 2, -hw - slab * 0.5, wallCenterY, 0);
+        mkWall(slab, wallH, hd * 2, hw + slab * 0.5, wallCenterY, 0);
+        mkWall(hw * 2, wallH, slab, 0, wallCenterY, -hd - slab * 0.5);
+        mkWall(hw * 2, wallH, slab, 0, wallCenterY, hd + slab * 0.5);
+
+        const ceilingGeo = new THREE.PlaneGeometry(hw * 2, hd * 2);
+        ceilingGeo.rotateX(Math.PI / 2);
+        const ceilingMat = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            side: THREE.DoubleSide,
+            roughness: 0.8,
+            metalness: 0,
+            emissive: 0xffffff,
+            emissiveIntensity: 8.5 * (this.sceneLightingScale ?? 1),
+            envMapIntensity: 1.0,
+            fog: true
+        });
+        this.ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
+        this.ceilingMesh.position.set(0, ceilingY, 0);
+        this.ceilingMesh.receiveShadow = false;
+        this.ceilingMesh.castShadow = false;
+        this.roomGroup.add(this.ceilingMesh);
+
+        this.scene.add(this.roomGroup);
+    }
+
     /**
      * 北壁（カメラ側から見て奥）に Helvetiker 風 extruded テキスト。厚み＋ベベル。艶・環境反射強め。
      */
@@ -765,13 +844,10 @@ float cylinderSurfH( vec3 v ) {
                 helvetikerFontUrl,
                 (font) => {
                     const mat = new THREE.MeshStandardMaterial({
-                        color: 0x1a1f28,
+                        color: 0x101318,
                         roughness: 0.22,
-                        metalness: 0.24,
-                        envMap: this.scene.environment,
+                        metalness: 0.22,
                         envMapIntensity: 1.05,
-                        emissive: 0x0a0c10,
-                        emissiveIntensity: 0.14,
                         clearcoat: 0.88,
                         clearcoatRoughness: 0.14,
                         flatShading: false,
@@ -784,7 +860,7 @@ float cylinderSurfH( vec3 v ) {
                     const wallH = this.ceilingY - this.floorTopY;
                     const wallCenterY = this.floorTopY + wallH * 0.5;
                     /** 内壁は z = -roomHalfD 付近。手前に少し浮かせて Z-fight 回避 */
-                    const zText = -hd + 118;
+                    const zText = -hd + 95;
 
                     /** height = Z 方向の押し出し量。ベベルで縁が立体的に見える */
                     const addLine = (text, size, extrudeDepth, y) => {
@@ -813,14 +889,12 @@ float cylinderSurfH( vec3 v ) {
                     };
 
                     let y = 180;
-                    const titleLine =
-                        this.title != null && String(this.title).trim() !== '' ? String(this.title) : ' ';
-                    const titleH = addLine(titleLine, 280, 118, y);
+                    const titleH = addLine('mathym | Xenomist', 280, 118, y);
                     y -= titleH * 1.05 + 140;
 
                     const bodyLines = [
                         'Real-time WebGL (Three.js). Live OSC / MIDI maps tracks to GPU effects:',
-                        'instanced debris, cylinders, spheres; Studio tile room, HDR environment.',
+                        'instanced debris, cylinders, spheres; PBR concrete room, HDR environment.',
                         'Pipeline: SSAO, bloom, DOF, ACES tone map, film grain. Procedural noise fields,',
                         'audio-reactive spawn, instancing, and camera focus driven by scene activity.'
                     ];
@@ -2177,7 +2251,7 @@ float cylinderSurfH( vec3 v ) {
         this.scene.environment = this._roomEnvTexture;
     }
 
-    /** Scene22 と同趣旨：補助（Spot）を弱め、主光を強めて影のコントラストを上げる */
+    /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
     setupLights() {
         const L = this.sceneLightingScale ?? 1;
         this.fillPointLight = null;
@@ -2187,32 +2261,34 @@ float cylinderSurfH( vec3 v ) {
         this.promoWallLightTarget.position.set(0, 0, 0);
         this.scene.add(this.promoWallLightTarget);
 
-        const dir = new THREE.DirectionalLight(0xffffff, 9.5 * L);
-        dir.position.set(2400, 5300, 2000);
-        dir.castShadow = true;
-        dir.shadow.mapSize.set(4096, 4096);
-        dir.shadow.radius = 2.5;
-        dir.shadow.bias = -0.00014;
-        dir.shadow.normalBias = 0.032;
-        const sh = dir.shadow.camera;
-        sh.left = -6500;
-        sh.right = 6500;
-        sh.top = 6500;
-        sh.bottom = -6500;
-        sh.near = 80;
-        sh.far = 17000;
-        sh.updateProjectionMatrix();
-        dir.target.position.set(0, 360, 0);
-        this.scene.add(dir.target);
-        this.scene.add(dir);
-        this._shadowDirLight = dir;
-
-        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 0.45 * L, 26000, Math.PI / 5, 0.32, 1.0);
+        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 2.0 * L, 26000, Math.PI / 5, 0.32, 1.0);
         this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
+        /** 影は平行光に任せる（スポット＋平行の二重投影で潰れやすい） */
         this.promoWallFillLight.castShadow = false;
         this.promoWallFillLight.target = this.promoWallLightTarget;
 
         this.scene.add(this.promoWallFillLight);
+
+        /** Scene16 同様：部屋全体を覆う平行光でシャドウマップ1枚。スポットより影が安定 */
+        this.mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 0.95 * L);
+        this.mainDirectionalLight.position.set(4200, 7200, 3200);
+        this.mainDirectionalLight.castShadow = true;
+        {
+            const sh = this.mainDirectionalLight.shadow;
+            sh.mapSize.set(4096, 4096);
+            sh.bias = -0.0004;
+            sh.normalBias = 0.72;
+            const cam = sh.camera;
+            const extent = 6500;
+            cam.left = -extent;
+            cam.right = extent;
+            cam.top = extent;
+            cam.bottom = -extent;
+            cam.near = 120;
+            cam.far = 20000;
+            cam.updateProjectionMatrix();
+        }
+        this.scene.add(this.mainDirectionalLight);
     }
 
     setupAirNoiseVolume() {
@@ -2310,7 +2386,7 @@ float cylinderSurfH( vec3 v ) {
         /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00009)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
@@ -2347,28 +2423,21 @@ float cylinderSurfH( vec3 v ) {
         this.studio = new StudioBox(this.scene, {
             envMap: this._roomEnvTexture,
             envMapIntensity: 1.0,
+            useFloorTile: false,
             lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
         });
-        if (this.studio.studioFloor) {
-            this.studio.studioFloor.material.side = THREE.DoubleSide;
-        }
         if (this.studio.studioBox) {
-            const mats = this.studio.studioBox.material;
-            if (Array.isArray(mats)) mats.forEach((m) => { if (m) m.fog = true; });
+            this.studio.studioBox.visible = false;
         }
-        if (this.studio.studioFloor?.material) this.studio.studioFloor.material.fog = true;
 
-        const wallMat = this.studio.studioBox.material[0];
-        const floorMat = this.studio.studioFloor.material;
+        this.buildRoom();
+        await this._initWallMatteBlack3DText();
+
+        const floorMat = this.roomGroup.children[0].material;
+        const wallMat = this.roomGroup.children[1].material;
         this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
 
         this.setupLights();
-
-        await this._initWallMatteBlack3DText();
-        if (this._wallTitleMaterial && this.scene.environment) {
-            this._wallTitleMaterial.envMap = this.scene.environment;
-            this._wallTitleMaterial.needsUpdate = true;
-        }
 
         this.cableBlobParticle = new Scene16Particle(0, this.cableHomeY, 0);
         this.cableBlobParticle.maxSpeed = 7.0;
@@ -2502,7 +2571,7 @@ float cylinderSurfH( vec3 v ) {
             this._cameraFocusSmoothed.lerp(this._spawnFocusWorld, a);
         }
         this.updateCamera();
-        const focusTargets = [this.studio?.studioBox, this.studio?.studioFloor, this.shardGroup].filter(Boolean);
+        const focusTargets = [this.roomGroup, this.shardGroup];
         if (this.cylinderInstMesh) focusTargets.push(this.cylinderInstMesh);
         if (this.track9SphereGroup) focusTargets.push(this.track9SphereGroup);
         if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
@@ -2518,8 +2587,7 @@ float cylinderSurfH( vec3 v ) {
             const nearD = 900;
             const farD = 6200;
             const t = THREE.MathUtils.clamp((camDist - nearD) / (farD - nearD), 0, 1);
-            const ease = this.ssaoFarAttenuationEase ?? 1;
-            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t * ease);
+            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t);
             if ('kernelRadius' in aoPass) aoPass.kernelRadius = this.ssaoNearKernelRadius * aoScale;
             if ('minDistance' in aoPass) aoPass.minDistance = this.ssaoNearMinDistance * aoScale;
             if ('maxDistance' in aoPass) aoPass.maxDistance = this.ssaoNearMaxDistance * aoScale;
@@ -2684,25 +2752,24 @@ float cylinderSurfH( vec3 v ) {
             this.ssaoPass.kernelRadius = this.ssaoNearKernelRadius;
             this.ssaoPass.minDistance = this.ssaoNearMinDistance;
             this.ssaoPass.maxDistance = this.ssaoNearMaxDistance;
-            this.ssaoPass.enabled = true;
             this.composer.addPass(this.ssaoPass);
-            this._patchSSAOShaderContrastBoost();
             this._syncAODepthAndCameraUniforms(this.ssaoPass);
         }
         if (this.useBloom) {
             this.bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.16,
-                0.46,
-                0.86
+                0.14,
+                0.68,
+                0.64
             );
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
+            // ミニチュア感を避けるため、被写界深度を弱めてピント域を広げる。
             this.initDOF({
                 focus: 2100,
-                aperture: 0.000007,
-                maxblur: 0.0054
+                aperture: 0.0000044,
+                maxblur: 0.0031
             });
         }
         if (!this.outputPass) {
@@ -2712,26 +2779,8 @@ float cylinderSurfH( vec3 v ) {
         this.addFilmGrainIfEnabled(0.22, false);
     }
 
-    /**
-     * three の SSAO は 1.0-occlusion が控えめなので、オクルージョンを少し強めてコーナーが見えるようにする。
-     */
-    _patchSSAOShaderContrastBoost() {
-        const mat = this.ssaoPass?.ssaoMaterial;
-        if (!mat?.fragmentShader || mat.userData._aoContrastPatched) return;
-        const needle = 'gl_FragColor = vec4( vec3( 1.0 - occlusion ), 1.0 );';
-        if (!mat.fragmentShader.includes(needle)) return;
-        mat.fragmentShader = mat.fragmentShader.replace(
-            needle,
-            'float ao = clamp( 1.0 - occlusion * 1.35, 0.15, 1.0 );\n\t\t\t\tgl_FragColor = vec4( vec3( ao ), 1.0 );'
-        );
-        mat.needsUpdate = true;
-        mat.userData._aoContrastPatched = true;
-    }
-
     _syncAODepthAndCameraUniforms(aoPass) {
         if (!aoPass) return;
-        this.camera.updateProjectionMatrix();
-
         if (!this.aoDepthTexture && this.composer?.renderTarget1) {
             const size = this.renderer.getSize(new THREE.Vector2());
             const ratio = this.renderer.getPixelRatio();
@@ -2744,10 +2793,9 @@ float cylinderSurfH( vec3 v ) {
             this.composer.renderTarget1.depthBuffer = true;
         }
 
-        const nd = aoPass.normalRenderTarget?.depthTexture;
         const candidateDepth =
             aoPass.beautyRenderTarget?.depthTexture ||
-            nd ||
+            aoPass.normalRenderTarget?.depthTexture ||
             aoPass.depthRenderTarget?.depthTexture ||
             this.aoDepthTexture ||
             null;
@@ -2757,8 +2805,7 @@ float cylinderSurfH( vec3 v ) {
             aoPass.saoMaterial,
             aoPass.materialAO,
             aoPass.vBlurMaterial,
-            aoPass.hBlurMaterial,
-            aoPass.depthRenderMaterial
+            aoPass.hBlurMaterial
         ];
 
         for (const m of maybeMaterials) {
@@ -2766,19 +2813,7 @@ float cylinderSurfH( vec3 v ) {
             if (!u) continue;
             if (u.cameraNear) u.cameraNear.value = this.camera.near;
             if (u.cameraFar) u.cameraFar.value = this.camera.far;
-            if (u.tDepth) {
-                if (nd && (m === aoPass.ssaoMaterial || m === aoPass.depthRenderMaterial)) {
-                    u.tDepth.value = nd;
-                } else if (candidateDepth) {
-                    u.tDepth.value = candidateDepth;
-                }
-            }
-        }
-
-        if (aoPass.ssaoMaterial?.uniforms) {
-            const u = aoPass.ssaoMaterial.uniforms;
-            u.cameraProjectionMatrix.value.copy(this.camera.projectionMatrix);
-            u.cameraInverseProjectionMatrix.value.copy(this.camera.projectionMatrixInverse);
+            if (u.tDepth && candidateDepth) u.tDepth.value = candidateDepth;
         }
     }
 
@@ -2945,10 +2980,10 @@ float cylinderSurfH( vec3 v ) {
             this.track9SphereGroup = null;
         }
 
-        if (this._shadowDirLight) {
-            this.scene.remove(this._shadowDirLight.target);
-            this.scene.remove(this._shadowDirLight);
-            this._shadowDirLight = null;
+        if (this.mainDirectionalLight) {
+            this.scene.remove(this.mainDirectionalLight);
+            this.mainDirectionalLight.dispose();
+            this.mainDirectionalLight = null;
         }
         if (this.promoWallFillLight) {
             this.scene.remove(this.promoWallFillLight);
@@ -2988,6 +3023,28 @@ float cylinderSurfH( vec3 v ) {
             this.cubeRenderTarget.dispose();
             this.cubeRenderTarget = null;
         }
+
+        if (this.roomGroup) {
+            this.scene.remove(this.roomGroup);
+            const seenMats = new Set();
+            const seenTex = new Set();
+            this.roomGroup.traverse((o) => {
+                if (o.geometry) o.geometry.dispose();
+                if (o.material && !seenMats.has(o.material)) {
+                    seenMats.add(o.material);
+                    const m = o.material;
+                    for (const t of [m.map, m.bumpMap, m.normalMap, m.roughnessMap, m.aoMap]) {
+                        if (t && !seenTex.has(t)) {
+                            seenTex.add(t);
+                            t.dispose();
+                        }
+                    }
+                    m.dispose();
+                }
+            });
+            this.roomGroup = null;
+        }
+        this.ceilingMesh = null;
 
         if (this._roomEnvTexture) {
             this._roomEnvTexture.dispose();

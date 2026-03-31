@@ -3,7 +3,7 @@
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
  * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
- * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ
+ * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、暗色 FogExp2（Scene22 と同じ）
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
@@ -146,8 +146,8 @@ export class Scene21 extends SceneBase {
         this.useSceneFog = true;
         /** FogExp2 の密度（小さいほど薄い）— 以前 0.00017 より控えめ */
         this.sceneFogDensity = 0.00009;
-        /** 暖色系に寄せた霞（クール灰 0xd5d9df より R 寄り・B 弱め） */
-        this.sceneFogColor = 0xdfcfc2;
+        /** Scene22 と同じ：遠景を暗い空気に寄せる */
+        this.sceneFogColor = 0x12161c;
         // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -2386,7 +2386,7 @@ float cylinderSurfH( vec3 v ) {
         /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00009)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0x12161c, this.sceneFogDensity ?? 0.00009)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {

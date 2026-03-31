@@ -38,7 +38,8 @@ export class Scene22 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00009;
-        this.sceneFogColor = 0xdfcfc2;
+        /** 遠景を暖かい霞ではなく暗い空気に寄せる */
+        this.sceneFogColor = 0x12161c;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
@@ -447,17 +448,18 @@ export class Scene22 extends SceneBase {
             geo.setAttribute('color', new THREE.BufferAttribute(white, 3));
         }
         const textures = this.generateFleshTextures();
+        /** チャコール色は頂点色、金属感は metalness + IBL（暗色メタル鉱石寄り） */
         const mat = new THREE.MeshPhysicalMaterial({
             color: 0xffffff,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 0.42,
-            roughness: 0.72,
-            metalness: 0.12,
-            clearcoat: 0.08,
-            clearcoatRoughness: 0.55,
-            envMapIntensity: 0.55,
-            specularIntensity: 0.55,
+            bumpScale: 0.34,
+            roughness: 0.35,
+            metalness: 0.68,
+            clearcoat: 0.28,
+            clearcoatRoughness: 0.32,
+            envMapIntensity: 1.75,
+            specularIntensity: 1.1,
             fog: true,
             vertexColors: true
         });
@@ -840,7 +842,7 @@ export class Scene22 extends SceneBase {
 
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00009)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0x12161c, this.sceneFogDensity ?? 0.00009)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {

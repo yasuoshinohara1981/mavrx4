@@ -1,11 +1,11 @@
 /**
- * Scene22: 部屋は Scene16 と同じ StudioBox（巨大箱＋床）。GridRuler3D＋フォグ（密度は Scene21 と共通）。球 2500。
- * 北壁の extruded 3D タイトル＋英語説明は Scene21 と同一（Helvetiker）。
- * 運動モード11種は全て独自実装（DRIFT_FIELD / UPTHRUST / HELIX_RAIL / LEMNISCATE / HONEYCOMB / BEAT_INTERFERENCE / BINARY_ROTATE / DNA_HELIX / TOROIDAL_VORTEX / TRIPLE_WELL / PRECESS_ORBIT）。OSC トラック6。WindDebrisPoints。
+ * Scene22: 床・箱なし。巨大スフィア内側（暖みのある暗色金属）＋円上の金色エミッシブ管（ブルーム強め）＋暖色フォグ。
+ * 飛行パーティクルは金色の立方体（InstancedMesh / BoxGeometry）。運動モード11種は独自実装。OSC トラック6。WindDebrisPoints。
  */
 
 import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
+import { createCosmeticSkyTextureSet } from '../../lib/cosmeticSkyTextures.js';
 import { PMREMGenerator } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -13,14 +13,9 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { StudioBox } from '../../lib/StudioBox.js';
 import { WindDebrisPoints } from '../../lib/WindDebrisPoints.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene13Particle } from '../scene13/Scene13Particle.js';
-import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
-import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
-
 export class Scene22 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
@@ -30,25 +25,34 @@ export class Scene22 extends SceneBase {
         this.kitNo = 22;
         this.sharedResourceManager = sharedResourceManager;
 
-        this.studio = null;
-        /** Scene21 と同じ北壁 extruded 3D テキスト */
-        this.wallTitleGroup = null;
-        this._wallTitleMaterial = null;
+        /** 巨大スフィア内側（ダークスタジオ金属）。終わりの見えない空間用 */
+        this._skyDome = null;
+        /** 蛍光灯管グループ（円配置・共有 geo/mat） */
+        this._fluoroGroup = null;
+        this._fluoroSharedGeo = null;
+        this._fluoroSharedMat = null;
+        /** @type {THREE.PointLight[]} */
+        this._fluoroPointLights = [];
         this.pmremGenerator = null;
         this._roomEnvTexture = null;
 
-        /** 21 と共通。下げると露出・天井・ライトがまとめて暗くなる */
+        /** 21 と共通。他シーン互換のため残す（実際のライト強度は sceneLightingScaleEffective） */
         this.sceneLightingScale = 0.22;
+        /** ライト・管のポイント用。0.22 のままだと Hemi/Amb が実質ゼロで空間が真っ黒になる */
+        this.sceneLightingScaleEffective = 0.78;
+        /** トーンマップ露出（空間の明るさの土台） */
+        this.sceneToneMappingExposure = 1.32;
 
         this.useDOF = true;
         this.useBloom = true;
-        this.useSceneFog = true;
-        /** Scene21 と共通。大きいほどフォグ濃い */
-        this.sceneFogDensity = 0.00015;
-        /** Scene21 と同じ暖色系の霞 */
-        this.sceneFogColor = 0xdfcfc2;
-        /** Scene21 と同じく SSAO オン */
-        this.useSSAO = true;
+        /** フォグが遠景を霞に寄せすぎると暗く見えるためオフ（スカイドームで空気感は担保） */
+        this.useSceneFog = false;
+        /** useSceneFog 再開時用：極薄 */
+        this.sceneFogDensity = 0.000025;
+        /** ゴージャスCM寄り：アンバーがかった霞（暗く潰れないようやや明るめ） */
+        this.sceneFogColor = 0xf0e6dc;
+        /** 巨大スカイは depth 扱いで SSAO が全体を潰しやすいのでオフ */
+        this.useSSAO = false;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
         this.bloomPass = null;
@@ -133,103 +137,100 @@ export class Scene22 extends SceneBase {
         this._colorTmp = new THREE.Color();
     }
 
-    applyEnvMapToMaterials(envMap, wallMat, floorMat) {
-        wallMat.envMap = envMap;
-        floorMat.envMap = envMap;
-    }
-
-    /**
-     * 北壁（カメラ側から見て奥）に Helvetiker 風 extruded テキスト。Scene21 と同一レイアウト・文言。
-     */
-    _initWallMatteBlack3DText() {
-        if (this.wallTitleGroup) return Promise.resolve();
-
-        return new Promise((resolve) => {
-            const loader = new FontLoader();
-            loader.load(
-                helvetikerFontUrl,
-                (font) => {
-                    const mat = new THREE.MeshStandardMaterial({
-                        color: 0x1a1f28,
-                        roughness: 0.22,
-                        metalness: 0.24,
-                        envMap: this.scene.environment,
-                        envMapIntensity: 1.05,
-                        emissive: 0x0a0c10,
-                        emissiveIntensity: 0.14,
-                        clearcoat: 0.88,
-                        clearcoatRoughness: 0.14,
-                        flatShading: false,
-                        fog: true
-                    });
-                    this._wallTitleMaterial = mat;
-
-                    const group = new THREE.Group();
-                    const hd = this.roomHalfD;
-                    const wallH = this.ceilingY - this.floorTopY;
-                    const wallCenterY = this.floorTopY + wallH * 0.5;
-                    const zText = -hd + 118;
-
-                    const addLine = (text, size, extrudeDepth, y) => {
-                        const bt = Math.max(3, size * 0.05);
-                        const bs = Math.max(2.2, size * 0.038);
-                        const geo = new TextGeometry(text, {
-                            font,
-                            size,
-                            height: extrudeDepth,
-                            curveSegments: 12,
-                            bevelEnabled: true,
-                            bevelThickness: bt,
-                            bevelSize: bs,
-                            bevelOffset: 0,
-                            bevelSegments: 4
-                        });
-                        geo.computeBoundingBox();
-                        const mesh = new THREE.Mesh(geo, mat);
-                        const bb = geo.boundingBox;
-                        mesh.position.set(-0.5 * (bb.max.x + bb.min.x), y, 0);
-                        mesh.castShadow = false;
-                        mesh.receiveShadow = true;
-                        group.add(mesh);
-                        return bb.max.y - bb.min.y;
-                    };
-
-                    let y = 180;
-                    const titleLine =
-                        this.title != null && String(this.title).trim() !== '' ? String(this.title) : ' ';
-                    const titleH = addLine(titleLine, 280, 118, y);
-                    y -= titleH * 1.05 + 140;
-
-                    const bodyLines = [
-                        'Real-time WebGL (Three.js). Live OSC / MIDI maps tracks to GPU effects:',
-                        'instanced debris, cylinders, spheres; Studio tile room, HDR environment.',
-                        'Pipeline: SSAO, bloom, DOF, ACES tone map, film grain. Procedural noise fields,',
-                        'audio-reactive spawn, instancing, and camera focus driven by scene activity.'
-                    ];
-                    for (const line of bodyLines) {
-                        const h = addLine(line, 68, 34, y);
-                        y -= h * 1.12 + 28;
-                    }
-
-                    group.position.set(0, wallCenterY + wallH * 0.02, zText);
-                    this.wallTitleGroup = group;
-                    this.scene.add(group);
-                    resolve();
-                },
-                undefined,
-                () => {
-                    resolve();
-                }
-            );
-        });
-    }
-
     setupEnvironment() {
         this.pmremGenerator = new PMREMGenerator(this.renderer);
         this.pmremGenerator.compileEquirectangularShader();
         const envScene = new RoomEnvironment();
-        this._roomEnvTexture = this.pmremGenerator.fromScene(envScene, 0.04).texture;
+        // 内側ドームの金属反射が読めるよう、環境をやや強めに焼く
+        this._roomEnvTexture = this.pmremGenerator.fromScene(envScene, 0.16).texture;
         this.scene.environment = this._roomEnvTexture;
+    }
+
+    /**
+     * 巨大な球の内側。内側から見る前提で法線を内向きに反転（scale -1 + FrontSide）し、金属の IBL／ライトが乗るようにする。
+     */
+    _createSkyDome() {
+        if (this._skyDome) return;
+        const { map, normalMap, roughnessMap } = createCosmeticSkyTextureSet(2048, { preset: 'darkStudio' });
+        const R = 42000;
+        const geo = new THREE.SphereGeometry(R, 96, 64);
+        geo.scale(-1, 1, 1);
+        if (geo.index && geo.attributes.uv && geo.attributes.normal) {
+            geo.computeTangents();
+        }
+        const mat = new THREE.MeshPhysicalMaterial({
+            color: 0xf8efe6,
+            map,
+            emissiveMap: map,
+            emissive: 0xfff0e0,
+            emissiveIntensity: 1.25,
+            normalMap,
+            normalScale: new THREE.Vector2(-0.28, 0.28),
+            roughnessMap,
+            roughness: 0.2,
+            metalness: 0.48,
+            envMap: this.scene.environment,
+            envMapIntensity: 3.2,
+            clearcoat: 0.15,
+            clearcoatRoughness: 0.18,
+            side: THREE.FrontSide,
+            depthWrite: true,
+            fog: false
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.frustumCulled = false;
+        mesh.renderOrder = -1000;
+        this.scene.add(mesh);
+        this._skyDome = mesh;
+    }
+
+    /**
+     * 金色〜アンバー系エミッシブ円柱を 6 本、円上に配置（ブルーム用の高輝度＋補助ポイントライト）。
+     */
+    _createFluorescentRig() {
+        if (this._fluoroGroup) return;
+        const L = this.sceneLightingScaleEffective ?? this.sceneLightingScale ?? 1;
+        const n = 6;
+        const ringR = 2280;
+        const tubeH = 3600;
+        const tubeR = 11;
+        const yCenter = 920;
+        const goldEmissive = 0xffc878;
+        const goldLight = 0xffddb0;
+
+        const geo = new THREE.CylinderGeometry(tubeR, tubeR, tubeH, 28, 1, false);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x3a2618,
+            emissive: goldEmissive,
+            emissiveIntensity: 28,
+            metalness: 0.18,
+            roughness: 0.2
+        });
+
+        const group = new THREE.Group();
+        group.name = 'FluorescentRig';
+
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2 + Math.PI / n;
+            const depthWave = Math.sin(i * 1.7) * 140 + Math.cos(i * 0.9) * 90;
+            const rEff = ringR + depthWave * 0.12;
+            const x = Math.cos(a) * rEff;
+            const z = Math.sin(a) * rEff;
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, yCenter, z);
+            group.add(mesh);
+
+            const pl = new THREE.PointLight(goldLight, 11.5 * L, 16000, 1.75);
+            pl.position.set(x, yCenter, z);
+            pl.castShadow = false;
+            this.scene.add(pl);
+            this._fluoroPointLights.push(pl);
+        }
+
+        this.scene.add(group);
+        this._fluoroGroup = group;
+        this._fluoroSharedGeo = geo;
+        this._fluoroSharedMat = mat;
     }
 
     /**
@@ -237,35 +238,37 @@ export class Scene22 extends SceneBase {
      * ポイントは影を落とさず、床の影が二重に薄まるのを防ぐ。
      */
     setupLights() {
-        const L = this.sceneLightingScale ?? 1;
+        const L = this.sceneLightingScaleEffective ?? this.sceneLightingScale ?? 1;
 
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x4a4a52, 0.38 * L);
+        const hemiLight = new THREE.HemisphereLight(0xfff5e8, 0x5a4a3e, 0.52 * L);
         this.scene.add(hemiLight);
         this._hemiLight = hemiLight;
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.07 * L);
+        const ambientLight = new THREE.AmbientLight(0xf8ecdd, 0.22 * L);
         this.scene.add(ambientLight);
         this._ambientLight = ambientLight;
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 3.4 * L);
-        directionalLight.position.set(4000, 5000, 4000);
+        const directionalLight = new THREE.DirectionalLight(0xffeed8, 3.2 * L);
+        directionalLight.position.set(3200, 5200, 2600);
         directionalLight.castShadow = true;
         directionalLight.shadow.mapSize.set(4096, 4096);
-        directionalLight.shadow.radius = 2.5;
-        directionalLight.shadow.bias = -0.00014;
-        directionalLight.shadow.normalBias = 0.028;
+        directionalLight.shadow.radius = 2.2;
+        directionalLight.shadow.bias = -0.00012;
+        directionalLight.shadow.normalBias = 0.03;
         const dsh = directionalLight.shadow.camera;
-        dsh.left = -6200;
-        dsh.right = 6200;
-        dsh.top = 6200;
-        dsh.bottom = -6200;
-        dsh.near = 100;
-        dsh.far = 15000;
+        dsh.left = -7200;
+        dsh.right = 7200;
+        dsh.top = 7200;
+        dsh.bottom = -7200;
+        dsh.near = 80;
+        dsh.far = 18000;
         dsh.updateProjectionMatrix();
+        directionalLight.target.position.set(0, 400, -1200);
+        this.scene.add(directionalLight.target);
         this.scene.add(directionalLight);
         this._dirLight = directionalLight;
 
-        const pointLight = new THREE.PointLight(0xffffff, 0.7 * L, 12000);
+        const pointLight = new THREE.PointLight(0xffe4cc, 1.35 * L, 12000);
         pointLight.position.set(0, 200, 0);
         pointLight.castShadow = false;
         this.scene.add(pointLight);
@@ -273,40 +276,39 @@ export class Scene22 extends SceneBase {
     }
 
     /**
-     * ピンク・ミント・ネオン系の色相（ベース＋微ジッター後、彩度を抑える）
+     * ゴールド系（濃淡だけランダム）
      * @param {THREE.Color} out
      */
     _setRandomVividSphereColor(out) {
         const palette = [
-            0xff1493,
-            0xff10f0,
-            0xff007f,
-            0xff00aa,
-            0xfe00fe,
-            0xbf00ff,
-            0x7fff00,
-            0x39ff14,
-            0x00ff9f,
-            0x00ffb3,
-            0x00ffcc,
-            0x00ffff,
-            0x00e5ff,
-            0xffff00,
-            0xffee00,
-            0xff6600,
-            0xff3366,
-            0xff0099
+            0xffd700,
+            0xffc940,
+            0xe6c35c,
+            0xd4af37,
+            0xc9a530,
+            0xf0e68c,
+            0xdaa520,
+            0xffe066,
+            0xb8860b,
+            0xedc967,
+            0xf4e4bc,
+            0xe8c547,
+            0xffec9f,
+            0xcdaa3d,
+            0xc5a028,
+            0xffd54a
         ];
         out.setHex(palette[Math.floor(Math.random() * palette.length)]);
         out.offsetHSL(
-            (Math.random() - 0.5) * 0.07,
+            (Math.random() - 0.5) * 0.04,
             (Math.random() - 0.5) * 0.12,
             (Math.random() - 0.5) * 0.1
         );
         const hsl = { h: 0, s: 0, l: 0 };
         out.getHSL(hsl);
-        const sat = THREE.MathUtils.clamp(hsl.s * 0.58, 0.22, 0.72);
-        out.setHSL(hsl.h, sat, hsl.l);
+        const sat = THREE.MathUtils.clamp(hsl.s * 0.82, 0.42, 0.92);
+        const light = THREE.MathUtils.clamp(hsl.l, 0.42, 0.78);
+        out.setHSL(hsl.h, sat, light);
     }
 
     _applyEnvMapToSphereMaterial() {
@@ -401,7 +403,7 @@ export class Scene22 extends SceneBase {
 
     createSpheres() {
         const n = this.sphereCount;
-        const geo = new THREE.SphereGeometry(1, 32, 22);
+        const geo = new THREE.BoxGeometry(1, 1, 1);
         {
             const nv = geo.attributes.position.count;
             const white = new Float32Array(nv * 3);
@@ -410,15 +412,16 @@ export class Scene22 extends SceneBase {
         }
         const textures = this.generateFleshTextures();
         const mat = new THREE.MeshPhysicalMaterial({
-            color: 0xffffff,
+            color: 0xfff6e8,
             map: textures.map,
             bumpMap: textures.bumpMap,
-            bumpScale: 4.0,
-            roughness: 0.42,
-            metalness: 0.04,
-            clearcoat: 0.38,
-            clearcoatRoughness: 0.32,
-            envMapIntensity: 0.42,
+            bumpScale: 0.35,
+            roughness: 0.09,
+            metalness: 0.52,
+            clearcoat: 0.72,
+            clearcoatRoughness: 0.06,
+            envMapIntensity: 2.05,
+            specularIntensity: 1.15,
             fog: true,
             vertexColors: true
         });
@@ -797,16 +800,19 @@ export class Scene22 extends SceneBase {
         this.renderer.shadowMap.autoUpdate = true;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         const Lexp = this.sceneLightingScale ?? 1;
-        this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
+        this.renderer.toneMappingExposure =
+            this.sceneToneMappingExposure != null
+                ? this.sceneToneMappingExposure
+                : THREE.MathUtils.lerp(0.42, 0.92, Lexp);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        this.scene.background = new THREE.Color(0x151820);
+        this.scene.background = new THREE.Color(0x6b5848);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00007)
             : null;
 
         this.camera.near = 12;
-        this.camera.far = 12000;
+        this.camera.far = 65000;
         if (this.camera.fov < 35 || this.camera.fov > 50) this.camera.fov = 42;
         this.camera.updateProjectionMatrix();
         this.camera.position.set(0, 1400, 5200);
@@ -814,31 +820,10 @@ export class Scene22 extends SceneBase {
 
         this.setupEnvironment();
 
-        this.studio = new StudioBox(this.scene, {
-            envMap: this._roomEnvTexture,
-            envMapIntensity: 1.0,
-            lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
-        });
-        if (this.studio.studioFloor) {
-            this.studio.studioFloor.material.side = THREE.DoubleSide;
-        }
-        if (this.studio.studioBox) {
-            const mats = this.studio.studioBox.material;
-            if (Array.isArray(mats)) mats.forEach((m) => { if (m) m.fog = true; });
-        }
-        if (this.studio.studioFloor?.material) this.studio.studioFloor.material.fog = true;
-
-        const wallMat = this.studio.studioBox.material[0];
-        const floorMat = this.studio.studioFloor.material;
-        this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
+        this._createSkyDome();
+        this._createFluorescentRig();
 
         this.setupLights();
-
-        await this._initWallMatteBlack3DText();
-        if (this._wallTitleMaterial && this.scene.environment) {
-            this._wallTitleMaterial.envMap = this.scene.environment;
-            this._wallTitleMaterial.needsUpdate = true;
-        }
 
         this.showGridRuler3D = false;
         this.initGridRuler3D({
@@ -983,7 +968,7 @@ export class Scene22 extends SceneBase {
 
         /** Scene21 と同型：固定 DOF（オートフォーカスでピント域が狭く見えるのを防ぐ） */
         const mainInst = this.instancedMeshManager?.getMainMesh();
-        const focusTargets = [this.studio?.studioBox, this.studio?.studioFloor, mainInst, this._windDebris?.mesh].filter(Boolean);
+        const focusTargets = [mainInst, this._windDebris?.mesh].filter(Boolean);
         if (this.useAutoFocusDOF) {
             this.updateAutoFocus(focusTargets);
         } else if (this.bokehPass?.uniforms?.focus) {
@@ -1053,9 +1038,9 @@ export class Scene22 extends SceneBase {
         if (this.useBloom) {
             this.bloomPass = new UnrealBloomPass(
                 new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.09,
-                0.42,
-                0.92
+                0.14,
+                0.36,
+                0.9
             );
             this.composer.addPass(this.bloomPass);
         }
@@ -1129,11 +1114,6 @@ export class Scene22 extends SceneBase {
         this._syncAODepthAndCameraUniforms(this.ssaoPass || this.saoPass);
     }
 
-    render() {
-        this.renderer.setClearColor(0x151820);
-        super.render();
-    }
-
     dispose() {
         this.initialized = false;
         this.scene.fog = null;
@@ -1147,6 +1127,7 @@ export class Scene22 extends SceneBase {
             this._ambientLight = null;
         }
         if (this._dirLight) {
+            if (this._dirLight.target) this.scene.remove(this._dirLight.target);
             this.scene.remove(this._dirLight);
             this._dirLight = null;
         }
@@ -1181,21 +1162,34 @@ export class Scene22 extends SceneBase {
             this.outputPass.dispose();
             this.outputPass = null;
         }
-        if (this.studio) {
-            this.studio.dispose();
-            this.studio = null;
+        if (this._skyDome) {
+            this.scene.remove(this._skyDome);
+            const sm = this._skyDome.material;
+            if (sm.map) sm.map.dispose();
+            if (sm.emissiveMap && sm.emissiveMap !== sm.map) sm.emissiveMap.dispose();
+            if (sm.normalMap) sm.normalMap.dispose();
+            if (sm.roughnessMap) sm.roughnessMap.dispose();
+            sm.dispose();
+            this._skyDome.geometry.dispose();
+            this._skyDome = null;
         }
 
-        if (this.wallTitleGroup) {
-            this.scene.remove(this.wallTitleGroup);
-            this.wallTitleGroup.traverse((o) => {
-                if (o.geometry) o.geometry.dispose();
-            });
-            this.wallTitleGroup = null;
+        for (const pl of this._fluoroPointLights) {
+            this.scene.remove(pl);
         }
-        if (this._wallTitleMaterial) {
-            this._wallTitleMaterial.dispose();
-            this._wallTitleMaterial = null;
+        this._fluoroPointLights = [];
+
+        if (this._fluoroGroup) {
+            this.scene.remove(this._fluoroGroup);
+            this._fluoroGroup = null;
+        }
+        if (this._fluoroSharedGeo) {
+            this._fluoroSharedGeo.dispose();
+            this._fluoroSharedGeo = null;
+        }
+        if (this._fluoroSharedMat) {
+            this._fluoroSharedMat.dispose();
+            this._fluoroSharedMat = null;
         }
 
         this.expandSpheres.forEach((e) => {

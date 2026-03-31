@@ -51,7 +51,7 @@ export class SceneBase {
         /** Ctrl+数字のシーンバンク（SceneManagerと同期） */
         this.sceneBankIndex = 0;
         /** 登録シーン総数（HUDのバンク表示用・実際に存在するシーン数） */
-        this.totalSceneCount = 21;
+        this.totalSceneCount = 22;
         /** HUD上の最大スロット数（100 = 10バンク×10） */
         this.maxSceneSlots = 100;
         /** 0始まりのシーンインデックス（SceneManagerが切替時に設定） */
@@ -763,9 +763,11 @@ export class SceneBase {
      * 描画処理
      */
     render() {
-        // 背景色を設定
+        // 背景色を設定（サブクラスで scene.background を Color にしている場合はそれをクリア色に使う。毎回黒固定だと DOF 等で背景が潰れる）
         if (this.backgroundWhite) {
             this.renderer.setClearColor(0xffffff);
+        } else if (this.scene && this.scene.background && this.scene.background.isColor) {
+            this.renderer.setClearColor(this.scene.background);
         } else {
             this.renderer.setClearColor(0x000000);
         }

@@ -322,19 +322,26 @@ export class StudioBox {
     }
 
     dispose() {
+        const detach = (mesh) => {
+            if (!mesh) return;
+            if (mesh.parent) mesh.parent.remove(mesh);
+            else if (this.scene) this.scene.remove(mesh);
+        };
         if (this.studioBox) {
-            this.scene.remove(this.studioBox);
+            detach(this.studioBox);
             this.studioBox.geometry.dispose();
             if (Array.isArray(this.studioBox.material)) {
                 this.studioBox.material.forEach(m => m.dispose());
             } else {
                 this.studioBox.material.dispose();
             }
+            this.studioBox = null;
         }
         if (this.studioFloor) {
-            this.scene.remove(this.studioFloor);
+            detach(this.studioFloor);
             this.studioFloor.geometry.dispose();
             this.studioFloor.material.dispose();
+            this.studioFloor = null;
         }
         if (this.textures && !this.grungeEnabled) {
             if (this.textures.map) this.textures.map.dispose();

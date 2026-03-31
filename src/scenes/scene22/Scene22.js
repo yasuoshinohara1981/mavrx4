@@ -1,5 +1,6 @@
 /**
- * Scene22: 床・壁は Scene12（StudioBox）と同一タイル＋GridRuler3D＋フォグ（密度は Scene21 と共通）。球 2500。
+ * Scene22: 部屋は Scene16 と同じ StudioBox（巨大箱＋床）。GridRuler3D＋フォグ（密度は Scene21 と共通）。球 2500。
+ * 北壁の extruded 3D タイトル＋英語説明は Scene21 と同一（Helvetiker）。
  * 運動モード11種は全て独自実装（DRIFT_FIELD / UPTHRUST / HELIX_RAIL / LEMNISCATE / HONEYCOMB / BEAT_INTERFERENCE / BINARY_ROTATE / DNA_HELIX / TOROIDAL_VORTEX / TRIPLE_WELL / PRECESS_ORBIT）。OSC トラック6。WindDebrisPoints。
  */
 
@@ -16,19 +17,23 @@ import { StudioBox } from '../../lib/StudioBox.js';
 import { WindDebrisPoints } from '../../lib/WindDebrisPoints.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene13Particle } from '../scene13/Scene13Particle.js';
+import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
+import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
 
 export class Scene22 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'mathym | Xenomist';
+        this.title = 'mathym | Xenofog';
         this.initialized = false;
         this.sceneNumber = 22;
         this.kitNo = 22;
         this.sharedResourceManager = sharedResourceManager;
 
         this.studio = null;
-        this.roomGroup = null;
-        this.ceilingMesh = null;
+        /** Scene21 と同じ北壁 extruded 3D テキスト */
+        this.wallTitleGroup = null;
+        this._wallTitleMaterial = null;
         this.pmremGenerator = null;
         this._roomEnvTexture = null;
 
@@ -40,8 +45,8 @@ export class Scene22 extends SceneBase {
         this.useSceneFog = true;
         /** Scene21 と共通。大きいほどフォグ濃い */
         this.sceneFogDensity = 0.00015;
-        /** Scene21 と同じニュートラルグレーの霞 */
-        this.sceneFogColor = 0x9a9a9a;
+        /** Scene21 と同じ暖色系の霞 */
+        this.sceneFogColor = 0xdfcfc2;
         /** Scene21 と同じく SSAO オン */
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -134,86 +139,89 @@ export class Scene22 extends SceneBase {
     }
 
     /**
-     * 床・壁：Scene12 の StudioBox と同一（床は generateTileTexture(false)、壁は壁用 true）。
+     * 北壁（カメラ側から見て奥）に Helvetiker 風 extruded テキスト。Scene21 と同一レイアウト・文言。
      */
-    buildRoom() {
-        const floorTextures = StudioBox.createFloorTileTextures();
-        const wallTextures = StudioBox.createWallTileTextures();
+    _initWallMatteBlack3DText() {
+        if (this.wallTitleGroup) return Promise.resolve();
 
-        /** StudioBox 既定: roughness 0.8, metalness 0 → 床は roughness*0.3, metalness+0.2, envMapIntensity*1.3 */
-        const floorMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            map: floorTextures.map,
-            bumpMap: floorTextures.bumpMap,
-            bumpScale: 1.0,
-            roughness: 0.8 * 0.3,
-            metalness: 0.2,
-            envMapIntensity: 1.0 * 1.3,
-            fog: true
+        return new Promise((resolve) => {
+            const loader = new FontLoader();
+            loader.load(
+                helvetikerFontUrl,
+                (font) => {
+                    const mat = new THREE.MeshStandardMaterial({
+                        color: 0x1a1f28,
+                        roughness: 0.22,
+                        metalness: 0.24,
+                        envMap: this.scene.environment,
+                        envMapIntensity: 1.05,
+                        emissive: 0x0a0c10,
+                        emissiveIntensity: 0.14,
+                        clearcoat: 0.88,
+                        clearcoatRoughness: 0.14,
+                        flatShading: false,
+                        fog: true
+                    });
+                    this._wallTitleMaterial = mat;
+
+                    const group = new THREE.Group();
+                    const hd = this.roomHalfD;
+                    const wallH = this.ceilingY - this.floorTopY;
+                    const wallCenterY = this.floorTopY + wallH * 0.5;
+                    const zText = -hd + 118;
+
+                    const addLine = (text, size, extrudeDepth, y) => {
+                        const bt = Math.max(3, size * 0.05);
+                        const bs = Math.max(2.2, size * 0.038);
+                        const geo = new TextGeometry(text, {
+                            font,
+                            size,
+                            height: extrudeDepth,
+                            curveSegments: 12,
+                            bevelEnabled: true,
+                            bevelThickness: bt,
+                            bevelSize: bs,
+                            bevelOffset: 0,
+                            bevelSegments: 4
+                        });
+                        geo.computeBoundingBox();
+                        const mesh = new THREE.Mesh(geo, mat);
+                        const bb = geo.boundingBox;
+                        mesh.position.set(-0.5 * (bb.max.x + bb.min.x), y, 0);
+                        mesh.castShadow = false;
+                        mesh.receiveShadow = true;
+                        group.add(mesh);
+                        return bb.max.y - bb.min.y;
+                    };
+
+                    let y = 180;
+                    const titleLine =
+                        this.title != null && String(this.title).trim() !== '' ? String(this.title) : ' ';
+                    const titleH = addLine(titleLine, 280, 118, y);
+                    y -= titleH * 1.05 + 140;
+
+                    const bodyLines = [
+                        'Real-time WebGL (Three.js). Live OSC / MIDI maps tracks to GPU effects:',
+                        'instanced debris, cylinders, spheres; Studio tile room, HDR environment.',
+                        'Pipeline: SSAO, bloom, DOF, ACES tone map, film grain. Procedural noise fields,',
+                        'audio-reactive spawn, instancing, and camera focus driven by scene activity.'
+                    ];
+                    for (const line of bodyLines) {
+                        const h = addLine(line, 68, 34, y);
+                        y -= h * 1.12 + 28;
+                    }
+
+                    group.position.set(0, wallCenterY + wallH * 0.02, zText);
+                    this.wallTitleGroup = group;
+                    this.scene.add(group);
+                    resolve();
+                },
+                undefined,
+                () => {
+                    resolve();
+                }
+            );
         });
-        /** StudioBox 壁: roughness*0.5, metalness+0.1 */
-        const wallMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            map: wallTextures.map,
-            bumpMap: wallTextures.bumpMap,
-            bumpScale: 1.0,
-            roughness: 0.8 * 0.5,
-            metalness: 0.1,
-            envMapIntensity: 1.0,
-            fog: true
-        });
-
-        this.roomGroup = new THREE.Group();
-        const hw = this.roomHalfW;
-        const hd = this.roomHalfD;
-        const floorTopY = this.floorTopY;
-        const ceilingY = this.ceilingY;
-        const wallH = ceilingY - floorTopY;
-        const wallCenterY = floorTopY + wallH * 0.5;
-        const slab = 24;
-
-        const floorSize = hw * 2;
-        const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
-        const floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.set(0, floorTopY, 0);
-        floor.receiveShadow = true;
-        floor.castShadow = true;
-        this.roomGroup.add(floor);
-
-        const mkWall = (w, height, d, px, py, pz) => {
-            const geo = new THREE.BoxGeometry(w, height, d, 1, 1, 1);
-            const mesh = new THREE.Mesh(geo, wallMat);
-            mesh.position.set(px, py, pz);
-            mesh.receiveShadow = true;
-            mesh.castShadow = true;
-            this.roomGroup.add(mesh);
-        };
-
-        mkWall(slab, wallH, hd * 2, -hw - slab * 0.5, wallCenterY, 0);
-        mkWall(slab, wallH, hd * 2, hw + slab * 0.5, wallCenterY, 0);
-        mkWall(hw * 2, wallH, slab, 0, wallCenterY, -hd - slab * 0.5);
-        mkWall(hw * 2, wallH, slab, 0, wallCenterY, hd + slab * 0.5);
-
-        const ceilingGeo = new THREE.PlaneGeometry(hw * 2, hd * 2);
-        ceilingGeo.rotateX(Math.PI / 2);
-        const ceilingMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            side: THREE.DoubleSide,
-            roughness: 0.8,
-            metalness: 0,
-            emissive: 0xffffff,
-            emissiveIntensity: 5.2 * (this.sceneLightingScale ?? 1),
-            envMapIntensity: 1.0,
-            fog: true
-        });
-        this.ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
-        this.ceilingMesh.position.set(0, ceilingY, 0);
-        this.ceilingMesh.receiveShadow = false;
-        this.ceilingMesh.castShadow = false;
-        this.roomGroup.add(this.ceilingMesh);
-
-        this.scene.add(this.roomGroup);
     }
 
     setupEnvironment() {
@@ -794,7 +802,7 @@ export class Scene22 extends SceneBase {
 
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0x9a9a9a, this.sceneFogDensity ?? 0.00015)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
             : null;
 
         this.camera.near = 12;
@@ -809,16 +817,28 @@ export class Scene22 extends SceneBase {
         this.studio = new StudioBox(this.scene, {
             envMap: this._roomEnvTexture,
             envMapIntensity: 1.0,
-            useFloorTile: false,
             lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
         });
-        if (this.studio.studioBox) this.studio.studioBox.visible = false;
+        if (this.studio.studioFloor) {
+            this.studio.studioFloor.material.side = THREE.DoubleSide;
+        }
+        if (this.studio.studioBox) {
+            const mats = this.studio.studioBox.material;
+            if (Array.isArray(mats)) mats.forEach((m) => { if (m) m.fog = true; });
+        }
+        if (this.studio.studioFloor?.material) this.studio.studioFloor.material.fog = true;
 
-        this.buildRoom();
-
-        const floorMat = this.roomGroup.children[0].material;
-        const wallMat = this.roomGroup.children[1].material;
+        const wallMat = this.studio.studioBox.material[0];
+        const floorMat = this.studio.studioFloor.material;
         this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
+
+        this.setupLights();
+
+        await this._initWallMatteBlack3DText();
+        if (this._wallTitleMaterial && this.scene.environment) {
+            this._wallTitleMaterial.envMap = this.scene.environment;
+            this._wallTitleMaterial.needsUpdate = true;
+        }
 
         this.showGridRuler3D = false;
         this.initGridRuler3D({
@@ -832,7 +852,6 @@ export class Scene22 extends SceneBase {
             opacity: 0.55
         });
 
-        this.setupLights();
         this.createSpheres();
         this._applyEnvMapToSphereMaterial();
 
@@ -964,7 +983,7 @@ export class Scene22 extends SceneBase {
 
         /** Scene21 と同型：固定 DOF（オートフォーカスでピント域が狭く見えるのを防ぐ） */
         const mainInst = this.instancedMeshManager?.getMainMesh();
-        const focusTargets = [this.roomGroup, mainInst, this._windDebris?.mesh].filter(Boolean);
+        const focusTargets = [this.studio?.studioBox, this.studio?.studioFloor, mainInst, this._windDebris?.mesh].filter(Boolean);
         if (this.useAutoFocusDOF) {
             this.updateAutoFocus(focusTargets);
         } else if (this.bokehPass?.uniforms?.focus) {
@@ -1167,6 +1186,18 @@ export class Scene22 extends SceneBase {
             this.studio = null;
         }
 
+        if (this.wallTitleGroup) {
+            this.scene.remove(this.wallTitleGroup);
+            this.wallTitleGroup.traverse((o) => {
+                if (o.geometry) o.geometry.dispose();
+            });
+            this.wallTitleGroup = null;
+        }
+        if (this._wallTitleMaterial) {
+            this._wallTitleMaterial.dispose();
+            this._wallTitleMaterial = null;
+        }
+
         this.expandSpheres.forEach((e) => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) {
@@ -1183,28 +1214,6 @@ export class Scene22 extends SceneBase {
         }
         this.particles = [];
         this.grid?.clear();
-
-        if (this.roomGroup) {
-            this.scene.remove(this.roomGroup);
-            const seenMats = new Set();
-            const seenTex = new Set();
-            this.roomGroup.traverse((o) => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material && !seenMats.has(o.material)) {
-                    seenMats.add(o.material);
-                    const m = o.material;
-                    for (const t of [m.map, m.bumpMap, m.normalMap, m.roughnessMap, m.aoMap]) {
-                        if (t && !seenTex.has(t)) {
-                            seenTex.add(t);
-                            t.dispose();
-                        }
-                    }
-                    m.dispose();
-                }
-            });
-            this.roomGroup = null;
-        }
-        this.ceilingMesh = null;
 
         if (this._roomEnvTexture) {
             this._roomEnvTexture.dispose();

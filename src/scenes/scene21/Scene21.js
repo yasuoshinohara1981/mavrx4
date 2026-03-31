@@ -2,8 +2,8 @@
  * Scene21: 床・壁は Scene12/22 と同一 StudioBox タイル、天井発光
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
- * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
- * ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、白系フォグ（密度は Scene22 と共通）
+ * 部屋は Scene16 と同じ StudioBox（巨大箱＋床プレート）。ライトも同系（蛍光灯＋半球/環境/平行光/ポイント）
+ * ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、暖色系フォグ（密度は Scene22 と共通）
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
@@ -33,8 +33,6 @@ export class Scene21 extends SceneBase {
         this.sharedResourceManager = sharedResourceManager;
 
         this.studio = null;
-        this.roomGroup = null;
-        this.ceilingMesh = null;
         /** 北壁の extruded 3D タイトル（Helvetiker / 艶・反射） */
         this.wallTitleGroup = null;
         this._wallTitleMaterial = null;
@@ -147,8 +145,8 @@ export class Scene21 extends SceneBase {
         this.useSceneFog = true;
         /** FogExp2 の密度（Scene22 と同一）。大きいほど濃い */
         this.sceneFogDensity = 0.00015;
-        /** FogExp2 の色（ニュートラルグレー） */
-        this.sceneFogColor = 0x9a9a9a;
+        /** FogExp2 の色（暖色系の霞） */
+        this.sceneFogColor = 0xdfcfc2;
         // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -755,87 +753,6 @@ float cylinderSurfH( vec3 v ) {
     }
 
     /**
-     * 床・壁：Scene12 の StudioBox と同一（Scene22 と同型）。
-     */
-    buildRoom() {
-        const floorTextures = StudioBox.createFloorTileTextures();
-        const wallTextures = StudioBox.createWallTileTextures();
-
-        const floorMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            map: floorTextures.map,
-            bumpMap: floorTextures.bumpMap,
-            bumpScale: 1.0,
-            roughness: 0.8 * 0.3,
-            metalness: 0.2,
-            envMapIntensity: 1.0 * 1.3,
-            fog: true
-        });
-        const wallMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            map: wallTextures.map,
-            bumpMap: wallTextures.bumpMap,
-            bumpScale: 1.0,
-            roughness: 0.8 * 0.5,
-            metalness: 0.1,
-            envMapIntensity: 1.0,
-            fog: true
-        });
-
-        this.roomGroup = new THREE.Group();
-        const hw = this.roomHalfW;
-        const hd = this.roomHalfD;
-        const floorTopY = this.floorTopY;
-        const ceilingY = this.ceilingY;
-        const wallH = ceilingY - floorTopY;
-        const wallCenterY = floorTopY + wallH * 0.5;
-        const slab = 24;
-
-        const floorSize = hw * 2;
-        const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize);
-        const floor = new THREE.Mesh(floorGeo, floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        floor.position.set(0, floorTopY, 0);
-        floor.receiveShadow = true;
-        floor.castShadow = true;
-        this.roomGroup.add(floor);
-
-        const mkWall = (w, height, d, px, py, pz) => {
-            const geo = new THREE.BoxGeometry(w, height, d, 1, 1, 1);
-            const mesh = new THREE.Mesh(geo, wallMat);
-            mesh.position.set(px, py, pz);
-            mesh.receiveShadow = true;
-            mesh.castShadow = true;
-            this.roomGroup.add(mesh);
-        };
-
-        mkWall(slab, wallH, hd * 2, -hw - slab * 0.5, wallCenterY, 0);
-        mkWall(slab, wallH, hd * 2, hw + slab * 0.5, wallCenterY, 0);
-        mkWall(hw * 2, wallH, slab, 0, wallCenterY, -hd - slab * 0.5);
-        mkWall(hw * 2, wallH, slab, 0, wallCenterY, hd + slab * 0.5);
-
-        const ceilingGeo = new THREE.PlaneGeometry(hw * 2, hd * 2);
-        ceilingGeo.rotateX(Math.PI / 2);
-        const ceilingMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            side: THREE.DoubleSide,
-            roughness: 0.8,
-            metalness: 0,
-            emissive: 0xffffff,
-            emissiveIntensity: 5.2 * (this.sceneLightingScale ?? 1),
-            envMapIntensity: 1.0,
-            fog: true
-        });
-        this.ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
-        this.ceilingMesh.position.set(0, ceilingY, 0);
-        this.ceilingMesh.receiveShadow = false;
-        this.ceilingMesh.castShadow = false;
-        this.roomGroup.add(this.ceilingMesh);
-
-        this.scene.add(this.roomGroup);
-    }
-
-    /**
      * 北壁（カメラ側から見て奥）に Helvetiker 風 extruded テキスト。厚み＋ベベル。艶・環境反射強め。
      */
     _initWallMatteBlack3DText() {
@@ -895,7 +812,9 @@ float cylinderSurfH( vec3 v ) {
                     };
 
                     let y = 180;
-                    const titleH = addLine('mathym | Xenomist', 280, 118, y);
+                    const titleLine =
+                        this.title != null && String(this.title).trim() !== '' ? String(this.title) : ' ';
+                    const titleH = addLine(titleLine, 280, 118, y);
                     y -= titleH * 1.05 + 140;
 
                     const bodyLines = [
@@ -2390,7 +2309,7 @@ float cylinderSurfH( vec3 v ) {
         /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
         this.scene.background = new THREE.Color(0x151820);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0x9a9a9a, this.sceneFogDensity ?? 0.00015)
+            ? new THREE.FogExp2(this.sceneFogColor ?? 0xdfcfc2, this.sceneFogDensity ?? 0.00015)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
@@ -2427,17 +2346,19 @@ float cylinderSurfH( vec3 v ) {
         this.studio = new StudioBox(this.scene, {
             envMap: this._roomEnvTexture,
             envMapIntensity: 1.0,
-            useFloorTile: false,
             lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
         });
-        if (this.studio.studioBox) {
-            this.studio.studioBox.visible = false;
+        if (this.studio.studioFloor) {
+            this.studio.studioFloor.material.side = THREE.DoubleSide;
         }
+        if (this.studio.studioBox) {
+            const mats = this.studio.studioBox.material;
+            if (Array.isArray(mats)) mats.forEach((m) => { if (m) m.fog = true; });
+        }
+        if (this.studio.studioFloor?.material) this.studio.studioFloor.material.fog = true;
 
-        this.buildRoom();
-
-        const floorMat = this.roomGroup.children[0].material;
-        const wallMat = this.roomGroup.children[1].material;
+        const wallMat = this.studio.studioBox.material[0];
+        const floorMat = this.studio.studioFloor.material;
         this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
 
         this.setupLights();
@@ -2580,7 +2501,7 @@ float cylinderSurfH( vec3 v ) {
             this._cameraFocusSmoothed.lerp(this._spawnFocusWorld, a);
         }
         this.updateCamera();
-        const focusTargets = [this.roomGroup, this.shardGroup];
+        const focusTargets = [this.studio?.studioBox, this.studio?.studioFloor, this.shardGroup].filter(Boolean);
         if (this.cylinderInstMesh) focusTargets.push(this.cylinderInstMesh);
         if (this.track9SphereGroup) focusTargets.push(this.track9SphereGroup);
         if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
@@ -3032,28 +2953,6 @@ float cylinderSurfH( vec3 v ) {
             this.cubeRenderTarget.dispose();
             this.cubeRenderTarget = null;
         }
-
-        if (this.roomGroup) {
-            this.scene.remove(this.roomGroup);
-            const seenMats = new Set();
-            const seenTex = new Set();
-            this.roomGroup.traverse((o) => {
-                if (o.geometry) o.geometry.dispose();
-                if (o.material && !seenMats.has(o.material)) {
-                    seenMats.add(o.material);
-                    const m = o.material;
-                    for (const t of [m.map, m.bumpMap, m.normalMap, m.roughnessMap, m.aoMap]) {
-                        if (t && !seenTex.has(t)) {
-                            seenTex.add(t);
-                            t.dispose();
-                        }
-                    }
-                    m.dispose();
-                }
-            });
-            this.roomGroup = null;
-        }
-        this.ceilingMesh = null;
 
         if (this._roomEnvTexture) {
             this._roomEnvTexture.dispose();

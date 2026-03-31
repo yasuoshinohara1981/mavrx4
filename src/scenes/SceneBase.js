@@ -298,9 +298,8 @@ export class SceneBase {
      * initPostProcessingの最後で呼ぶこと
      * @param {number} [intensity=0.35] - グレイン強度
      * @param {boolean} [grayscale=false] - グレースケール化するか
-     * @param {number} [colorNoise=0] - 0〜1、RGB 別乱数の色ノイズ（クロマ粒）
      */
-    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false, colorNoise = 0) {
+    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false) {
         if (!this.useFilmGrain) return;
         if (!this.composer) {
             this.composer = new EffectComposer(this.renderer);
@@ -315,7 +314,7 @@ export class SceneBase {
             this.composer.addPass(this.filmLookPass);
             debugLog('effect', 'FilmLookPass (CA only) added');
         }
-        this.filmPass = new SensorFilmGrainPass(intensity, grayscale, colorNoise);
+        this.filmPass = new SensorFilmGrainPass(intensity, grayscale);
         if (this.bokehPass) {
             this.filmPass.bindBokehPass(this.bokehPass, () => this.useDOF && this.bokehPass && this.bokehPass.enabled);
         }

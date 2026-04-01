@@ -28,7 +28,7 @@ export function applyStudioRoomToneAndBackdrop(
     applyStandardPresentationRenderer(renderer, sceneLightingScale);
     renderer.toneMappingExposure *= 1.82;
     StudioBox.applySceneBackdrop(scene, {
-        backgroundHex: 0x151820,
+        backgroundHex: sceneFogColor,
         fogDensity: sceneFogDensity,
         fogColor: sceneFogColor,
         useFog: useSceneFog
@@ -87,7 +87,10 @@ export function studioBoxOptionsForStudioRoom(sceneLightingScale, roomEnvTexture
         envMapIntensity: 0,
         useFloorTile: false,
         useLights: true,
-        lightIntensity: 8 * L
+        lightIntensity: 8 * L,
+        // 影を濃く見せる：均しの Ambient と四隅 Point のフィルを抑える（キーは ceilingSpotRig の Spot）
+        ambientIntensity: 0.075,
+        fluorescentPointIntensity: 260
     };
 }
 
@@ -103,7 +106,17 @@ export function ceilingSpotRigOptionsForStudioRoom(sceneLightingScale) {
         floorTopY: STUDIO_FLOOR_TOP_Y,
         sceneLightingScale: L,
         envMapIntensity: 0,
-        shadowDebugSpot: { enabled: true }
+        shadowDebugSpot: {
+            enabled: true,
+            // Sharper and more stable contact shadows for large room scale.
+            shadowMapSize: 4096,
+            shadowBias: -0.0002,
+            shadowNormalBias: 0.028,
+            cameraNear: 800,
+            cameraFar: 9000,
+            // キー光を少し上げて明暗差を取る（フィルは studioBox 側で抑制）
+            intensity: 2_750_000
+        }
     };
 }
 

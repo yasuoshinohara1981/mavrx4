@@ -148,9 +148,14 @@ export function updateTrack9SpherePhysics(scene, deltaTime) {
             const ds = sp.driftSeed ?? 0;
             const ampXZ = 24;
             const ampY = 13;
+            const rNow = sp.radiusNow;
+            const floorContactY = scene.floorTopY + 2 + rNow;
+            const floorGap = Math.max(0, sp.position.y - floorContactY);
+            // Fade vertical drift near the floor to avoid micro-bounces and shadow shimmer.
+            const driftYScale = THREE.MathUtils.clamp(floorGap / 120, 0.12, 1.0);
             drift.set(
                 (scene._shardNoise(ds * 0.11, tPhys * 0.52, 0.07) - 0.5) * 2 * ampXZ,
-                (scene._shardNoise(ds * 0.19 + 2.1, tPhys * 0.46, 0.11) - 0.5) * 2 * ampY + 6,
+                ((scene._shardNoise(ds * 0.19 + 2.1, tPhys * 0.46, 0.11) - 0.5) * 2 * ampY + 2) * driftYScale,
                 (scene._shardNoise(ds * 0.13 + 7.1, tPhys * 0.49, 0.09) - 0.5) * 2 * ampXZ
             );
             sp.velocity.addScaledVector(grav, dt);
@@ -163,7 +168,9 @@ export function updateTrack9SpherePhysics(scene, deltaTime) {
             const x1 = scene.roomHalfW - margin - r;
             const z0 = -scene.roomHalfD + margin + r;
             const z1 = scene.roomHalfD - margin - r;
-            const y0 = scene.floorTopY + 90 + r;
+            // Keep a tiny lift to avoid z-fighting, but treat floor contact as true ground touch.
+            const floorContactLift = 2;
+            const y0 = scene.floorTopY + floorContactLift + r;
             const y1 = scene.ceilingY * 0.46 - r;
 
             if (sp.position.x < x0) {
@@ -188,6 +195,16 @@ export function updateTrack9SpherePhysics(scene, deltaTime) {
                 sp.angularVelocity.x += sp.velocity.z * roll * dt;
                 sp.velocity.x *= 0.96;
                 sp.velocity.z *= 0.96;
+                const horizontalSpeed = Math.hypot(sp.velocity.x, sp.velocity.z);
+                if (Math.abs(sp.velocity.y) < 14 && horizontalSpeed < 18) {
+                    sp.velocity.y = 0;
+                    sp.velocity.x *= 0.88;
+                    sp.velocity.z *= 0.88;
+                    if (horizontalSpeed < 2.2) {
+                        sp.velocity.x = 0;
+                        sp.velocity.z = 0;
+                    }
+                }
             } else if (sp.position.y > y1) {
                 sp.position.y = y1;
                 sp.velocity.y *= -0.48;

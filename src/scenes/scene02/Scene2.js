@@ -1,6 +1,6 @@
 /**
- * Scene2: 部屋・ライト・フォグ・ポストは Scene1 と同型（Studio タイル部屋＋平行光シャドウ＋SSAO 等）。
- * メインの飛行オブジェクトのみ独自：岩色チャコール立方体 InstancedMesh・運動モード11種・OSC トラック6。
+ * Scene2: 既定は Studio 部屋＋StudioBox（箱は非表示）＋天井スポット等。voidBlackSoloMode を true にすると真っ黒＋チリ中心の実験モード。
+ * メインの飛行オブジェクト：エメラルド風立方体 InstancedMesh・運動モード11種・OSC トラック6。
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -47,7 +47,8 @@ export class Scene2 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00009;
-        this.sceneFogColor = 0x151820;
+        /** 暖色系フォグ（Scene1 と同系統） */
+        this.sceneFogColor = 0x231a14;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
@@ -79,7 +80,7 @@ export class Scene2 extends SceneBase {
         this.floorTopY = -498;
         this.ceilingY = 5500;
 
-        this.sphereCount = 2500;
+        this.sphereCount = 5000;
         this.spawnRadius = 1200;
         this.instancedMeshManager = null;
         this.particles = [];
@@ -116,6 +117,23 @@ export class Scene2 extends SceneBase {
         this._scale = new THREE.Vector3();
         this._centerSmoothed = new THREE.Vector3(0, 900, 0);
         this._colorTmp = new THREE.Color();
+
+        /**
+         * true: 真っ黒＋チリ強め・部屋非表示・天井スポット無し（実験用）。
+         * false: 従来どおりタイル部屋・フォグ・天井スポット・StudioBox 周りのライト。
+         */
+        this.voidBlackSoloMode = false;
+        /** @type {THREE.Light[] | null} */
+        this._voidBlackSoloLights = null;
+
+        /** true: インスタンス色を力の強さヒートマップ（赤＝強・青〜黒＝弱） */
+        this.useHeatmapParticleColors = true;
+        /** ヒートマップの追従（0〜1、大きいほど素早く変化） */
+        this.heatmapColorSmoothing = 0.45;
+        /** 力の相対値を表示 t に変換する指数（小さいほど暖色域に寄りやすい） */
+        this.heatmapResponseGamma = 0.4;
+        /** 0〜1: 速度を混ぜる（0 で力のみ） */
+        this.heatmapVelocityBlend = 0;
     }
 
     // ヘルパー・ユーティリティの委譲
@@ -175,12 +193,15 @@ export class Scene2 extends SceneBase {
         if (this.initialized) return;
         await super.setup();
         this.useSSAO = false;
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        const voidMode = this.voidBlackSoloMode;
+        this.renderer.shadowMap.enabled = !voidMode;
+        if (!voidMode) {
+            this.renderer.shadowMap.type = THREE.PCFShadowMap;
+        }
         applyStudioRoomToneAndBackdrop(this.renderer, this.scene, this.sceneLightingScale, {
-            useSceneFog: this.useSceneFog,
+            useSceneFog: voidMode ? false : this.useSceneFog,
             sceneFogDensity: this.sceneFogDensity ?? 0.00009,
-            sceneFogColor: this.sceneFogColor
+            sceneFogColor: voidMode ? 0x000000 : this.sceneFogColor
         });
 
         if (this.camera.fov < 35 || this.camera.fov > 50) this.camera.fov = 42;
@@ -195,10 +216,16 @@ export class Scene2 extends SceneBase {
         if (this.studio.studioBox) this.studio.studioBox.visible = false;
 
         this.buildRoom();
-        this.studio.attachCeilingSpotRig(this.roomGroup, { includeCeilingPlane: false, ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale) });
-        const floorMat = this.roomGroup.children[0].material;
-        const wallMat = this.roomGroup.children[1].material;
-        applyStudioRoomFloorWallEnvMaps(wallMat, floorMat);
+        if (this.roomGroup) this.roomGroup.visible = !voidMode;
+
+        if (!voidMode) {
+            this.studio.attachCeilingSpotRig(this.roomGroup, { includeCeilingPlane: false, ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale) });
+        }
+        if (this.roomGroup) {
+            const floorMat = this.roomGroup.children[0].material;
+            const wallMat = this.roomGroup.children[1].material;
+            applyStudioRoomFloorWallEnvMaps(wallMat, floorMat);
+        }
 
         this.setupLights();
         this.setupAirNoiseVolume();
@@ -291,6 +318,13 @@ export class Scene2 extends SceneBase {
 
     dispose() {
         this.initialized = false; this.scene.fog = null;
+        if (this._voidBlackSoloLights) {
+            for (const l of this._voidBlackSoloLights) {
+                this.scene.remove(l);
+                l.dispose?.();
+            }
+            this._voidBlackSoloLights = null;
+        }
         if (this.airNoiseVolume) { this.scene.remove(this.airNoiseVolume); if (this.airNoiseVolume.geometry) this.airNoiseVolume.geometry.dispose(); this.airNoiseVolume = null; }
         if (this.airNoiseMaterial) { this.airNoiseMaterial.dispose(); this.airNoiseMaterial = null; }
         if (this.promoWallFillLight) { this.scene.remove(this.promoWallFillLight); this.promoWallFillLight.dispose(); this.promoWallFillLight = null; }

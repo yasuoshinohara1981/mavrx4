@@ -138,7 +138,8 @@ export class Scene1 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00009;
-        this.sceneFogColor = 0x151820;
+        /** 暖色系フォグ（遠景をやわらかく） */
+        this.sceneFogColor = 0x231a14;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;
@@ -491,7 +492,7 @@ export class Scene1 extends SceneBase {
         await super.setup();
         this.useSSAO = false;
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
         applyStudioRoomToneAndBackdrop(this.renderer, this.scene, this.sceneLightingScale, {
             useSceneFog: this.useSceneFog,
             sceneFogDensity: this.sceneFogDensity ?? 0.00009,
@@ -694,7 +695,7 @@ export class Scene1 extends SceneBase {
 
     initPostProcessing() { setupPostEffectsPipeline(this, {}); }
     onResize() { super.onResize(); resizePostEffectsPasses(this); }
-    render() { this.renderer.setClearColor(0x151820); super.render(); }
+    render() { this.renderer.setClearColor(0x231a14); super.render(); }
 
     dispose() {
         this.initialized = false; this.scene.fog = null;

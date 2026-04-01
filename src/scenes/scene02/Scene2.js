@@ -20,7 +20,7 @@ import {
     applyStudioRoomFloorWallEnvMaps
 } from '../../lib/presentation/index.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { Scene13Particle } from './Scene13Particle.js';
+import { Scene2Particle } from './Scene2Particle.js';
 export class Scene2 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
@@ -86,7 +86,7 @@ export class Scene2 extends SceneBase {
         this.floorTopY = -498;
         this.ceilingY = 5500;
 
-        /** Scene13 同等：インスタンス数 */
+        /** インスタンス数 */
         this.sphereCount = 2500;
         this.spawnRadius = 1200;
         this.instancedMeshManager = null;
@@ -453,7 +453,7 @@ export class Scene2 extends SceneBase {
 
             const scale = new THREE.Vector3(worldR, worldR, worldR);
             const radius = Math.max(scale.x, scale.y, scale.z) * 0.5;
-            const p = new Scene13Particle(x, y, z, radius, scale);
+            const p = new Scene2Particle(x, y, z, radius, scale);
             p.angularVelocity.multiplyScalar(2.0);
             this.particles.push(p);
 

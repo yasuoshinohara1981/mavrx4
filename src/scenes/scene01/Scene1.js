@@ -3,7 +3,7 @@
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
  * 天井＋シャドウ Spot は StudioBox.attachCeilingSpotRig。埋め Spot のみこのシーン内。
- * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）。ポスト・フォグ・大気チリは lib/presentation を参照。
+ * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号。ポスト・フォグ・大気チリは lib/presentation を参照。
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
@@ -25,7 +25,7 @@ import {
     applyStudioRoomFloorWallEnvMaps
 } from '../../lib/presentation/index.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { Scene16Particle } from './Scene16Particle.js';
+import { Scene1Particle } from './Scene1Particle.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
@@ -196,7 +196,7 @@ export class Scene1 extends SceneBase {
         this.floorTopY = -498;
         this.ceilingY = 5500;
 
-        /** Scene16 と同様：OSC のトラック強度（5/6=力, 7=色相系） */
+        /** OSC のトラック強度（5/6=力, 7=色相系） */
         this.trackValues = { 5: 0, 6: 0, 7: 0 };
         this.smoothTrack7Color = 0;
         this.cableHomeY = 550;
@@ -327,7 +327,7 @@ export class Scene1 extends SceneBase {
         this._laserHalfD = this.roomHalfD - 240;
     }
 
-    /** 96小節ループ想定（Scene16 と同系）。actual_tick の差分で歩幅を決める */
+    /** 96小節ループ想定。actual_tick の差分で歩幅を決める */
     static TICK_LOOP = 36864;
     static METERS_PER_TICK_SHARD = 2.45;
     static METERS_PER_TICK_CYLINDER = 2.45;
@@ -588,7 +588,7 @@ float cylinderSurfH( vec3 v ) {
         return null;
     }
 
-    /** Scene16 と同じカメラ距離 */
+    /** カメラ距離（スタジオ部屋向け） */
     setupCameraParticleDistance(cameraParticle) {
         cameraParticle.minDistance = 750;
         cameraParticle.maxDistance = 4850;
@@ -750,7 +750,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     buildRoom() {
-        /** Scene16 / StudioBox デフォルトと同じ canvas タイル（目地・床は赤十字＋番号テキスト） */
+        /** StudioBox デフォルトと同じ canvas タイル（目地・床は赤十字＋番号テキスト） */
         const floorTpl = StudioBox.createFloorTileTextures();
         const wallTpl = StudioBox.createWallTileTextures();
         const L = this.sceneLightingScale ?? 1;
@@ -2067,7 +2067,7 @@ float cylinderSurfH( vec3 v ) {
         this._roomEnvTexture = env.envMapTexture;
     }
 
-    /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
+    /** sceneLightingScale で一括に暗くできる */
     setupLights() {
         this.fillPointLight = null;
         this.pulsePointLight = null;
@@ -2229,7 +2229,7 @@ float cylinderSurfH( vec3 v ) {
 
         this.setupLights();
 
-        this.cableBlobParticle = new Scene16Particle(0, this.cableHomeY, 0);
+        this.cableBlobParticle = new Scene1Particle(0, this.cableHomeY, 0);
         this.cableBlobParticle.maxSpeed = 7.0;
         this.cableBlobParticle.maxForce = 1.5;
         this.cableBlobParticle.friction = 0.015;

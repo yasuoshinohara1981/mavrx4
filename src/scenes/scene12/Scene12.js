@@ -155,20 +155,6 @@ export class Scene12 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        // メインの平行光源（シャドウ用：強度を1.5にアップ）
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(1000, 1500, 1000);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -1500;
-        directionalLight.shadow.camera.right = 1500;
-        directionalLight.shadow.camera.top = 1500;
-        directionalLight.shadow.camera.bottom = -1500;
-        directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 5000;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        this.scene.add(directionalLight);
-
         // 中心光源（強烈な白）
         const pointLight = new THREE.PointLight(0xffffff, 2.5, 2500); 
         pointLight.position.set(0, 200, 0); 

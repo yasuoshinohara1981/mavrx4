@@ -154,18 +154,6 @@ export class Scene15 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(pureWhite, 0.8);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 4.0);
-        directionalLight.position.set(2000, 4000, 2000);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -8000;
-        directionalLight.shadow.camera.right = 8000;
-        directionalLight.shadow.camera.top = 8000;
-        directionalLight.shadow.camera.bottom = -8000;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.bias = -0.0001;
-        this.scene.add(directionalLight);
-
         // ポイントライト
         this.sphereLight = new THREE.PointLight(0xffffff, 0, 5000);
         this.sphereLight.position.set(0, 400, 0);

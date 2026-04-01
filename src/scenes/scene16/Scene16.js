@@ -196,26 +196,6 @@ export class Scene16 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        directionalLight.position.set(2000, 5000, 2000);
-        directionalLight.castShadow = true;
-        
-        // 影の範囲をクリーチャーの周辺に限定
-        const sSize = 4000; 
-        directionalLight.shadow.camera.left = -sSize;
-        directionalLight.shadow.camera.right = sSize;
-        directionalLight.shadow.camera.top = sSize;
-        directionalLight.shadow.camera.bottom = -sSize;
-        directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 10000;
-        
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.radius = 5; 
-        directionalLight.shadow.bias = -0.0005;
-        
-        this.scene.add(directionalLight);
-
         const pointLight = new THREE.PointLight(0xffffff, 1.0, 5000); 
         pointLight.position.set(0, 1000, 0); 
         pointLight.castShadow = false; 

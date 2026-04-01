@@ -241,20 +241,6 @@ export class Scene14 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
-        directionalLight.position.set(2000, 3000, 2000);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -8000;
-        directionalLight.shadow.camera.right = 8000;
-        directionalLight.shadow.camera.top = 8000;
-        directionalLight.shadow.camera.bottom = -8000;
-        directionalLight.shadow.camera.near = 100;
-        directionalLight.shadow.camera.far = 15000;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.bias = -0.0001;
-        this.scene.add(directionalLight);
-
         const pointLight = new THREE.PointLight(0xffffff, 2.5, 5000); 
         pointLight.position.set(0, 500, 0); 
         pointLight.castShadow = true; 

@@ -136,18 +136,6 @@ export class Scene17 extends SceneBase {
         const ambientLight = new THREE.AmbientLight(pureWhite, 0.8); // 0.6 -> 0.8 全体的な底上げ！
         this.scene.add(ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(pureWhite, 4.0); // 2.5 -> 4.0 メインライトをガツンと強化！
-        directionalLight.position.set(2000, 4000, 2000);
-        directionalLight.castShadow = true;
-        directionalLight.shadow.camera.left = -8000;
-        directionalLight.shadow.camera.right = 8000;
-        directionalLight.shadow.camera.top = 8000;
-        directionalLight.shadow.camera.bottom = -8000;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
-        directionalLight.shadow.bias = -0.0001;
-        this.scene.add(directionalLight);
-
         const pointLight = new THREE.PointLight(pureWhite, 3.0, 15000); // 1.5 -> 3.0 ポイントライトも倍増！
         pointLight.decay = 1.0; 
         pointLight.position.set(0, 3000, 0); 

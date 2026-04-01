@@ -1,9 +1,17 @@
 import * as THREE from 'three';
 import { drawGroutLines, drawRedCrossesAndLabels } from './studioBoxGrout.js';
 import { generateLabGrungeTextures } from './LabGrungeTextures.js';
+import { StudioEmissiveCeilingSpotRig } from './StudioEmissiveCeilingSpotRig.js';
+import { StudioFluorescentLamp } from './StudioFluorescentLamp.js';
 
 /**
  * StudioBox: 撮影用スタジオ（白い箱と床）を管理するクラス
+ *
+ * 【ライトまわりの方針】
+ * シーンは `new StudioBox(scene, options)` を基本とし、照明の試作・調整は **StudioBox（＋ StudioEmissiveCeilingSpotRig）側** に寄せる。
+ * 採用できたら各シーン固有の `setupLights` 等は削っていく。シーンはオプションで挙動を選ぶだけに寄せる。
+ * デフォルトで **薄い AmbientLight**（`ambientIntensity` 既定 0.16）を足し、陰影は残したまま全体をほんのり均す。
+ * 四隅の蛍光灯は **{@link StudioFluorescentLamp}**（emissive メッシュ + 同位置の PointLight）。
  */
 export class StudioBox {
     constructor(scene, options = {}) {
@@ -17,6 +25,11 @@ export class StudioBox {
         this.bumpScale = options.bumpScale !== undefined ? options.bumpScale : 5.0; // 0.5 -> 5.0
         this.useFloorTile = options.useFloorTile !== undefined ? options.useFloorTile : true;
         this.useLights = options.useLights !== undefined ? options.useLights : true;
+        /** 全体をほんのり均す（シャドウは残す薄さ）。0 で無効扱い */
+        this.useAmbientLight = options.useAmbientLight !== undefined ? options.useAmbientLight : true;
+        this.ambientIntensity =
+            options.ambientIntensity !== undefined ? options.ambientIntensity : 0.16;
+        this.ambientColor = options.ambientColor !== undefined ? options.ambientColor : this.lightColor;
         
         // 追加パラメータ（既存の挙動を壊さないようにデフォルト値を設定）
         this.envMap = options.envMap || null;
@@ -32,14 +45,44 @@ export class StudioBox {
         this.grungeFloorTexOptions = options.grungeFloorTexOptions || null;
         this.grungeTextures = null;
 
+        /** 蛍光灯の PointLight 用（未指定時は emissive 強度から自動） */
+        this.fluorescentPointIntensity = options.fluorescentPointIntensity;
+        this.fluorescentPointDistance = options.fluorescentPointDistance;
+        this.fluorescentPointDecay = options.fluorescentPointDecay !== undefined ? options.fluorescentPointDecay : 2;
+
         this.studioBox = null;
         this.studioFloor = null;
         this.textures = null;
         this.floorTextures = null; // 床専用テクスチャ
-        this.fluorescentLights = []; // 蛍光灯メッシュ
-        this.pointLights = []; // 蛍光灯用ポイントライト
+        /** @type {import('./StudioFluorescentLamp.js').StudioFluorescentLamp[]} */
+        this.fluorescentLights = [];
+        /** @type {THREE.AmbientLight | null} */
+        this.ambientLight = null;
+        /** @type {import('./StudioEmissiveCeilingSpotRig.js').StudioEmissiveCeilingSpotRig | null} */
+        this.ceilingSpotRig = null;
+        /** オプション: 箱本体の天井は emissive 済みのため、Rig は Spot のみ追加 */
+        this.ceilingSpotRigOption = options.ceilingSpotRig ?? null;
 
         this.setup();
+    }
+
+    /**
+     * カスタム部屋の Group 等に「天井 emissive + オプション Spot」を付与。ライト実験は StudioBox 経由で。
+     * @param {THREE.Object3D} parent 天井メッシュの親（例: Scene21 の roomGroup）
+     * @param {object} options {@link StudioEmissiveCeilingSpotRig} にそのまま渡す。`parent` / `spotParent` はここで上書き
+     * @returns {StudioEmissiveCeilingSpotRig}
+     */
+    attachCeilingSpotRig(parent, options = {}) {
+        if (this.ceilingSpotRig) {
+            this.ceilingSpotRig.dispose();
+            this.ceilingSpotRig = null;
+        }
+        this.ceilingSpotRig = new StudioEmissiveCeilingSpotRig(this.scene, {
+            ...options,
+            parent,
+            spotParent: options.spotParent ?? this.scene
+        });
+        return this.ceilingSpotRig;
     }
 
     setup() {
@@ -202,40 +245,67 @@ export class StudioBox {
             this.scene.add(this.studioFloor);
         }
 
+        if (this.useAmbientLight && this.ambientIntensity > 0) {
+            this.ambientLight = new THREE.AmbientLight(this.ambientColor, this.ambientIntensity);
+            this.scene.add(this.ambientLight);
+        }
+
         // 蛍光灯の作成
         if (this.useLights) {
             this.createFluorescentLights();
         }
+
+        if (this.ceilingSpotRigOption?.enabled) {
+            const boxCy = 500;
+            const ceilingY = boxCy + this.size / 2;
+            const floorTopY = -498;
+            const userSpot = this.ceilingSpotRigOption.spot || {};
+            this.ceilingSpotRig = new StudioEmissiveCeilingSpotRig(this.scene, {
+                includeCeilingPlane: false,
+                parent: this.scene,
+                spotParent: this.scene,
+                ceilingY,
+                floorTopY,
+                sceneLightingScale: this.ceilingSpotRigOption.sceneLightingScale ?? 1,
+                shadowDebugSpot: { enabled: true, ...userSpot }
+            });
+        }
     }
 
     /**
-     * 巨大な蛍光灯を作成（デフォルト：四隅に4本）
+     * 巨大な蛍光灯を作成（デフォルト：四隅に4本）。emissive メッシュ + 同位置の PointLight。
      */
     createFluorescentLights() {
-        const lightHeight = this.size; 
-        const lightRadius = 50; // 10 -> 50 太くする
-        const cornerDist = (this.size / 2) - 100; // 壁際
-        
-        const geometry = new THREE.CylinderGeometry(lightRadius, lightRadius, lightHeight, 8);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: this.lightColor, 
-            emissive: this.lightColor, 
-            emissiveIntensity: this.lightIntensity, 
-            envMapIntensity: 1.0 
-        });
+        const lightHeight = this.size;
+        const lightRadius = 50;
+        const cornerDist = this.size / 2 - 100;
 
         const positions = [
-            [cornerDist, 0, cornerDist], 
-            [-cornerDist, 0, cornerDist], 
-            [cornerDist, 0, -cornerDist], 
+            [cornerDist, 0, cornerDist],
+            [-cornerDist, 0, cornerDist],
+            [cornerDist, 0, -cornerDist],
             [-cornerDist, 0, -cornerDist]
         ];
 
-        positions.forEach(pos => {
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(pos[0], pos[1], pos[2]);
-            this.scene.add(mesh);
-            this.fluorescentLights.push(mesh);
+        const lampOpts = {
+            color: this.lightColor,
+            emissiveIntensity: this.lightIntensity,
+            radius: lightRadius,
+            height: lightHeight,
+            envMapIntensity: 1.0,
+            distance: this.fluorescentPointDistance ?? this.size * 2,
+            decay: this.fluorescentPointDecay
+        };
+        if (this.fluorescentPointIntensity !== undefined) {
+            lampOpts.pointIntensity = this.fluorescentPointIntensity;
+        }
+
+        positions.forEach((pos) => {
+            const lamp = new StudioFluorescentLamp(this.scene, {
+                ...lampOpts,
+                position: { x: pos[0], y: pos[1], z: pos[2] }
+            });
+            this.fluorescentLights.push(lamp);
         });
     }
 
@@ -352,17 +422,16 @@ export class StudioBox {
             if (this.floorTextures.bumpMap) this.floorTextures.bumpMap.dispose();
         }
         this.grungeTextures = null;
-        // 蛍光灯のクリーンアップ
-        this.fluorescentLights.forEach(light => {
-            this.scene.remove(light);
-            if (light.geometry) light.geometry.dispose();
-            if (light.material) light.material.dispose();
-        });
-        this.pointLights.forEach(light => {
-            this.scene.remove(light);
-        });
+        if (this.ambientLight) {
+            this.scene.remove(this.ambientLight);
+            this.ambientLight = null;
+        }
+        this.fluorescentLights.forEach((lamp) => lamp.dispose());
         this.fluorescentLights = [];
-        this.pointLights = [];
+        if (this.ceilingSpotRig) {
+            this.ceilingSpotRig.dispose();
+            this.ceilingSpotRig = null;
+        }
     }
 }
 

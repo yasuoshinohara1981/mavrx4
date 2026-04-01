@@ -2,7 +2,7 @@
  * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
- * 部屋・ライト・カメラは Scene16 と同型（StudioBox の蛍光灯＋半球/環境/平行光/ポイント）
+ * 天井＋シャドウ Spot は StudioBox.attachCeilingSpotRig。埋め Spot のみこのシーン内。
  * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、暗色 FogExp2（Scene22 と同じ）
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
@@ -50,6 +50,12 @@ export class Scene21 extends SceneBase {
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
         this.sceneLightingScale = 0.32;
+        /**
+         * シャドウを一つずつ検証するときの部屋まわりの照明の切り方。
+         * true（推奨・いまの作業）: IBL・天井発光・Studio 蛍光・埋め Spot を外し、シャドウ用 SpotLight 1 本だけ。
+         * false: 上記を全部載せた状態（最終見えの比較・マージ前確認用。作業フローとは別枠）。
+         */
+        this.shadowDebugMinimalRoomLighting = true;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -146,8 +152,8 @@ export class Scene21 extends SceneBase {
         this.useSceneFog = true;
         /** FogExp2 の密度（小さいほど薄い）— 以前 0.00017 より控えめ */
         this.sceneFogDensity = 0.00009;
-        /** Scene22 と同じ：遠景を暗い空気に寄せる */
-        this.sceneFogColor = 0x12161c;
+        /** 既定は {@link THREE.Scene#background} と同系色（遠景が背景に溶ける） */
+        this.sceneFogColor = 0x151820;
         // フォグと併用。コーナーで過暗化しにくいよう minDistance・kernel を控えめに
         this.useSSAO = true;
         this.useFilmGrain = true;
@@ -314,8 +320,6 @@ export class Scene21 extends SceneBase {
         /** 南壁レーザー用スポットの注視点 */
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
-        /** 床・壁に落ちる主シャドウ（スポットはコーン外で弱いので平行光に任せる） */
-        this.mainDirectionalLight = null;
         /** 壁周りレーザースキャン（1 小節＝TICK_LOOP/96 tick で一周） */
         this.laserScanMesh = null;
         this._laserScanMaterial = null;
@@ -811,23 +815,7 @@ float cylinderSurfH( vec3 v ) {
         mkWall(hw * 2, wallH, slab, 0, wallCenterY, -hd - slab * 0.5);
         mkWall(hw * 2, wallH, slab, 0, wallCenterY, hd + slab * 0.5);
 
-        const ceilingGeo = new THREE.PlaneGeometry(hw * 2, hd * 2);
-        ceilingGeo.rotateX(Math.PI / 2);
-        const ceilingMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            side: THREE.DoubleSide,
-            roughness: 0.8,
-            metalness: 0,
-            emissive: 0xffffff,
-            emissiveIntensity: 8.5 * (this.sceneLightingScale ?? 1),
-            envMapIntensity: 1.0,
-            fog: true
-        });
-        this.ceilingMesh = new THREE.Mesh(ceilingGeo, ceilingMat);
-        this.ceilingMesh.position.set(0, ceilingY, 0);
-        this.ceilingMesh.receiveShadow = false;
-        this.ceilingMesh.castShadow = false;
-        this.roomGroup.add(this.ceilingMesh);
+        /** 天井は StudioEmissiveCeilingSpotRig（setup 内で生成） */
 
         this.scene.add(this.roomGroup);
     }
@@ -2246,6 +2234,11 @@ float cylinderSurfH( vec3 v ) {
     setupEnvironment() {
         this.pmremGenerator = new PMREMGenerator(this.renderer);
         this.pmremGenerator.compileEquirectangularShader();
+        if (this.shadowDebugMinimalRoomLighting) {
+            this._roomEnvTexture = null;
+            this.scene.environment = null;
+            return;
+        }
         const envScene = new RoomEnvironment();
         this._roomEnvTexture = this.pmremGenerator.fromScene(envScene, 0.04).texture;
         this.scene.environment = this._roomEnvTexture;
@@ -2254,6 +2247,9 @@ float cylinderSurfH( vec3 v ) {
     /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
     setupLights() {
         const L = this.sceneLightingScale ?? 1;
+        const minimal = this.shadowDebugMinimalRoomLighting;
+        const spotI = minimal ? 0 : 2.0 * L;
+
         this.fillPointLight = null;
         this.pulsePointLight = null;
 
@@ -2261,7 +2257,7 @@ float cylinderSurfH( vec3 v ) {
         this.promoWallLightTarget.position.set(0, 0, 0);
         this.scene.add(this.promoWallLightTarget);
 
-        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 2.0 * L, 26000, Math.PI / 5, 0.32, 1.0);
+        this.promoWallFillLight = new THREE.SpotLight(0xffffff, spotI, 26000, Math.PI / 5, 0.32, 1.0);
         this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
         /** 影は平行光に任せる（スポット＋平行の二重投影で潰れやすい） */
         this.promoWallFillLight.castShadow = false;
@@ -2269,26 +2265,7 @@ float cylinderSurfH( vec3 v ) {
 
         this.scene.add(this.promoWallFillLight);
 
-        /** Scene16 同様：部屋全体を覆う平行光でシャドウマップ1枚。スポットより影が安定 */
-        this.mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 0.95 * L);
-        this.mainDirectionalLight.position.set(4200, 7200, 3200);
-        this.mainDirectionalLight.castShadow = true;
-        {
-            const sh = this.mainDirectionalLight.shadow;
-            sh.mapSize.set(4096, 4096);
-            sh.bias = -0.0004;
-            sh.normalBias = 0.72;
-            const cam = sh.camera;
-            const extent = 6500;
-            cam.left = -extent;
-            cam.right = extent;
-            cam.top = extent;
-            cam.bottom = -extent;
-            cam.near = 120;
-            cam.far = 20000;
-            cam.updateProjectionMatrix();
-        }
-        this.scene.add(this.mainDirectionalLight);
+        /** シャドウ用メイン Spot は StudioBox.ceilingSpotRig */
     }
 
     setupAirNoiseVolume() {
@@ -2376,18 +2353,32 @@ float cylinderSurfH( vec3 v ) {
         if (this.initialized) return;
         await super.setup();
 
+        if (this.shadowDebugMinimalRoomLighting) {
+            /** スポットのみだと SSAO が全体を潰して真っ暗に見える */
+            this.useSSAO = false;
+        }
+
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         const Lexp = this.sceneLightingScale ?? 1;
-        this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
+        let exposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
+        if (this.shadowDebugMinimalRoomLighting) {
+            /** 白飛びしたら 1.6 前後まで下げる */
+            exposure *= 1.82;
+        }
+        this.renderer.toneMappingExposure = exposure;
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        /** フォグ色は sceneFogColor・薄さは sceneFogDensity */
-        this.scene.background = new THREE.Color(0x151820);
+        const sceneBgHex = 0x151820;
+        this.scene.background = new THREE.Color(sceneBgHex);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0x12161c, this.sceneFogDensity ?? 0.00009)
+            ? new THREE.FogExp2(this.sceneFogColor ?? sceneBgHex, this.sceneFogDensity ?? 0.00009)
             : null;
+        if (this.shadowDebugMinimalRoomLighting) {
+            /** 単一スポット時は遠景フォグで壁が真っ黒に潰れるのでオフ */
+            this.scene.fog = null;
+        }
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -2422,20 +2413,39 @@ float cylinderSurfH( vec3 v ) {
 
         this.studio = new StudioBox(this.scene, {
             envMap: this._roomEnvTexture,
-            envMapIntensity: 1.0,
+            envMapIntensity: this.shadowDebugMinimalRoomLighting ? 0 : 1.0,
             useFloorTile: false,
-            lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
+            useLights: true,
+            lightIntensity:
+                (this.shadowDebugMinimalRoomLighting ? 8 : 22) * (this.sceneLightingScale ?? 1)
         });
         if (this.studio.studioBox) {
             this.studio.studioBox.visible = false;
         }
 
         this.buildRoom();
+
+        this.studio.attachCeilingSpotRig(this.roomGroup, {
+            roomHalfW: this.roomHalfW,
+            roomHalfD: this.roomHalfD,
+            ceilingY: this.ceilingY,
+            floorTopY: this.floorTopY,
+            sceneLightingScale: this.sceneLightingScale,
+            envMapIntensity: this.shadowDebugMinimalRoomLighting ? 0 : 1.0,
+            shadowDebugSpot: this.shadowDebugMinimalRoomLighting ? { enabled: true } : null
+        });
+        this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
+
         await this._initWallMatteBlack3DText();
 
         const floorMat = this.roomGroup.children[0].material;
         const wallMat = this.roomGroup.children[1].material;
-        this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
+        const envForRoom = this.shadowDebugMinimalRoomLighting ? null : this.scene.environment;
+        this.applyEnvMapToMaterials(envForRoom, wallMat, floorMat);
+        if (this.shadowDebugMinimalRoomLighting) {
+            wallMat.envMapIntensity = 0;
+            floorMat.envMapIntensity = 0;
+        }
 
         this.setupLights();
 
@@ -2980,16 +2990,13 @@ float cylinderSurfH( vec3 v ) {
             this.track9SphereGroup = null;
         }
 
-        if (this.mainDirectionalLight) {
-            this.scene.remove(this.mainDirectionalLight);
-            this.mainDirectionalLight.dispose();
-            this.mainDirectionalLight = null;
-        }
         if (this.promoWallFillLight) {
             this.scene.remove(this.promoWallFillLight);
             this.promoWallFillLight.dispose();
             this.promoWallFillLight = null;
         }
+        this.ceilingMesh = null;
+
         if (this.promoWallLightTarget) {
             this.scene.remove(this.promoWallLightTarget);
             this.promoWallLightTarget = null;
@@ -3044,7 +3051,6 @@ float cylinderSurfH( vec3 v ) {
             });
             this.roomGroup = null;
         }
-        this.ceilingMesh = null;
 
         if (this._roomEnvTexture) {
             this._roomEnvTexture.dispose();

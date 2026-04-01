@@ -38,8 +38,8 @@ export class Scene22 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00009;
-        /** 遠景を暖かい霞ではなく暗い空気に寄せる */
-        this.sceneFogColor = 0x12161c;
+        /** 既定は背景色に近い（遠景が背景に溶ける） */
+        this.sceneFogColor = 0x151820;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
@@ -57,7 +57,6 @@ export class Scene22 extends SceneBase {
         this.pulsePointLight = null;
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
-        this.mainDirectionalLight = null;
 
         this.airNoiseVolume = null;
         this.airNoiseMaterial = null;
@@ -227,26 +226,6 @@ export class Scene22 extends SceneBase {
         this.promoWallFillLight.target = this.promoWallLightTarget;
 
         this.scene.add(this.promoWallFillLight);
-
-        this.mainDirectionalLight = new THREE.DirectionalLight(0xffffff, 0.95 * L);
-        this.mainDirectionalLight.position.set(4200, 7200, 3200);
-        this.mainDirectionalLight.castShadow = true;
-        {
-            const sh = this.mainDirectionalLight.shadow;
-            sh.mapSize.set(4096, 4096);
-            sh.bias = -0.0004;
-            sh.normalBias = 0.72;
-            const cam = sh.camera;
-            const extent = 6500;
-            cam.left = -extent;
-            cam.right = extent;
-            cam.top = extent;
-            cam.bottom = -extent;
-            cam.near = 120;
-            cam.far = 20000;
-            cam.updateProjectionMatrix();
-        }
-        this.scene.add(this.mainDirectionalLight);
     }
 
     setupAirNoiseVolume() {
@@ -840,9 +819,10 @@ export class Scene22 extends SceneBase {
         this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-        this.scene.background = new THREE.Color(0x151820);
+        const sceneBgHex = 0x151820;
+        this.scene.background = new THREE.Color(sceneBgHex);
         this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? 0x12161c, this.sceneFogDensity ?? 0.00009)
+            ? new THREE.FogExp2(this.sceneFogColor ?? sceneBgHex, this.sceneFogDensity ?? 0.00009)
             : null;
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
@@ -1155,11 +1135,6 @@ export class Scene22 extends SceneBase {
             this.airNoiseMaterial = null;
         }
 
-        if (this.mainDirectionalLight) {
-            this.scene.remove(this.mainDirectionalLight);
-            this.mainDirectionalLight.dispose();
-            this.mainDirectionalLight = null;
-        }
         if (this.promoWallFillLight) {
             this.scene.remove(this.promoWallFillLight);
             this.promoWallFillLight.dispose();

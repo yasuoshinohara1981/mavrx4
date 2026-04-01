@@ -1,5 +1,5 @@
 /**
- * Scene22: 部屋・ライト・フォグ・ポストは Scene21 と同型（Studio タイル部屋＋平行光シャドウ＋SSAO 等）。
+ * Scene2: 部屋・ライト・フォグ・ポストは Scene1 と同型（Studio タイル部屋＋平行光シャドウ＋SSAO 等）。
  * メインの飛行オブジェクトのみ独自：岩色チャコール立方体 InstancedMesh・運動モード11種・OSC トラック6。
  */
 
@@ -20,24 +20,24 @@ import {
     applyStudioRoomFloorWallEnvMaps
 } from '../../lib/presentation/index.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { Scene13Particle } from '../scene13/Scene13Particle.js';
-export class Scene22 extends SceneBase {
+import { Scene13Particle } from './Scene13Particle.js';
+export class Scene2 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | Xenofog';
         this.initialized = false;
-        this.sceneNumber = 22;
-        this.kitNo = 22;
+        this.sceneNumber = 2;
+        this.kitNo = 2;
         this.sharedResourceManager = sharedResourceManager;
 
-        /** Scene21 同型：非表示 StudioBox（蛍光灯メッシュ）＋自前 roomGroup */
+        /** Scene1 同型：非表示 StudioBox（蛍光灯メッシュ）＋自前 roomGroup */
         this.studio = null;
         this.roomGroup = null;
         this.ceilingMesh = null;
         this.pmremGenerator = null;
         this._roomEnvTexture = null;
 
-        /** Scene21 と同じ既定（ライト・床壁の env 係数の基準） */
+        /** Scene1 と同じ既定（ライト・床壁の env 係数の基準） */
         this.sceneLightingScale = 0.32;
         this._roomEnvPresentation = null;
 
@@ -204,7 +204,7 @@ export class Scene22 extends SceneBase {
         this.scene.add(this.roomGroup);
     }
 
-    /** Scene21 と同一 */
+    /** Scene1 と同一 */
     setupLights() {
         this.fillPointLight = null;
         this.pulsePointLight = null;
@@ -958,7 +958,7 @@ export class Scene22 extends SceneBase {
             this.airNoiseMaterial.uniforms.uTime.value = this.time;
         }
 
-        /** Scene21 と同型：固定 DOF（オートフォーカスでピント域が狭く見えるのを防ぐ） */
+        /** Scene1 と同型：固定 DOF（オートフォーカスでピント域が狭く見えるのを防ぐ） */
         const mainInst = this.instancedMeshManager?.getMainMesh();
         const focusTargets = [this.roomGroup, mainInst].filter(Boolean);
         if (this.useAutoFocusDOF) {
@@ -992,7 +992,7 @@ export class Scene22 extends SceneBase {
     }
 
     handleTrackNumber(trackNumber, message) {
-        const tn = Scene22.parseTrackNumber(trackNumber, message);
+        const tn = Scene2.parseTrackNumber(trackNumber, message);
         if (tn !== 6) return;
         const args = message.args || [];
         const v1 = args[1] != null ? Number(args[1]) : NaN;

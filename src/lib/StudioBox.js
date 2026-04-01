@@ -90,7 +90,7 @@ export class StudioBox {
 
     /**
      * カスタム部屋の Group 等に「天井 emissive + オプション Spot」を付与。ライト実験は StudioBox 経由で。
-     * @param {THREE.Object3D} parent 天井メッシュの親（例: Scene21 の roomGroup）
+     * @param {THREE.Object3D} parent 天井メッシュの親（例: Scene1 の roomGroup）
      * @param {object} options {@link StudioEmissiveCeilingSpotRig} にそのまま渡す。`parent` / `spotParent` はここで上書き
      * @returns {StudioEmissiveCeilingSpotRig}
      */

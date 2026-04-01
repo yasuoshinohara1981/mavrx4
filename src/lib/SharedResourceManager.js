@@ -17,69 +17,8 @@ export class SharedResourceManager {
     constructor(renderer) {
         this.renderer = renderer;
         
-        // GPUパーティクルシステムのプール（シーンごとに最大量を定義）
-        this.gpuParticlePools = {
-            // シーン1と3で使用：100万粒 = 1000 x 1000（メモリ不足対策で減らす）
-            scene01: {
-                maxParticles: 1000 * 1000,  // 1,000,000
-                cols: 1000,
-                rows: 1000,
-                baseRadius: 400.0,
-                particleSize: 3.0,
-                placementType: 'sphere',
-                shaderPath: 'scene01',
-                pool: []  // 複数のインスタンスを保持（必要に応じて）
-            },
-            scene03: {
-                maxParticles: 1000 * 1000,  // 1,000,000
-                cols: 1000,
-                rows: 1000,
-                baseRadius: 400.0,
-                particleSize: 3.0,
-                placementType: 'sphere',
-                shaderPath: 'scene03',
-                pool: []
-            },
-            // シーン4で使用：100万粒 = 1000 x 1000（地形）
-            scene04: {
-                maxParticles: 1000 * 1000,  // 1,000,000
-                cols: 1000,
-                rows: 1000,
-                baseRadius: 0.0,  // 使用しない（地形なので）
-                particleSize: 10.0,  // 地形用に大きく
-                placementType: 'terrain',  // terrain
-                shaderPath: 'scene04',
-                initOptions: {
-                    terrainNoiseScale: 0.0001,
-                    terrainNoiseSeed: null,  // シーン側で生成（init()時にランダム生成）
-                    terrainScale: 5.0,
-                    terrainZRange: { min: -100, max: 100 }
-                },
-                pool: []
-            },
-            // シーン9で使用：1万粒 = 100 x 100（リキッドグラス風エフェクト、メタボール効果）
-            scene09: {
-                maxParticles: 100 * 100,  // 10,000粒
-                cols: 100,
-                rows: 100,
-                baseRadius: 200.0,  // 球面上に配置
-                particleSize: 20.0,  // パーティクルサイズ（小さめ、メタボール効果で融合）
-                placementType: 'sphere',  // sphere
-                shaderPath: 'scene09',
-                pool: []
-            },
-            // シーン10で使用：100万粒 = 1000 x 1000（カラビ・ヤウ多様体、メモリ不足対策で減らす）
-            scene10: {
-                maxParticles: 1000 * 1000,  // 1,000,000
-                cols: 1000,
-                rows: 1000,
-                baseRadius: 0.0,  // 使用しない
-                particleSize: 4.0,  // カラビ・ヤウ多様体用
-                placementType: 'grid',  // デフォルト（カラビ・ヤウ多様体は後で初期化）
-                shaderPath: 'scene10',
-                pool: []
-            }
-        };
+        /** GPU パーティクルプール（現行シーンは未使用。必要ならシーン名キーを追加） */
+        this.gpuParticlePools = {};
         
         // CPUパーティクルのプール（必要に応じて追加）
         this.cpuParticlePools = {};
@@ -106,10 +45,7 @@ const startTime = performance.now();
         
         // GPUパーティクルシステムのプールを初期化
         for (const [sceneName, config] of Object.entries(this.gpuParticlePools)) {
-            
-            // 最大量のGPUパーティクルシステムを作成
-            const initOptions = { ...config.initOptions };  // コピーを作成
-            // scene04固有：terrainNoiseSeedがnullの場合はランダム生成（シーン固有の処理だが、初期化時に必要）
+            const initOptions = { ...config.initOptions };
             if (sceneName === 'scene04' && !initOptions.terrainNoiseSeed) {
                 initOptions.terrainNoiseSeed = Math.random() * 10000.0;
             }

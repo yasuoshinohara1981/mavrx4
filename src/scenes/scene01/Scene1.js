@@ -1,5 +1,5 @@
 /**
- * Scene21: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
+ * Scene1: コンクリート空間（床＋壁＋StudioBox 相当の天井発光）
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
  * 天井＋シャドウ Spot は StudioBox.attachCeilingSpotRig。埋め Spot のみこのシーン内。
@@ -25,18 +25,18 @@ import {
     applyStudioRoomFloorWallEnvMaps
 } from '../../lib/presentation/index.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { Scene16Particle } from '../scene16/Scene16Particle.js';
+import { Scene16Particle } from './Scene16Particle.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
 
-export class Scene21 extends SceneBase {
+export class Scene1 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
         this.title = 'mathym | Xenomist';
         this.initialized = false;
-        this.sceneNumber = 21;
-        this.kitNo = 21;
+        this.sceneNumber = 1;
+        this.kitNo = 1;
         this.sharedResourceManager = sharedResourceManager;
 
         this.studio = null;
@@ -167,7 +167,7 @@ export class Scene21 extends SceneBase {
         this.ssaoNearMinDistance = 0.018;
         this.ssaoNearMaxDistance = 0.165;
         this.ssaoFarAttenuation = 0.62;
-        // Scene21 は固定DOFを優先（オートフォーカスで効きが薄く見えるのを防ぐ）
+        // Scene1 は固定DOFを優先（オートフォーカスで効きが薄く見えるのを防ぐ）
         this.useAutoFocusDOF = false;
         /** composer では最後に必須：renderer.toneMapping / 出力色空間を画面に適用 */
         this.outputPass = null;
@@ -513,7 +513,7 @@ float cylinderSurfH( vec3 v ) {
         const n = Math.floor(Number.isFinite(nowTick) ? nowTick : 0);
         if (prevTick === null || prevTick === undefined) return 1;
         let d = n - Math.floor(prevTick);
-        const loop = Scene21.TICK_LOOP;
+        const loop = Scene1.TICK_LOOP;
         if (d < -loop * 0.5) d += loop;
         if (d > loop * 0.5) d -= loop;
         if (d <= 0) return 1.12;
@@ -1244,10 +1244,10 @@ float cylinderSurfH( vec3 v ) {
             opacity: 1,
             fog: true
         });
-        Scene21._applyInstanceOpacityShader(this._metalShardMaterial);
+        Scene1._applyInstanceOpacityShader(this._metalShardMaterial);
 
         const shardGeo = new THREE.TetrahedronGeometry(1, 0);
-        this._shardOpacityAttr = Scene21._attachInstanceOpacityAttribute(shardGeo, this.maxShards);
+        this._shardOpacityAttr = Scene1._attachInstanceOpacityAttribute(shardGeo, this.maxShards);
         this.shardInstMesh = new THREE.InstancedMesh(shardGeo, this._metalShardMaterial, this.maxShards);
         this.shardInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.shardInstMesh.frustumCulled = false;
@@ -1282,10 +1282,10 @@ float cylinderSurfH( vec3 v ) {
             fog: true,
             opacity: 1
         });
-        Scene21._applyRedCylinderShader(this._redCylinderMaterial);
+        Scene1._applyRedCylinderShader(this._redCylinderMaterial);
 
         const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 28, 6);
-        this._cylinderOpacityAttr = Scene21._attachInstanceOpacityAttribute(cylGeo, this.maxCylinders);
+        this._cylinderOpacityAttr = Scene1._attachInstanceOpacityAttribute(cylGeo, this.maxCylinders);
         this.cylinderInstMesh = new THREE.InstancedMesh(cylGeo, this._redCylinderMaterial, this.maxCylinders);
         this.cylinderInstMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.cylinderInstMesh.frustumCulled = false;
@@ -2410,7 +2410,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     _laserMeasurePhase() {
-        const tpm = Scene21.TICK_LOOP / 96;
+        const tpm = Scene1.TICK_LOOP / 96;
         if (this.actualTick != null && Number.isFinite(Number(this.actualTick))) {
             const t = Number(this.actualTick);
             const mod = ((Math.floor(t) % tpm) + tpm) % tpm;
@@ -2474,7 +2474,7 @@ float cylinderSurfH( vec3 v ) {
     }
 
     handleTrackNumber(trackNumber, message) {
-        const tn = Scene21.parseTrackNumber(trackNumber, message);
+        const tn = Scene1.parseTrackNumber(trackNumber, message);
         if (tn === null) return;
 
         const args = message.args || [];

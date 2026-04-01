@@ -7,9 +7,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { attachDepthOfField, attachFilmGrainPass } from './DepthOfFieldAndGrain.js';
 
 /**
- * Scene21/22 と同じレンダラー設定（ACES + 露出 + sRGB）。EffectComposer を使うシーンでは必須。
+ * Scene1/2 と同じレンダラー設定（ACES + 露出 + sRGB）。EffectComposer を使うシーンでは必須。
  * @param {import('three').WebGLRenderer} renderer
- * @param {number} [sceneLightingScale=0.32] Scene21 の `sceneLightingScale` に合わせる（未指定は 21/22 既定）
+ * @param {number} [sceneLightingScale=0.32] Scene1 の `sceneLightingScale` に合わせる（未指定は 1/2 既定）
  */
 export function applyStandardPresentationRenderer(renderer, sceneLightingScale = 0.32) {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;

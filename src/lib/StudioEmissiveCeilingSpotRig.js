@@ -4,7 +4,7 @@ import * as THREE from 'three';
  * 天井 emissive + オプション Spot。シーンからは **StudioBox**（`ceilingSpotRig` / `attachCeilingSpotRig`）経由で使うのを推奨。
  */
 
-/** Scene21 調整済みのデフォルト（必要なら options で上書き） */
+/** Studio 部屋用に調整済みのデフォルト（必要なら options で上書き） */
 const DEFAULT_SHADOW_DEBUG_SPOT = {
     intensity: 2_350_000,
     distance: 24_000,

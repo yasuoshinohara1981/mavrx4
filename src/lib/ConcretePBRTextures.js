@@ -1,5 +1,5 @@
 /**
- * Scene21 床と同系のプロシージャル PBR（albedo / normal / roughness / ao）。
+ * Scene1 床と同系のプロシージャル PBR（albedo / normal / roughness / ao）。
  * オプションで目地・赤十字オーバーレイを省略（ケーブル等に流用する場合）。
  */
 import * as THREE from 'three';

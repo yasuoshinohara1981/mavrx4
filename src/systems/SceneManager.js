@@ -4,33 +4,15 @@
  */
 
 import { SceneBase } from '../scenes/SceneBase.js';
-import { Scene01 } from '../scenes/scene01/Scene01.js';
-import { Scene02 } from '../scenes/scene02/Scene02.js';
-import { Scene03 } from '../scenes/scene03/Scene03.js';
-import { Scene04 } from '../scenes/scene04/Scene04.js';
-import { Scene05 } from '../scenes/scene05/Scene05.js';
-import { Scene06 } from '../scenes/scene06/Scene06.js';
-import { Scene07 } from '../scenes/scene07/Scene07.js';
-import { Scene08 } from '../scenes/scene08/Scene08.js';
-import { Scene09 } from '../scenes/scene09/Scene09.js';
-import { Scene10 } from '../scenes/scene10/Scene10.js';
-import { Scene11 } from '../scenes/scene11/Scene11.js';
-import { Scene12 } from '../scenes/scene12/Scene12.js';
-import { Scene13 } from '../scenes/scene13/Scene13.js';
-import { Scene14 } from '../scenes/scene14/Scene14.js';
-import { Scene15 } from '../scenes/scene15/Scene15.js';
-import { Scene16 } from '../scenes/scene16/Scene16.js';
-import { Scene17 } from '../scenes/scene17/Scene17.js';
-import { Scene18 } from '../scenes/scene18/Scene18.js';
-import { Scene19 } from '../scenes/scene19/Scene19.js';
-import { Scene20 } from '../scenes/scene20/Scene20.js';
-import { Scene21 } from '../scenes/scene21/Scene21.js';
-import { Scene22 } from '../scenes/scene22/Scene22.js';
+import { Scene1 } from '../scenes/scene01/Scene1.js';
+import { Scene2 } from '../scenes/scene02/Scene2.js';
 
-/** シーンバンク数（[]で切替）。10バンク × 10スロット = 100シーンまでUI上指定可能 */
-export const SCENE_BANK_COUNT = 10;
-/** 最大シーンスロット数（0〜99） */
-export const MAX_SCENE_SLOTS = SCENE_BANK_COUNT * 10;
+/** 登録シーン数（Scene1, Scene2 のみ） */
+export const SCENE_COUNT = 2;
+/** シーンバンク数（UI 互換：[] でバンク切替。実質シーンは 2 のみ） */
+export const SCENE_BANK_COUNT = 1;
+/** 最大シーンスロット番号（0 始まりインデックスの上限） */
+export const MAX_SCENE_SLOTS = SCENE_COUNT;
 
 export class SceneManager {
     constructor(renderer, camera, sharedResourceManager = null, options = {}) {
@@ -40,291 +22,164 @@ export class SceneManager {
         this.scenes = [];
         this.currentSceneIndex = 0;
         this.onSceneChange = null;
-        
-        // 開発モード/ライブモードの設定
+
         this.isDevelopmentMode = options.isDevelopmentMode || false;
-        
-        // デフォルトシーンのインデックス（ハードコーディング、Scene01 = 0）
+
         this.defaultSceneIndex = options.defaultSceneIndex !== undefined ? options.defaultSceneIndex : 0;
-        
-        // HUDの状態をグローバルに保持（シーン切り替えに関係なく保持）
+
         this.globalShowHUD = true;
-        // HUD横位置モード: 0=正方形(中央), 1=16:9(左), 2=9:16(右), 3=非表示
         this.globalHudPositionMode = 0;
-        
-        // 選択されたキット番号（OSCの/kit/メッセージで受け取る値）
+
         this.selectedKitNo = 0;
-        
-        /** Ctrl+数字のシーンバンク（0始まり）。バンク0=Scene1〜10、1=11〜20… */
+
         this.sceneBankIndex = 0;
-        
-        // シーンを初期化
+
         this.initScenes();
     }
-    
-    /**
-     * シーンを作成する（遅延ロード用）
-     */
+
     createScene(index) {
         if (this.scenes[index]) {
-            // 既に作成されている場合は何もしない
             return this.scenes[index];
         }
-        
+
         let scene = null;
         switch (index) {
             case 0:
-                scene = new Scene01(this.renderer, this.camera, this.sharedResourceManager);
+                scene = new Scene1(this.renderer, this.camera, this.sharedResourceManager);
                 break;
             case 1:
-                scene = new Scene02(this.renderer, this.camera);
-                break;
-            case 2:
-                scene = new Scene03(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 3:
-                scene = new Scene04(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 4:
-                scene = new Scene05(this.renderer, this.camera);
-                break;
-            case 5:
-                scene = new Scene06(this.renderer, this.camera);
-                break;
-            case 6:
-                scene = new Scene07(this.renderer, this.camera);
-                break;
-            case 7:
-                scene = new Scene08(this.renderer, this.camera);
-                break;
-            case 8:
-                scene = new Scene09(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 9:
-                scene = new Scene10(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 10:
-                scene = new Scene11(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 11:
-                scene = new Scene12(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 12:
-                scene = new Scene13(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 13:
-                scene = new Scene14(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 14:
-                scene = new Scene15(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 15:
-                scene = new Scene16(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 16:
-                scene = new Scene17(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 17:
-                scene = new Scene18(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 18:
-                scene = new Scene19(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 19:
-                scene = new Scene20(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 20:
-                scene = new Scene21(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 21:
-                scene = new Scene22(this.renderer, this.camera, this.sharedResourceManager);
+                scene = new Scene2(this.renderer, this.camera, this.sharedResourceManager);
                 break;
             default:
                 console.warn(`無効なシーンインデックス: ${index}`);
                 return null;
         }
-        
+
         if (scene) {
             this.scenes[index] = scene;
-}
-        
+        }
+
         return scene;
     }
-    
+
     initScenes() {
         if (this.isDevelopmentMode) {
-            // 開発モード: デフォルトシーンのみ読み込み
-this.createScene(this.defaultSceneIndex);
+            this.createScene(this.defaultSceneIndex);
             this.currentSceneIndex = this.defaultSceneIndex;
         } else {
-            // ライブモード: 全てのシーンをプリロード
-// シーンを追加（Processingと同じ順序）
-            // シーン1と3は共有リソースマネージャーを使用
-            this.scenes.push(new Scene01(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene02(this.renderer, this.camera));
-            this.scenes.push(new Scene03(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene04(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene05(this.renderer, this.camera));
-            this.scenes.push(new Scene06(this.renderer, this.camera));
-            this.scenes.push(new Scene07(this.renderer, this.camera));
-            this.scenes.push(new Scene08(this.renderer, this.camera));
-            this.scenes.push(new Scene09(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene10(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene11(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene12(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene13(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene14(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene15(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene16(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene17(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene18(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene19(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene20(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene21(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene22(this.renderer, this.camera, this.sharedResourceManager));
-            
-            // デフォルトシーンに設定
+            this.scenes.push(new Scene1(this.renderer, this.camera, this.sharedResourceManager));
+            this.scenes.push(new Scene2(this.renderer, this.camera, this.sharedResourceManager));
+
             this.currentSceneIndex = this.defaultSceneIndex;
             this.sceneBankIndex = Math.floor(this.currentSceneIndex / 10);
         }
-        
-        // デフォルトシーンを設定（非同期）
+
         if (this.scenes[this.currentSceneIndex]) {
-            // デフォルトシーンにインデックスを設定
             this.scenes[this.currentSceneIndex].sceneIndex = this.currentSceneIndex;
             this.sceneBankIndex = Math.floor(this.currentSceneIndex / 10);
             this.scenes[this.currentSceneIndex].sceneBankIndex = this.sceneBankIndex;
             this.scenes[this.currentSceneIndex].totalSceneCount = this.scenes.length;
             this.scenes[this.currentSceneIndex].maxSceneSlots = MAX_SCENE_SLOTS;
-            this.scenes[this.currentSceneIndex].setup().catch(err => {
+            this.scenes[this.currentSceneIndex].setup().catch((err) => {
                 console.error('シーンのセットアップエラー:', err);
             });
         }
     }
-    
+
     switchScene(index) {
         if (index < 0 || index >= MAX_SCENE_SLOTS) {
             console.warn(`シーンインデックス ${index} は 0〜${MAX_SCENE_SLOTS - 1} の範囲外です`);
             return;
         }
-        // 開発モードの場合、まだ作成されていないシーンは遅延ロード
         if (!this.scenes[index]) {
             if (this.isDevelopmentMode) {
-this.createScene(index);
+                this.createScene(index);
             } else {
-                // ライブモードでシーンが存在しない場合はエラー
                 console.warn(`シーンインデックス ${index} は無効です`);
                 return;
             }
         }
-        
-        // インデックスの範囲チェック（遅延ロード後）
+
         if (index < 0 || !this.scenes[index]) {
             console.warn(`シーンインデックス ${index} は無効です`);
             return;
         }
-        
-        // 同じシーンへの切り替えは無視
+
         if (index === this.currentSceneIndex && this.scenes[index]) {
-return;
+            return;
         }
-        
+
         try {
-            // 現在のシーンを非アクティブ化（全てのシーンで同じ処理）
-        if (this.scenes[this.currentSceneIndex]) {
-            const oldScene = this.scenes[this.currentSceneIndex];
-            
-                // シーン固有の要素をクリーンアップ（ミサイル、テキスト、Canvasなど）
+            if (this.scenes[this.currentSceneIndex]) {
+                const oldScene = this.scenes[this.currentSceneIndex];
+
                 if (oldScene.cleanupSceneSpecificElements) {
                     oldScene.cleanupSceneSpecificElements();
                 } else if (oldScene.dispose) {
-                    // cleanupSceneSpecificElementsがなければ、dispose()を呼ぶ（GPUパーティクル以外をクリーンアップ）
-                oldScene.dispose();
-            }
-            
-                // 共有リソースを使っている場合は非アクティブ化のみ（メモリ上には保持）
+                    oldScene.dispose();
+                }
+
                 if (oldScene.setResourceActive) {
                     oldScene.setResourceActive(false);
                 }
-}
+            }
         } catch (err) {
             console.error('シーン切り替え時のクリーンアップエラー:', err);
-            // エラーが発生してもシーン切り替えは続行
         }
-        
-        // シーンを切り替え
+
         this.currentSceneIndex = index;
         this.sceneBankIndex = Math.floor(index / 10);
         const newScene = this.scenes[this.currentSceneIndex];
-        
+
         if (newScene) {
-            // シーンにインデックスを設定（HUD表示用）
             newScene.sceneIndex = index;
             newScene.sceneBankIndex = this.sceneBankIndex;
             newScene.totalSceneCount = this.scenes.length;
             newScene.maxSceneSlots = MAX_SCENE_SLOTS;
-            
-            // HUDの状態をグローバル状態に合わせる（シーン切り替え時）
+
             newScene.showHUD = this.globalShowHUD;
             newScene.hudPositionMode = this.globalHudPositionMode;
-            
-            // 共有リソースを使っている場合は即座にアクティブ化（表示を開始）
-            // setup()は非同期で実行されるため、ブロッキングしない
+
             if (newScene.setResourceActive) {
                 newScene.setResourceActive(true);
             }
-            
-            // 全てのシーンで同じ処理フロー（setupは軽量に保つ、非同期で実行）
-            // setup()を非同期で実行し、完了後に後処理を実行
+
             requestAnimationFrame(() => {
-                newScene.setup().catch(err => {
-                    console.error('シーンのセットアップエラー:', err);
-                }).then(() => {
-                    // HUDの状態を再度設定（setup()後に確実に適用）
-                    newScene.showHUD = this.globalShowHUD;
-                    newScene.hudPositionMode = this.globalHudPositionMode;
-                    
-                    // コールバックを呼び出し
-                    if (this.onSceneChange) {
-                        this.onSceneChange(newScene.title || `Scene ${index + 1}`);
-                    }
-// テクスチャのリセット処理は呼ばない（前のシーンの状態を保持）
-                    // シーン固有の後処理を実行（非同期で実行）
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            // シーン4の場合は、初期色を再計算
-                            // if (index === 3 && newScene.updateInitialColors) {
-                            //     newScene.updateInitialColors();
-                            // }
-                            // シーン10の場合は、初期色を再計算
-                            if (index === 9 && newScene.updateInitialColors) {
-                                newScene.updateInitialColors();
-                            }
-                        });
+                newScene
+                    .setup()
+                    .catch((err) => {
+                        console.error('シーンのセットアップエラー:', err);
+                    })
+                    .then(() => {
+                        newScene.showHUD = this.globalShowHUD;
+                        newScene.hudPositionMode = this.globalHudPositionMode;
+
+                        if (this.onSceneChange) {
+                            this.onSceneChange(newScene.title || `Scene ${index + 1}`);
+                        }
+                    })
+                    .catch((err) => {
+                        console.error('シーン切り替えエラー:', err);
                     });
-                }).catch(err => {
-                    console.error('シーン切り替えエラー:', err);
-                });
             });
         }
     }
-    
+
     update(deltaTime) {
         const scene = this.scenes[this.currentSceneIndex];
         if (scene) {
             scene.update(deltaTime);
         }
     }
-    
+
     render() {
         const scene = this.scenes[this.currentSceneIndex];
         if (scene) {
             scene.render();
         }
     }
-    
+
     handleOSC(message) {
-        // /kit/メッセージを処理（シーン切り替えを伴うため、SceneManagerで処理）
         if (message.address === '/kit/' || message.address === '/kit') {
             const args = message.args || [];
             if (args.length > 0) {
@@ -332,57 +187,42 @@ return;
                 if (!isNaN(kitValue)) {
                     const kitNo = Math.floor(kitValue);
                     this.selectedKitNo = kitNo;
-// 該当するkitNoを持つシーンを探して切り替え
                     this.switchSceneByKitNo(kitNo);
                 }
             }
-            return;  // 処理済み（シーン切り替えが発生するため、現在のシーンのhandleOSCは呼ばない）
+            return;
         }
-        
-        // その他のOSCメッセージは現在のシーンに転送
+
         const scene = this.scenes[this.currentSceneIndex];
         if (scene) {
             scene.handleOSC(message);
         }
     }
-    
-    /**
-     * キット番号でシーンを切り替え
-     * @param {number} kitNo - キット番号
-     */
+
     switchSceneByKitNo(kitNo) {
-        // 全シーンを確認して、該当するkitNoを持つシーンを探す
         for (let i = 0; i < this.scenes.length; i++) {
             const scene = this.scenes[i];
             if (scene && scene.kitNo === kitNo) {
-this.switchScene(i);
+                this.switchScene(i);
                 return;
             }
         }
-        
-        // 該当するシーンが見つからない場合
+
         console.warn(`[SceneManager] Scene with kitNo ${kitNo} not found`);
     }
-    
+
     onResize() {
         const scene = this.scenes[this.currentSceneIndex];
         if (scene && scene.onResize) {
             scene.onResize();
         }
     }
-    
-    /**
-     * 現在のシーンを取得
-     */
+
     getCurrentScene() {
         return this.scenes[this.currentSceneIndex] || null;
     }
-    
-    /**
-     * シーンバンクの最大インデックス（0始まり）。常に 9（10バンク）まで [] で移動可能。
-     */
+
     getMaxSceneBankIndex() {
         return SCENE_BANK_COUNT - 1;
     }
 }
-

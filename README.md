@@ -83,9 +83,8 @@ mavrx4/
 │   ├── main.js             # エントリーポイント
 │   ├── scenes/
 │   │   ├── SceneBase.js    # シーンの基底クラス
-│   │   ├── SceneTemplate.js # 新規シーン用テンプレート
-│   │   ├── scene01/ 〜 scene17/ # 各シーン関連ファイル
-│   │   └── ...
+│   │   ├── scene01/Scene1.js  # コンクリート部屋（旧 Scene21）
+│   │   └── scene02/Scene2.js  # 同型部屋＋インスタンス立方体（旧 Scene22）
 │   ├── systems/
 │   │   ├── OSCManager.js   # OSC通信管理
 │   │   └── SceneManager.js # シーン管理
@@ -96,10 +95,8 @@ mavrx4/
 │       ├── HUD.js
 │       └── ...
 └── public/
-    └── shaders/            # GLSLシェーダー
-        ├── common/         # 共通シェーダー
-        ├── scene01/ 〜 scene17/ # 各シーン専用シェーダー
-        └── ...
+    └── shaders/            # GLSLシェーダー（共通のみ。GPU パーティクル用シーンシェーダーは撤去済み）
+        └── common/
 ```
 
 ## 🎮 使い方
@@ -114,18 +111,11 @@ mavrx4/
 
 #### シーン切り替え（Ctrl + 数字）
 
-起動時のデフォルトは `src/main.js` の `DEFAULT_SCENE_INDEX`（現在は Scene21）。
+起動時のデフォルトは `src/main.js` の `DEFAULT_SCENE_INDEX`（現在は 0 = Scene1）。
 
-- **Ctrl + 1**: Scene21
-- **Ctrl + 2**: Scene22（未実装なら無効）
-- **Ctrl + 3**: Scene23（同上）
-- **Ctrl + 4**: Scene24（同上）
-- **Ctrl + 5**: Scene25（同上）
-- **Ctrl + 6**: Scene26（同上）
-- **Ctrl + 7**: Scene27（同上）
-- **Ctrl + 8**: Scene28（同上）
-- **Ctrl + 9**: Scene29（同上）
-- **Ctrl + 0**: Scene20
+- **Ctrl + 1**: Scene1（index 0）
+- **Ctrl + 2**: Scene2（index 1）
+- **Ctrl + 3 以降**: 登録シーンなし（無効）
 
 #### エフェクト・トラック処理（数字キー単体）
 - **0**: トラック10処理
@@ -164,22 +154,16 @@ mavrx4/
 
 ## 🎨 シーン実装状況
 
-- **Scene01**: 爆発とミサイルのパーティクルシステム
-- **Scene02**: 接続線と球体のネットワーク
-- **Scene03**: レーザースキャンとグラデーション背景
-- **Scene04**: 大規模なTerrain表示 (1000x1000)
-- **Scene07**: インスタンス化されたビルディング群
-- **Scene08**: GPUによる布（Cloth）シミュレーション
-- **Scene10**: カラビ・ヤウ多様体の可視化
-- **Scene11-17**: 最新の追加シーン（パーティクル、幾何学エフェクト等）
+- **Scene1** (`scene01`): コンクリート部屋・金属片／シリンダ等（旧 Scene21）
+- **Scene2** (`scene02`): 同型の部屋・岩色立方体 InstancedMesh（旧 Scene22）
 
 ## 🔧 開発ガイド
 
 ### 新しいシーンを追加する場合
 
-1. `src/scenes/SceneTemplate.js` を参考に `src/scenes/sceneXX/SceneXX.js` を作成します。
-2. `src/systems/SceneManager.js` で新しいシーンをインポートし、`createScene` または `initScenes` に追加します。
-3. 必要に応じて `public/shaders/sceneXX/` にシェーダーを配置します。
+1. `src/scenes/scene01/Scene1.js` など既存シーンを参考に `sceneXX/SceneXX.js` を作成します。
+2. `src/systems/SceneManager.js` の `SCENE_COUNT`・`createScene`・`initScenes` を更新します。
+3. GPU パーティクルを使う場合は `SharedResourceManager` の `gpuParticlePools` と `public/shaders/` を追加します。
 
 ### 共有リソースの利用
 

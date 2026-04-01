@@ -17,8 +17,8 @@ import { SharedResourceManager } from './lib/SharedResourceManager.js';
 // false: ライブモード（全てのシーンをプリロード）
 const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
 
-// デフォルトシーンのインデックス（0 = Scene01, 1 = Scene02, ...）
-const DEFAULT_SCENE_INDEX = 20;  // Scene21（配列0始まりで index 20）
+// デフォルトシーンのインデックス（0 = Scene1, 1 = Scene2）
+const DEFAULT_SCENE_INDEX = 0;
 
 // ============================================
 // 初期化
@@ -278,7 +278,7 @@ function handleKeyDown(e) {
             e.preventDefault();
             const slot = e.key === '0' ? 9 : (parseInt(e.key, 10) - 1);
             const sceneIndex = sceneManager.sceneBankIndex * 10 + slot;
-            if (sceneIndex >= 0 && sceneIndex < 100 && sceneManager.scenes[sceneIndex]) {
+            if (sceneIndex >= 0 && sceneIndex < sceneManager.scenes.length && sceneManager.scenes[sceneIndex]) {
                 sceneManager.switchScene(sceneIndex);
             } else {
                 console.warn(`[Scene] 無効なスロット: bank=${sceneManager.sceneBankIndex} key=${e.key} → index=${sceneIndex}`);

@@ -5,14 +5,20 @@
 
 import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
-import { PMREMGenerator } from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { StudioBox } from '../../lib/StudioBox.js';
+import {
+    StudioBox,
+    setupPostEffectsPipeline,
+    updateSsaoDistanceAttenuation,
+    resizePostEffectsPasses,
+    disposePresentationOutputPass,
+    applyStudioRoomToneAndBackdrop,
+    setupStudioRoomEnvironmentMap,
+    disposeStudioRoomEnvironmentMap,
+    studioBoxOptionsForStudioRoom,
+    ceilingSpotRigOptionsForStudioRoom,
+    setupStudioRoomPromoWallFillLight,
+    applyStudioRoomFloorWallEnvMaps
+} from '../../lib/presentation/index.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene13Particle } from '../scene13/Scene13Particle.js';
 export class Scene22 extends SceneBase {
@@ -33,6 +39,7 @@ export class Scene22 extends SceneBase {
 
         /** Scene21 と同じ既定（ライト・床壁の env 係数の基準） */
         this.sceneLightingScale = 0.32;
+        this._roomEnvPresentation = null;
 
         this.useDOF = true;
         this.useBloom = true;
@@ -120,19 +127,6 @@ export class Scene22 extends SceneBase {
         this._colorTmp = new THREE.Color();
     }
 
-    setupEnvironment() {
-        this.pmremGenerator = new PMREMGenerator(this.renderer);
-        this.pmremGenerator.compileEquirectangularShader();
-        const envScene = new RoomEnvironment();
-        this._roomEnvTexture = this.pmremGenerator.fromScene(envScene, 0.04).texture;
-        this.scene.environment = this._roomEnvTexture;
-    }
-
-    applyEnvMapToMaterials(envMap, wallMat, floorMat) {
-        wallMat.envMap = envMap;
-        floorMat.envMap = envMap;
-    }
-
     buildRoom() {
         const floorTpl = StudioBox.createFloorTileTextures();
         const wallTpl = StudioBox.createWallTileTextures();
@@ -210,22 +204,16 @@ export class Scene22 extends SceneBase {
         this.scene.add(this.roomGroup);
     }
 
-    /** Scene21 と同型 */
+    /** Scene21 と同一 */
     setupLights() {
-        const L = this.sceneLightingScale ?? 1;
         this.fillPointLight = null;
         this.pulsePointLight = null;
 
-        this.promoWallLightTarget = new THREE.Object3D();
-        this.promoWallLightTarget.position.set(0, 0, 0);
-        this.scene.add(this.promoWallLightTarget);
-
-        this.promoWallFillLight = new THREE.SpotLight(0xffffff, 2.0 * L, 26000, Math.PI / 5, 0.32, 1.0);
-        this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
-        this.promoWallFillLight.castShadow = false;
-        this.promoWallFillLight.target = this.promoWallLightTarget;
-
-        this.scene.add(this.promoWallFillLight);
+        const { promoWallLightTarget, promoWallFillLight } = setupStudioRoomPromoWallFillLight(this.scene, {
+            ceilingY: this.ceilingY
+        });
+        this.promoWallLightTarget = promoWallLightTarget;
+        this.promoWallFillLight = promoWallFillLight;
     }
 
     setupAirNoiseVolume() {
@@ -448,10 +436,6 @@ export class Scene22 extends SceneBase {
         const mainMesh = this.instancedMeshManager.getMainMesh();
         mainMesh.castShadow = true;
         mainMesh.receiveShadow = true;
-        mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
-            depthPacking: THREE.RGBADepthPacking,
-            alphaTest: 0.5
-        });
 
         for (let i = 0; i < n; i++) {
             const theta = Math.random() * Math.PI * 2;
@@ -812,18 +796,15 @@ export class Scene22 extends SceneBase {
         if (this.initialized) return;
         await super.setup();
 
+        this.useSSAO = false;
+
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        const Lexp = this.sceneLightingScale ?? 1;
-        this.renderer.toneMappingExposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
-        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-        const sceneBgHex = 0x151820;
-        this.scene.background = new THREE.Color(sceneBgHex);
-        this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? sceneBgHex, this.sceneFogDensity ?? 0.00009)
-            : null;
+        applyStudioRoomToneAndBackdrop(this.renderer, this.scene, this.sceneLightingScale, {
+            useSceneFog: this.useSceneFog,
+            sceneFogDensity: this.sceneFogDensity ?? 0.00009,
+            sceneFogColor: this.sceneFogColor
+        });
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -834,22 +815,26 @@ export class Scene22 extends SceneBase {
         this.camera.position.set(0, 1000, 4500);
         this.camera.lookAt(0, 400, 0);
 
-        this.setupEnvironment();
+        this._roomEnvPresentation = setupStudioRoomEnvironmentMap(this.renderer, this.scene);
+        this.pmremGenerator = this._roomEnvPresentation.pmremGenerator;
+        this._roomEnvTexture = this._roomEnvPresentation.envMapTexture;
 
-        this.studio = new StudioBox(this.scene, {
-            envMap: this._roomEnvTexture,
-            envMapIntensity: 1.0,
-            useFloorTile: false,
-            lightIntensity: 22.0 * (this.sceneLightingScale ?? 1)
-        });
+        this.studio = new StudioBox(
+            this.scene,
+            studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture)
+        );
         if (this.studio.studioBox) {
             this.studio.studioBox.visible = false;
         }
 
         this.buildRoom();
+        this.studio.attachCeilingSpotRig(this.roomGroup, {
+            includeCeilingPlane: false,
+            ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale)
+        });
         const floorMat = this.roomGroup.children[0].material;
         const wallMat = this.roomGroup.children[1].material;
-        this.applyEnvMapToMaterials(this.scene.environment, wallMat, floorMat);
+        applyStudioRoomFloorWallEnvMaps(wallMat, floorMat);
 
         this.setupLights();
 
@@ -981,19 +966,7 @@ export class Scene22 extends SceneBase {
         } else if (this.bokehPass?.uniforms?.focus) {
             this.bokehPass.uniforms.focus.value = this.dofParams.focus;
         }
-        const aoPass = this.ssaoPass || this.saoPass;
-        if (aoPass) {
-            const focusPos = this._centerSmoothed;
-            const camDist = this.camera.position.distanceTo(focusPos);
-            const nearD = 900;
-            const farD = 6200;
-            const t = THREE.MathUtils.clamp((camDist - nearD) / (farD - nearD), 0, 1);
-            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t);
-            if ('kernelRadius' in aoPass) aoPass.kernelRadius = this.ssaoNearKernelRadius * aoScale;
-            if ('minDistance' in aoPass) aoPass.minDistance = this.ssaoNearMinDistance * aoScale;
-            if ('maxDistance' in aoPass) aoPass.maxDistance = this.ssaoNearMaxDistance * aoScale;
-            this._syncAODepthAndCameraUniforms(aoPass);
-        }
+        updateSsaoDistanceAttenuation(this, this._centerSmoothed);
 
         if (this.calloutSystem) {
             this.calloutSystem.update(deltaTime, this.time, this.camera, {
@@ -1030,95 +1003,12 @@ export class Scene22 extends SceneBase {
     }
 
     initPostProcessing() {
-        if (!this.composer) {
-            this.composer = new EffectComposer(this.renderer);
-            this.composer.addPass(new RenderPass(this.scene, this.camera));
-        }
-        if (this.useSSAO && !this.ssaoPass) {
-            this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
-            this.ssaoPass.kernelRadius = this.ssaoNearKernelRadius;
-            this.ssaoPass.minDistance = this.ssaoNearMinDistance;
-            this.ssaoPass.maxDistance = this.ssaoNearMaxDistance;
-            this.composer.addPass(this.ssaoPass);
-            this._syncAODepthAndCameraUniforms(this.ssaoPass);
-        }
-        if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(
-                new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.14,
-                0.68,
-                0.64
-            );
-            this.composer.addPass(this.bloomPass);
-        }
-        if (this.useDOF) {
-            // Scene21 と同一：ミニチュア感を避けピント域を広げる
-            this.initDOF({
-                focus: 2100,
-                aperture: 0.0000044,
-                maxblur: 0.0031
-            });
-        }
-        if (!this.outputPass) {
-            this.outputPass = new OutputPass();
-            this.composer.addPass(this.outputPass);
-        }
-        this.addFilmGrainIfEnabled(0.22, false);
-    }
-
-    _syncAODepthAndCameraUniforms(aoPass) {
-        if (!aoPass) return;
-        if (!this.aoDepthTexture && this.composer?.renderTarget1) {
-            const size = this.renderer.getSize(new THREE.Vector2());
-            const ratio = this.renderer.getPixelRatio();
-            const w = Math.max(1, Math.floor(size.x * ratio));
-            const h = Math.max(1, Math.floor(size.y * ratio));
-            this.aoDepthTexture = new THREE.DepthTexture(w, h);
-            this.aoDepthTexture.type = THREE.UnsignedIntType;
-            this.aoDepthTexture.format = THREE.DepthFormat;
-            this.composer.renderTarget1.depthTexture = this.aoDepthTexture;
-            this.composer.renderTarget1.depthBuffer = true;
-        }
-
-        const candidateDepth =
-            aoPass.beautyRenderTarget?.depthTexture ||
-            aoPass.normalRenderTarget?.depthTexture ||
-            aoPass.depthRenderTarget?.depthTexture ||
-            this.aoDepthTexture ||
-            null;
-
-        const maybeMaterials = [
-            aoPass.ssaoMaterial,
-            aoPass.saoMaterial,
-            aoPass.materialAO,
-            aoPass.vBlurMaterial,
-            aoPass.hBlurMaterial
-        ];
-
-        for (const m of maybeMaterials) {
-            const u = m?.uniforms;
-            if (!u) continue;
-            if (u.cameraNear) u.cameraNear.value = this.camera.near;
-            if (u.cameraFar) u.cameraFar.value = this.camera.far;
-            if (u.tDepth && candidateDepth) u.tDepth.value = candidateDepth;
-        }
+        setupPostEffectsPipeline(this, {});
     }
 
     onResize() {
         super.onResize();
-        if (this.ssaoPass && typeof this.ssaoPass.setSize === 'function') {
-            this.ssaoPass.setSize(window.innerWidth, window.innerHeight);
-        }
-        if (this.saoPass && typeof this.saoPass.setSize === 'function') {
-            this.saoPass.setSize(window.innerWidth, window.innerHeight);
-        }
-        if (this.aoDepthTexture) {
-            const ratio = this.renderer.getPixelRatio();
-            this.aoDepthTexture.image.width = Math.max(1, Math.floor(window.innerWidth * ratio));
-            this.aoDepthTexture.image.height = Math.max(1, Math.floor(window.innerHeight * ratio));
-            this.aoDepthTexture.needsUpdate = true;
-        }
-        this._syncAODepthAndCameraUniforms(this.ssaoPass || this.saoPass);
+        resizePostEffectsPasses(this);
     }
 
     dispose() {
@@ -1186,12 +1076,7 @@ export class Scene22 extends SceneBase {
             this.aoDepthTexture.dispose();
             this.aoDepthTexture = null;
         }
-        if (this.outputPass && this.composer) {
-            const oi = this.composer.passes.indexOf(this.outputPass);
-            if (oi !== -1) this.composer.passes.splice(oi, 1);
-            this.outputPass.dispose();
-            this.outputPass = null;
-        }
+        disposePresentationOutputPass(this);
 
         this.expandSpheres.forEach((e) => {
             if (e.light) this.scene.remove(e.light);
@@ -1210,15 +1095,13 @@ export class Scene22 extends SceneBase {
         this.particles = [];
         this.grid?.clear();
 
-        if (this._roomEnvTexture) {
-            this._roomEnvTexture.dispose();
-            this._roomEnvTexture = null;
-        }
-        if (this.pmremGenerator) {
-            this.pmremGenerator.dispose();
-            this.pmremGenerator = null;
-        }
-        if (this.scene) this.scene.environment = null;
+        disposeStudioRoomEnvironmentMap(
+            { pmremGenerator: this.pmremGenerator, envMapTexture: this._roomEnvTexture },
+            this.scene
+        );
+        this.pmremGenerator = null;
+        this._roomEnvTexture = null;
+        this._roomEnvPresentation = null;
 
         this.bloomPass = null;
         super.dispose();

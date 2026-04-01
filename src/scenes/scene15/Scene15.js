@@ -10,7 +10,14 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { LFO } from '../../lib/LFO.js';
 import { RandomLFO } from '../../lib/RandomLFO.js';
-import { StudioBox } from '../../lib/StudioBox.js';
+import {
+    StudioBox,
+    attachDepthOfField,
+    attachFilmGrainPass,
+    applyStandardPresentationRenderer,
+    attachPresentationOutputPass,
+    disposePresentationOutputPass
+} from '../../lib/presentation/index.js';
 import { Scene15Particle } from './Scene15Particle.js';
 
 export class Scene15 extends SceneBase {
@@ -85,6 +92,8 @@ export class Scene15 extends SceneBase {
         this.useFilmGrain = true;     // フィルムグレインON
         this.showMainMesh = true; 
         this.bloomPass = null;
+        this.sceneLightingScale = 0.32;
+        this.outputPass = null;
 
         // ストロボエフェクト管理
         this.strobeActive = false;
@@ -110,9 +119,6 @@ export class Scene15 extends SceneBase {
         if (this.initialized) return;
         await super.setup();
 
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.3;
-
         this.cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256, { 
             generateMipmaps: true, 
             minFilter: THREE.LinearMipmapLinearFilter 
@@ -126,6 +132,7 @@ export class Scene15 extends SceneBase {
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        applyStandardPresentationRenderer(this.renderer, this.sceneLightingScale);
 
         this.showGridRuler3D = false; 
         this.initGridRuler3D({
@@ -146,15 +153,9 @@ export class Scene15 extends SceneBase {
         this.initialized = true;
     }
 
+    /** 環境・四隅蛍光灯は StudioBox。ここは球体用のキーのみ */
     setupLights() {
-        const pureWhite = 0xffffff; 
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0xffffff, 0.8);
-        this.scene.add(hemiLight);
-
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.8);
-        this.scene.add(ambientLight);
-
-        // ポイントライト
+        const pureWhite = 0xffffff;
         this.sphereLight = new THREE.PointLight(0xffffff, 0, 5000);
         this.sphereLight.position.set(0, 400, 0);
         this.scene.add(this.sphereLight);
@@ -166,6 +167,7 @@ export class Scene15 extends SceneBase {
     }
 
     createStudioBox() {
+        const L = this.sceneLightingScale ?? 1;
         this.studio = new StudioBox(this.scene, {
             size: 10000,
             color: 0xbbbbbb,
@@ -174,7 +176,8 @@ export class Scene15 extends SceneBase {
             lightColor: 0xffffff,
             lightIntensity: 2.8,
             envMap: this.cubeRenderTarget ? this.cubeRenderTarget.texture : null,
-            envMapIntensity: 1.3
+            envMapIntensity: 1.3,
+            ceilingSpotRig: { enabled: true, sceneLightingScale: L }
         });
     }
 
@@ -263,13 +266,14 @@ export class Scene15 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 500,
                 aperture: 0.000005,
                 maxblur: 0.003
             });
         }
-        this.addFilmGrainIfEnabled(0.35, false);
+        attachPresentationOutputPass(this);
+        attachFilmGrainPass(this, 0.35, false);
     }
 
     onUpdate(deltaTime) {
@@ -446,6 +450,7 @@ export class Scene15 extends SceneBase {
 
     dispose() {
         this.initialized = false;
+        disposePresentationOutputPass(this);
         if (this.studio) this.studio.dispose();
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         if (this.mainMesh) {

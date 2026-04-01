@@ -8,7 +8,14 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { StudioBox } from '../../lib/StudioBox.js';
+import {
+    StudioBox,
+    attachDepthOfField,
+    attachFilmGrainPass,
+    applyStandardPresentationRenderer,
+    attachPresentationOutputPass,
+    disposePresentationOutputPass
+} from '../../lib/presentation/index.js';
 import { Scene17Particle } from './Scene17Particle.js';
 
 export class Scene17 extends SceneBase {
@@ -42,6 +49,8 @@ export class Scene17 extends SceneBase {
         this.useBloom = true; 
         this.useFilmGrain = true;     // フィルムグレインON
         this.bloomPass = null;
+        this.sceneLightingScale = 0.32;
+        this.outputPass = null;
 
         this.trackEffects = {
             1: false, 2: false, 3: false, 4: false, 5: true, 6: true, 7: false, 8: false, 9: false
@@ -87,10 +96,6 @@ export class Scene17 extends SceneBase {
         if (this.initialized) return;
         await super.setup();
 
-        // トーンマッピングをACESFilmicに戻して白飛びを抑えるで！
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.3; // 1.0 -> 1.3 露出を上げて全体をパッと明るく！
-
         this.setupLights();
 
         // 1. CubeCameraのセットアップ（解像度を256に戻してバランス調整！）
@@ -121,28 +126,24 @@ export class Scene17 extends SceneBase {
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        applyStandardPresentationRenderer(this.renderer, this.sceneLightingScale);
 
         this.createSpheres();
         this.initPostProcessing();
         this.initialized = true;
     }
 
+    /** 環境・四隅蛍光灯は StudioBox。天井付近のキーのみ */
     setupLights() {
-        // 部屋の明るさを落ち着かせるで
-        const pureWhite = 0xffffff; 
-        const hemiLight = new THREE.HemisphereLight(pureWhite, 0xffffff, 0.8); // 0.6 -> 0.8 影をさらに明るく！
-        this.scene.add(hemiLight);
-
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.8); // 0.6 -> 0.8 全体的な底上げ！
-        this.scene.add(ambientLight);
-
-        const pointLight = new THREE.PointLight(pureWhite, 3.0, 15000); // 1.5 -> 3.0 ポイントライトも倍増！
+        const pureWhite = 0xffffff;
+        const pointLight = new THREE.PointLight(pureWhite, 3.0, 15000);
         pointLight.decay = 1.0; 
         pointLight.position.set(0, 3000, 0); 
         this.scene.add(pointLight);
     }
 
     createStudioBox() {
+        const L = this.sceneLightingScale ?? 1;
         this.studio = new StudioBox(this.scene, {
             size: 10000,
             color: 0xbbbbbb, // 0xbbbbbb に下げて落ち着かせる
@@ -151,7 +152,8 @@ export class Scene17 extends SceneBase {
             lightColor: 0xffffff,
             lightIntensity: 2.8,
             envMap: this.cubeRenderTarget.texture,
-            envMapIntensity: 1.3
+            envMapIntensity: 1.3,
+            ceilingSpotRig: { enabled: true, sceneLightingScale: L }
         });
         
         if (this.studio.studioFloor) {
@@ -225,13 +227,14 @@ export class Scene17 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 1000,
                 aperture: 0.000005,
                 maxblur: 0.003
             });
         }
-        this.addFilmGrainIfEnabled(0.35, false);
+        attachPresentationOutputPass(this);
+        attachFilmGrainPass(this, 0.35, false);
     }
 
     onUpdate(deltaTime) {
@@ -553,6 +556,7 @@ export class Scene17 extends SceneBase {
 
     dispose() {
         this.initialized = false;
+        disposePresentationOutputPass(this);
         if (this.studio) this.studio.dispose();
         if (this.cubeRenderTarget) this.cubeRenderTarget.dispose();
         if (this.staticCubeRenderTarget) this.staticCubeRenderTarget.dispose();

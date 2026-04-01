@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { generateLabGrungeTextures } from './LabGrungeTextures.js';
 
 /**
- * @param {import('./StudioBox.js').StudioBox} studio
+ * @param {import('./presentation/index.js').StudioBox} studio
  */
 function ensureUv2ForAo(mesh) {
     const g = mesh?.geometry;

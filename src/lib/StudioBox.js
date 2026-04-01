@@ -12,6 +12,7 @@ import { StudioFluorescentLamp } from './StudioFluorescentLamp.js';
  * 採用できたら各シーン固有の `setupLights` 等は削っていく。シーンはオプションで挙動を選ぶだけに寄せる。
  * デフォルトで **薄い AmbientLight**（`ambientIntensity` 既定 0.16）を足し、陰影は残したまま全体をほんのり均す。
  * 四隅の蛍光灯は **{@link StudioFluorescentLamp}**（emissive メッシュ + 同位置の PointLight）。
+ * 背景＋距離フォグは **{@link StudioBox.applySceneBackdrop}**（`lib/presentation` からも再エクスポート可）。
  */
 export class StudioBox {
     constructor(scene, options = {}) {
@@ -64,6 +65,27 @@ export class StudioBox {
         this.ceilingSpotRigOption = options.ceilingSpotRig ?? null;
 
         this.setup();
+    }
+
+    /**
+     * シーンの `background` と `FogExp2`（任意）を StudioBox 系の既定に揃える。
+     * @param {THREE.Scene} scene
+     * @param {object} [options]
+     * @param {number} [options.backgroundHex=0x151820]
+     * @param {number} [options.fogDensity=0.00009]
+     * @param {number} [options.fogColor] 未指定時は背景と同じ色
+     * @param {boolean} [options.useFog=true] false でフォグを外す
+     */
+    static applySceneBackdrop(scene, options = {}) {
+        const bg = options.backgroundHex !== undefined ? options.backgroundHex : 0x151820;
+        scene.background = new THREE.Color(bg);
+        if (options.useFog === false) {
+            scene.fog = null;
+            return;
+        }
+        const fogColor = options.fogColor !== undefined ? options.fogColor : bg;
+        const density = options.fogDensity !== undefined ? options.fogDensity : 0.00009;
+        scene.fog = new THREE.FogExp2(fogColor, density);
     }
 
     /**

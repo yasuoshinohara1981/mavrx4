@@ -11,6 +11,13 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { Scene16Particle } from '../scene16/Scene16Particle.js';
 import { RandomLFO } from '../../lib/RandomLFO.js';
 import { getRandomPureSky } from '../../assets/pureSkiesList.js';
+import {
+    attachDepthOfField,
+    attachFilmGrainPass,
+    applyStandardPresentationRenderer,
+    attachPresentationOutputPass,
+    disposePresentationOutputPass
+} from '../../lib/presentation/index.js';
 
 export class Scene20 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -32,6 +39,8 @@ export class Scene20 extends SceneBase {
         this.useLensFlare = true;
         this.useSkyDome = true;
         this.bloomPass = null;
+        this.sceneLightingScale = 0.32;
+        this.outputPass = null;
 
         this.expandSpheres = [];
         this.useGravity = false;
@@ -337,13 +346,14 @@ export class Scene20 extends SceneBase {
         this.composer.addPass(this.bloomPass);
 
         if (this.useDOF) {
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 500,
                 aperture: 0.000005,
                 maxblur: 0.003
             });
         }
-        this.addFilmGrainIfEnabled(0.35, false);
+        attachPresentationOutputPass(this);
+        attachFilmGrainPass(this, 0.35, false);
         const flarePos = this.skyDomeLightConfig?.position ?? new THREE.Vector3(0, 5000, 8000);
         const flareIntensity = this.selectedPureSkyConfig?.lensFlareIntensity ?? 0.25;
         this.addLensFlareIfEnabled({ position: flarePos, intensity: flareIntensity });
@@ -762,6 +772,7 @@ export class Scene20 extends SceneBase {
 
     dispose() {
         this.initialized = false;
+        disposePresentationOutputPass(this);
 
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);

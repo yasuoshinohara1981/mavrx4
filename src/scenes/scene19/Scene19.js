@@ -12,6 +12,13 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene14Particle } from '../scene14/Scene14Particle.js';
 import { getRandomPureSky } from '../../assets/pureSkiesList.js';
+import {
+    attachDepthOfField,
+    attachFilmGrainPass,
+    applyStandardPresentationRenderer,
+    attachPresentationOutputPass,
+    disposePresentationOutputPass
+} from '../../lib/presentation/index.js';
 
 export class Scene19 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -40,6 +47,8 @@ export class Scene19 extends SceneBase {
         this.useLensFlare = true;
         this.useSkyDome = true;     // HDRIスカイドームON（有効なのは19のみ）
         this.bloomPass = null;
+        this.sceneLightingScale = 0.32;
+        this.outputPass = null;
 
         this.expandSpheres = [];
         this.useGravity = false;
@@ -142,10 +151,9 @@ export class Scene19 extends SceneBase {
             this.camera.updateProjectionMatrix();
         }
 
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        this.renderer.toneMappingExposure = 1.0;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        applyStandardPresentationRenderer(this.renderer, this.sceneLightingScale);
 
         this.showGridRuler3D = false;
         this.initGridRuler3D({
@@ -227,10 +235,6 @@ export class Scene19 extends SceneBase {
         const mainMesh = manager.getMainMesh();
         mainMesh.castShadow = true;
         mainMesh.receiveShadow = true;
-        mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
-            depthPacking: THREE.RGBADepthPacking,
-            alphaTest: 0.5
-        });
         this.instancedMeshManagers.push(manager);
 
         for (let idx = 0; idx < this.sphereCount; idx++) {
@@ -276,13 +280,14 @@ export class Scene19 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 500,
                 aperture: 0.000005,
                 maxblur: 0.003
             });
         }
-        this.addFilmGrainIfEnabled(0.35, false);
+        attachPresentationOutputPass(this);
+        attachFilmGrainPass(this, 0.35, false);
         const flarePos = this.skyDomeLightConfig?.position ?? new THREE.Vector3(0, 5000, 8000);
         const flareIntensity = this.selectedPureSkyConfig?.lensFlareIntensity ?? 0.25;
         this.addLensFlareIfEnabled({ position: flarePos, intensity: flareIntensity });
@@ -859,6 +864,7 @@ export class Scene19 extends SceneBase {
 
     dispose() {
         this.initialized = false;
+        disposePresentationOutputPass(this);
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) {

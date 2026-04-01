@@ -3,20 +3,27 @@
  * メインオブジェクト：トラック9で金属片（args[2]=デュレーションmsでサイズ、velocityで金属トーンの明るさ）
  * トラック5：赤シリンダ（args[2]=デュレ、ノート番号は args[0]）。トラック6：部屋中心付近スフィア（args[2]=デュレ、track9SpawnDuringDuration でデュレ中に間隔スポーン可）
  * 天井＋シャドウ Spot は StudioBox.attachCeilingSpotRig。埋め Spot のみこのシーン内。
- * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）、ポストは OutputPass + ACES・SSAO・DOF・bloom・Film、暗色 FogExp2（Scene22 と同じ）
+ * 床・壁は StudioBox と同じタイル目地＋床の赤十字・番号（Scene16 同型）。ポスト・フォグ・大気チリは lib/presentation を参照。
  * 北壁：extruded 3D タイトル（Helvetiker）＋英語説明、艶・環境反射
  */
 
 import { SceneBase } from '../SceneBase.js';
 import * as THREE from 'three';
-import { PMREMGenerator } from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { StudioBox } from '../../lib/StudioBox.js';
+import {
+    StudioBox,
+    setupPostEffectsPipeline,
+    updateSsaoDistanceAttenuation,
+    resizePostEffectsPasses,
+    disposePresentationOutputPass,
+    AtmosphericDustField,
+    applyStudioRoomToneAndBackdrop,
+    setupStudioRoomEnvironmentMap,
+    disposeStudioRoomEnvironmentMap,
+    studioBoxOptionsForStudioRoom,
+    ceilingSpotRigOptionsForStudioRoom,
+    setupStudioRoomPromoWallFillLight,
+    applyStudioRoomFloorWallEnvMaps
+} from '../../lib/presentation/index.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene16Particle } from '../scene16/Scene16Particle.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
@@ -50,12 +57,6 @@ export class Scene21 extends SceneBase {
         this.shardCylinderVisualScale = 1.5;
         /** 1=標準。下げると照明・露出・環境反射をまとめて暗くする（フォグ色は setup で固定） */
         this.sceneLightingScale = 0.32;
-        /**
-         * シャドウを一つずつ検証するときの部屋まわりの照明の切り方。
-         * true（推奨・いまの作業）: IBL・天井発光・Studio 蛍光・埋め Spot を外し、シャドウ用 SpotLight 1 本だけ。
-         * false: 上記を全部載せた状態（最終見えの比較・マージ前確認用。作業フローとは別枠）。
-         */
-        this.shadowDebugMinimalRoomLighting = true;
         /** 各破片がこの時間（ms）経過したら削除 */
         this.shardLifetimeMs = 180000;
         /** 寿命終盤でフェードアウトする時間（ms） */
@@ -201,10 +202,9 @@ export class Scene21 extends SceneBase {
         this.cableHomeY = 550;
         this.cableBlobParticle = null;
 
-        /** Scene13 風：空間を漂うインスタンスボックス（金属片とは別・プール） */
+        /** Scene13 風：大気チリ（{@link AtmosphericDustField}） */
         this.ambientParticleCount = 2000;
-        this.ambientInstManager = null;
-        this.ambientParticles = [];
+        this.ambientDust = null;
         /** 破片・シリンダ・トラック9スポーンに同期して出し、寿命で消す */
         this.ambientParticleLifetimeMs = 11000;
         this.ambientParticleFadeOutMs = 1400;
@@ -212,10 +212,6 @@ export class Scene21 extends SceneBase {
         this.ambientParticlesPerCylinder = 12;
         this.ambientParticlesPerTrack9 = 16;
         this.ambientMinLiving = 180;
-        this._ambientFreeSlots = [];
-        this._ambientLiving = [];
-        this._ambientHidePos = new THREE.Vector3(0, -1e6, 0);
-        this._ambientIdRot = new THREE.Euler(0, 0, 0);
 
         /** 赤いシリンダ（InstancedMesh、scene 直下ワールド座標。OSC はトラック5） */
         this.cylinderInstMesh = null;
@@ -753,11 +749,6 @@ float cylinderSurfH( vec3 v ) {
         return { map: colorTex, bumpMap: bumpTex };
     }
 
-    applyEnvMapToMaterials(envMap, wallMat, floorMat) {
-        wallMat.envMap = envMap;
-        floorMat.envMap = envMap;
-    }
-
     buildRoom() {
         /** Scene16 / StudioBox デフォルトと同じ canvas タイル（目地・床は赤十字＋番号テキスト） */
         const floorTpl = StudioBox.createFloorTileTextures();
@@ -1191,7 +1182,7 @@ float cylinderSurfH( vec3 v ) {
             baseScaleVec: new THREE.Vector3(sx, sy, sz),
             growInMs: this._growInMsFromDuration(dur, this.shardGrowInMs)
         });
-        this._spawnAmbientParticlesBurst(newPos, this.ambientParticlesPerShard);
+                this.ambientDust?.spawnBurst(newPos, this.ambientParticlesPerShard);
     }
 
     /** 非表示：スケール0（ドローコスト抑制） */
@@ -1404,7 +1395,7 @@ float cylinderSurfH( vec3 v ) {
             growInMs: this._growInMsFromDuration(dur, this.cylinderGrowInMs)
         });
         this.triggerRedCylinderBurst(this._lastCylinderWorldPos, velocity, durationMs);
-        this._spawnAmbientParticlesBurst(this._lastCylinderWorldPos, this.ambientParticlesPerCylinder);
+                this.ambientDust?.spawnBurst(this._lastCylinderWorldPos, this.ambientParticlesPerCylinder);
     }
 
     _allocCylinderSlot() {
@@ -1797,109 +1788,17 @@ float cylinderSurfH( vec3 v ) {
         this.obsidianInstMesh.instanceMatrix.needsUpdate = true;
     }
 
-    /**
-     * 金属片とは別レイヤーのインスタンスボックス（プール）。初期は全非表示、スポーン時に割当。
-     */
     createAmbientFloatingParticles() {
-        const count = this.ambientParticleCount;
-        const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-        const envTex = this.cubeRenderTarget ? this.cubeRenderTarget.texture : this.scene.environment;
-        const L = this.sceneLightingScale ?? 1;
-        /** マット寄りに見せるため、通常合成の黄色パーティクルにする */
-        const mat = new THREE.MeshBasicMaterial({
-            color: 0xe8dc67,
-            transparent: true,
-            opacity: 0.62,
-            depthWrite: false,
-            blending: THREE.NormalBlending,
-            fog: true
+        this.ambientDust = new AtmosphericDustField(this.scene, {
+            roomHalfW: this.roomHalfW,
+            roomHalfD: this.roomHalfD,
+            floorTopY: this.floorTopY,
+            ceilingY: this.ceilingY,
+            count: this.ambientParticleCount,
+            lifetimeMs: this.ambientParticleLifetimeMs,
+            fadeOutMs: this.ambientParticleFadeOutMs,
+            minLivingBurst: this.ambientMinLiving
         });
-
-        this.ambientInstManager = new InstancedMeshManager(this.scene, boxGeo, mat, count);
-        const mainMesh = this.ambientInstManager.getMainMesh();
-        mainMesh.castShadow = false;
-        mainMesh.receiveShadow = false;
-        mainMesh.renderOrder = -2;
-
-        this.ambientParticles = [];
-        this._ambientLiving = [];
-        this._ambientFreeSlots = [];
-        for (let i = 0; i < count; i++) {
-            this.ambientParticles.push({
-                position: new THREE.Vector3(),
-                velocity: new THREE.Vector3(),
-                rotation: new THREE.Euler(),
-                angVel: new THREE.Vector3(),
-                scale: new THREE.Vector3(),
-                baseScale: new THREE.Vector3(),
-                phase: 0,
-                spawnTime: null
-            });
-            this._ambientFreeSlots.push(i);
-        }
-        for (let i = 0; i < count; i++) {
-            this._clearAmbientParticleSlot(i);
-        }
-        this.ambientInstManager.markNeedsUpdate();
-        const seedY = this.floorTopY + (this.ceilingY - this.floorTopY) * 0.3;
-        this._spawnAmbientParticlesBurst(new THREE.Vector3(0, seedY, 0), this.ambientMinLiving);
-    }
-
-    _clearAmbientParticleSlot(slotIndex) {
-        if (!this.ambientInstManager || slotIndex < 0 || slotIndex >= this.ambientParticleCount) return;
-        const ap = this.ambientParticles[slotIndex];
-        ap.spawnTime = null;
-        ap.scale.set(0, 0, 0);
-        this.ambientInstManager.setMatrixAt(slotIndex, this._ambientHidePos, this._ambientIdRot, ap.scale);
-    }
-
-    /** ワールド座標付近にバースト（空きスロットが尽きるまで） */
-    _spawnAmbientParticlesBurst(worldPos, burstCount) {
-        if (!this.ambientInstManager || !burstCount || !this._ambientFreeSlots.length) return;
-        const n = Math.min(Math.floor(burstCount), this._ambientFreeSlots.length);
-        const bx = this.roomHalfW - 420;
-        const bz = this.roomHalfD - 420;
-        const yMin = this.floorTopY + 200;
-        const yMax = this.ceilingY * 0.41;
-        for (let k = 0; k < n; k++) {
-            const i = this._ambientFreeSlots.pop();
-            const ap = this.ambientParticles[i];
-            const jr = 38 + Math.random() * 220;
-            const th = Math.random() * Math.PI * 2;
-            const ph = Math.acos(2 * Math.random() - 1);
-            const jx = jr * Math.sin(ph) * Math.cos(th);
-            const jy = jr * Math.cos(ph) * 0.82;
-            const jz = jr * Math.sin(ph) * Math.sin(th);
-            ap.position.set(worldPos.x + jx, worldPos.y + jy, worldPos.z + jz);
-            ap.position.x = THREE.MathUtils.clamp(ap.position.x, -bx, bx);
-            ap.position.z = THREE.MathUtils.clamp(ap.position.z, -bz, bz);
-            ap.position.y = THREE.MathUtils.clamp(ap.position.y, yMin, yMax);
-            ap.velocity.set(
-                (Math.random() - 0.5) * 150,
-                (Math.random() - 0.5) * 95,
-                (Math.random() - 0.5) * 150
-            );
-            ap.rotation.set(
-                Math.random() * Math.PI * 2,
-                Math.random() * Math.PI * 2,
-                Math.random() * Math.PI * 2
-            );
-            ap.angVel.set(
-                (Math.random() - 0.5) * 1.9,
-                (Math.random() - 0.5) * 1.9,
-                (Math.random() - 0.5) * 1.9
-            );
-            const sr = 0.55 + Math.random() * 2.6;
-            ap.baseScale.set(
-                sr * (0.34 + Math.random() * 1.05) * 0.28,
-                sr * (0.34 + Math.random() * 1.05) * 0.28,
-                sr * (0.34 + Math.random() * 1.05) * 0.28
-            );
-            ap.scale.copy(ap.baseScale);
-            ap.phase = Math.random() * Math.PI * 2;
-            ap.spawnTime = performance.now();
-            this._ambientLiving.push(i);
-        }
     }
 
     /** トラック9：generateFleshTextures の map/bump ＋ color で明るめグレー寄せ */
@@ -1998,7 +1897,7 @@ float cylinderSurfH( vec3 v ) {
             angularVelocity,
             driftSeed: Math.random() * 4000 + this.track9Spheres.length * 0.37
         });
-        this._spawnAmbientParticlesBurst(position, this.ambientParticlesPerTrack9);
+        this.ambientDust?.spawnBurst(position, this.ambientParticlesPerTrack9);
 
         while (this.track9Spheres.length > this.maxTrack9Spheres) {
             const old = this.track9Spheres.shift();
@@ -2151,75 +2050,6 @@ float cylinderSurfH( vec3 v ) {
         });
     }
 
-    _updateAmbientParticles(deltaTime) {
-        if (!this.ambientInstManager || !this.ambientParticles.length) return;
-        const bx = this.roomHalfW - 420;
-        const bz = this.roomHalfD - 420;
-        const yMin = this.floorTopY + 200;
-        const yMax = this.ceilingY * 0.41;
-        const t = this.time;
-        const dt = deltaTime;
-        const now = performance.now();
-        const life = this.ambientParticleLifetimeMs;
-        const fadeMs = this.ambientParticleFadeOutMs;
-
-        for (let j = this._ambientLiving.length - 1; j >= 0; j--) {
-            const i = this._ambientLiving[j];
-            const ap = this.ambientParticles[i];
-            if (ap.spawnTime == null) {
-                this._ambientLiving.splice(j, 1);
-                continue;
-            }
-            const age = now - ap.spawnTime;
-            if (age >= life) {
-                this._clearAmbientParticleSlot(i);
-                this._ambientFreeSlots.push(i);
-                this._ambientLiving.splice(j, 1);
-                continue;
-            }
-            const fadeOp = this._fadeOpacity01(age, life, fadeMs);
-            ap.scale.copy(ap.baseScale).multiplyScalar(fadeOp);
-
-            const ph = ap.phase;
-            ap.velocity.x += (Math.sin(t * 0.62 + ph * 1.1) * 38 + (Math.sin(t * 1.28 + i * 0.07) - 0.5) * 16) * dt;
-            ap.velocity.y += (Math.cos(t * 0.48 + ph * 0.9) * 26 + (Math.cos(t * 0.88 + i * 0.05) - 0.5) * 12) * dt;
-            ap.velocity.z += (Math.sin(t * 0.55 + ph * 1.3 + 1.4) * 38 + (Math.sin(t * 1.08 + i * 0.09) - 0.5) * 16) * dt;
-            ap.velocity.multiplyScalar(0.9989);
-            if (ap.velocity.length() > 210) ap.velocity.normalize().multiplyScalar(210);
-
-            ap.position.addScaledVector(ap.velocity, dt);
-
-            if (ap.position.x > bx) {
-                ap.position.x = bx;
-                ap.velocity.x *= -0.72;
-            } else if (ap.position.x < -bx) {
-                ap.position.x = -bx;
-                ap.velocity.x *= -0.72;
-            }
-            if (ap.position.z > bz) {
-                ap.position.z = bz;
-                ap.velocity.z *= -0.72;
-            } else if (ap.position.z < -bz) {
-                ap.position.z = -bz;
-                ap.velocity.z *= -0.72;
-            }
-            if (ap.position.y > yMax) {
-                ap.position.y = yMax;
-                ap.velocity.y *= -0.68;
-            } else if (ap.position.y < yMin) {
-                ap.position.y = yMin;
-                ap.velocity.y *= -0.68;
-            }
-
-            ap.rotation.x += ap.angVel.x * dt;
-            ap.rotation.y += ap.angVel.y * dt;
-            ap.rotation.z += ap.angVel.z * dt;
-
-            this.ambientInstManager.setMatrixAt(i, ap.position, ap.rotation, ap.scale);
-        }
-        this.ambientInstManager.markNeedsUpdate();
-    }
-
     triggerPulse(velocity = 127) {
         const speed = 0.3 + (velocity / 127.0) * 1.0;
         this.pulses.push({ progress: 0.0, speed });
@@ -2232,40 +2062,21 @@ float cylinderSurfH( vec3 v ) {
     }
 
     setupEnvironment() {
-        this.pmremGenerator = new PMREMGenerator(this.renderer);
-        this.pmremGenerator.compileEquirectangularShader();
-        if (this.shadowDebugMinimalRoomLighting) {
-            this._roomEnvTexture = null;
-            this.scene.environment = null;
-            return;
-        }
-        const envScene = new RoomEnvironment();
-        this._roomEnvTexture = this.pmremGenerator.fromScene(envScene, 0.04).texture;
-        this.scene.environment = this._roomEnvTexture;
+        const env = setupStudioRoomEnvironmentMap(this.renderer, this.scene);
+        this.pmremGenerator = env.pmremGenerator;
+        this._roomEnvTexture = env.envMapTexture;
     }
 
     /** Scene16 と同型。sceneLightingScale で一括に暗くできる */
     setupLights() {
-        const L = this.sceneLightingScale ?? 1;
-        const minimal = this.shadowDebugMinimalRoomLighting;
-        const spotI = minimal ? 0 : 2.0 * L;
-
         this.fillPointLight = null;
         this.pulsePointLight = null;
 
-        this.promoWallLightTarget = new THREE.Object3D();
-        this.promoWallLightTarget.position.set(0, 0, 0);
-        this.scene.add(this.promoWallLightTarget);
-
-        this.promoWallFillLight = new THREE.SpotLight(0xffffff, spotI, 26000, Math.PI / 5, 0.32, 1.0);
-        this.promoWallFillLight.position.set(0, this.ceilingY - 120, 0);
-        /** 影は平行光に任せる（スポット＋平行の二重投影で潰れやすい） */
-        this.promoWallFillLight.castShadow = false;
-        this.promoWallFillLight.target = this.promoWallLightTarget;
-
-        this.scene.add(this.promoWallFillLight);
-
-        /** シャドウ用メイン Spot は StudioBox.ceilingSpotRig */
+        const { promoWallLightTarget, promoWallFillLight } = setupStudioRoomPromoWallFillLight(this.scene, {
+            ceilingY: this.ceilingY
+        });
+        this.promoWallLightTarget = promoWallLightTarget;
+        this.promoWallFillLight = promoWallFillLight;
     }
 
     setupAirNoiseVolume() {
@@ -2353,32 +2164,16 @@ float cylinderSurfH( vec3 v ) {
         if (this.initialized) return;
         await super.setup();
 
-        if (this.shadowDebugMinimalRoomLighting) {
-            /** スポットのみだと SSAO が全体を潰して真っ暗に見える */
-            this.useSSAO = false;
-        }
+        /** スポットのみだと SSAO が全体を潰して真っ暗に見える */
+        this.useSSAO = false;
 
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        const Lexp = this.sceneLightingScale ?? 1;
-        let exposure = THREE.MathUtils.lerp(0.42, 0.92, Lexp);
-        if (this.shadowDebugMinimalRoomLighting) {
-            /** 白飛びしたら 1.6 前後まで下げる */
-            exposure *= 1.82;
-        }
-        this.renderer.toneMappingExposure = exposure;
-        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-        const sceneBgHex = 0x151820;
-        this.scene.background = new THREE.Color(sceneBgHex);
-        this.scene.fog = this.useSceneFog
-            ? new THREE.FogExp2(this.sceneFogColor ?? sceneBgHex, this.sceneFogDensity ?? 0.00009)
-            : null;
-        if (this.shadowDebugMinimalRoomLighting) {
-            /** 単一スポット時は遠景フォグで壁が真っ黒に潰れるのでオフ */
-            this.scene.fog = null;
-        }
+        applyStudioRoomToneAndBackdrop(this.renderer, this.scene, this.sceneLightingScale, {
+            useSceneFog: this.useSceneFog,
+            sceneFogDensity: this.sceneFogDensity ?? 0.00009,
+            sceneFogColor: this.sceneFogColor
+        });
 
         if (this.camera.fov < 35 || this.camera.fov > 50) {
             this.camera.fov = 42;
@@ -2411,14 +2206,10 @@ float cylinderSurfH( vec3 v ) {
         this.cubeCamera.position.set(0, 600, 0);
         this.scene.add(this.cubeCamera);
 
-        this.studio = new StudioBox(this.scene, {
-            envMap: this._roomEnvTexture,
-            envMapIntensity: this.shadowDebugMinimalRoomLighting ? 0 : 1.0,
-            useFloorTile: false,
-            useLights: true,
-            lightIntensity:
-                (this.shadowDebugMinimalRoomLighting ? 8 : 22) * (this.sceneLightingScale ?? 1)
-        });
+        this.studio = new StudioBox(
+            this.scene,
+            studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture)
+        );
         if (this.studio.studioBox) {
             this.studio.studioBox.visible = false;
         }
@@ -2426,13 +2217,7 @@ float cylinderSurfH( vec3 v ) {
         this.buildRoom();
 
         this.studio.attachCeilingSpotRig(this.roomGroup, {
-            roomHalfW: this.roomHalfW,
-            roomHalfD: this.roomHalfD,
-            ceilingY: this.ceilingY,
-            floorTopY: this.floorTopY,
-            sceneLightingScale: this.sceneLightingScale,
-            envMapIntensity: this.shadowDebugMinimalRoomLighting ? 0 : 1.0,
-            shadowDebugSpot: this.shadowDebugMinimalRoomLighting ? { enabled: true } : null
+            ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale)
         });
         this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
 
@@ -2440,12 +2225,7 @@ float cylinderSurfH( vec3 v ) {
 
         const floorMat = this.roomGroup.children[0].material;
         const wallMat = this.roomGroup.children[1].material;
-        const envForRoom = this.shadowDebugMinimalRoomLighting ? null : this.scene.environment;
-        this.applyEnvMapToMaterials(envForRoom, wallMat, floorMat);
-        if (this.shadowDebugMinimalRoomLighting) {
-            wallMat.envMapIntensity = 0;
-            floorMat.envMapIntensity = 0;
-        }
+        applyStudioRoomFloorWallEnvMaps(wallMat, floorMat);
 
         this.setupLights();
 
@@ -2488,10 +2268,15 @@ float cylinderSurfH( vec3 v ) {
         this.pruneExpiredShards();
         this.pruneExpiredCylinders();
         this._updateRedCylinderBurstParticles(deltaTime);
-        this._updateAmbientParticles(deltaTime);
-        if (this._ambientLiving.length < this.ambientMinLiving) {
-            const p = this.shardGroup?.position ?? this._cameraFocusSmoothed ?? new THREE.Vector3(0, this.floorTopY + 600, 0);
-            this._spawnAmbientParticlesBurst(p, this.ambientMinLiving - this._ambientLiving.length);
+        if (this.ambientDust) {
+            this.ambientDust.update(deltaTime, this.time);
+            if (this.ambientDust.livingCount < this.ambientMinLiving) {
+                const p =
+                    this.shardGroup?.position ??
+                    this._cameraFocusSmoothed ??
+                    new THREE.Vector3(0, this.floorTopY + 600, 0);
+                this.ambientDust.spawnBurst(p, this.ambientMinLiving - this.ambientDust.livingCount);
+            }
         }
         this._tickTrack9DurationSpawn();
         this._updateTrack9SpherePhysics(deltaTime);
@@ -2584,25 +2369,16 @@ float cylinderSurfH( vec3 v ) {
         const focusTargets = [this.roomGroup, this.shardGroup];
         if (this.cylinderInstMesh) focusTargets.push(this.cylinderInstMesh);
         if (this.track9SphereGroup) focusTargets.push(this.track9SphereGroup);
-        if (this.ambientInstManager) focusTargets.push(this.ambientInstManager.getMainMesh());
+        if (this.ambientDust) {
+            const dm = this.ambientDust.getMainMesh();
+            if (dm) focusTargets.push(dm);
+        }
         if (this.useAutoFocusDOF) {
             this.updateAutoFocus(focusTargets);
         } else if (this.bokehPass?.uniforms?.focus) {
             this.bokehPass.uniforms.focus.value = this.dofParams.focus;
         }
-        const aoPass = this.ssaoPass || this.saoPass;
-        if (aoPass) {
-            const focusPos = this._cameraFocusSmoothed ?? this._spawnFocusWorld;
-            const camDist = this.camera.position.distanceTo(focusPos);
-            const nearD = 900;
-            const farD = 6200;
-            const t = THREE.MathUtils.clamp((camDist - nearD) / (farD - nearD), 0, 1);
-            const aoScale = THREE.MathUtils.lerp(1.0, this.ssaoFarAttenuation, t);
-            if ('kernelRadius' in aoPass) aoPass.kernelRadius = this.ssaoNearKernelRadius * aoScale;
-            if ('minDistance' in aoPass) aoPass.minDistance = this.ssaoNearMinDistance * aoScale;
-            if ('maxDistance' in aoPass) aoPass.maxDistance = this.ssaoNearMaxDistance * aoScale;
-            this._syncAODepthAndCameraUniforms(aoPass);
-        }
+        updateSsaoDistanceAttenuation(this, this._cameraFocusSmoothed ?? this._spawnFocusWorld);
 
         if (this.calloutSystem) {
             this.calloutSystem.update(deltaTime, this.time, this.camera, {
@@ -2753,95 +2529,12 @@ float cylinderSurfH( vec3 v ) {
     }
 
     initPostProcessing() {
-        if (!this.composer) {
-            this.composer = new EffectComposer(this.renderer);
-            this.composer.addPass(new RenderPass(this.scene, this.camera));
-        }
-        if (this.useSSAO && !this.ssaoPass) {
-            this.ssaoPass = new SSAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
-            this.ssaoPass.kernelRadius = this.ssaoNearKernelRadius;
-            this.ssaoPass.minDistance = this.ssaoNearMinDistance;
-            this.ssaoPass.maxDistance = this.ssaoNearMaxDistance;
-            this.composer.addPass(this.ssaoPass);
-            this._syncAODepthAndCameraUniforms(this.ssaoPass);
-        }
-        if (this.useBloom) {
-            this.bloomPass = new UnrealBloomPass(
-                new THREE.Vector2(Math.max(64, window.innerWidth / 6), Math.max(64, window.innerHeight / 6)),
-                0.14,
-                0.68,
-                0.64
-            );
-            this.composer.addPass(this.bloomPass);
-        }
-        if (this.useDOF) {
-            // ミニチュア感を避けるため、被写界深度を弱めてピント域を広げる。
-            this.initDOF({
-                focus: 2100,
-                aperture: 0.0000044,
-                maxblur: 0.0031
-            });
-        }
-        if (!this.outputPass) {
-            this.outputPass = new OutputPass();
-            this.composer.addPass(this.outputPass);
-        }
-        this.addFilmGrainIfEnabled(0.22, false);
-    }
-
-    _syncAODepthAndCameraUniforms(aoPass) {
-        if (!aoPass) return;
-        if (!this.aoDepthTexture && this.composer?.renderTarget1) {
-            const size = this.renderer.getSize(new THREE.Vector2());
-            const ratio = this.renderer.getPixelRatio();
-            const w = Math.max(1, Math.floor(size.x * ratio));
-            const h = Math.max(1, Math.floor(size.y * ratio));
-            this.aoDepthTexture = new THREE.DepthTexture(w, h);
-            this.aoDepthTexture.type = THREE.UnsignedIntType;
-            this.aoDepthTexture.format = THREE.DepthFormat;
-            this.composer.renderTarget1.depthTexture = this.aoDepthTexture;
-            this.composer.renderTarget1.depthBuffer = true;
-        }
-
-        const candidateDepth =
-            aoPass.beautyRenderTarget?.depthTexture ||
-            aoPass.normalRenderTarget?.depthTexture ||
-            aoPass.depthRenderTarget?.depthTexture ||
-            this.aoDepthTexture ||
-            null;
-
-        const maybeMaterials = [
-            aoPass.ssaoMaterial,
-            aoPass.saoMaterial,
-            aoPass.materialAO,
-            aoPass.vBlurMaterial,
-            aoPass.hBlurMaterial
-        ];
-
-        for (const m of maybeMaterials) {
-            const u = m?.uniforms;
-            if (!u) continue;
-            if (u.cameraNear) u.cameraNear.value = this.camera.near;
-            if (u.cameraFar) u.cameraFar.value = this.camera.far;
-            if (u.tDepth && candidateDepth) u.tDepth.value = candidateDepth;
-        }
+        setupPostEffectsPipeline(this, {});
     }
 
     onResize() {
         super.onResize();
-        if (this.ssaoPass && typeof this.ssaoPass.setSize === 'function') {
-            this.ssaoPass.setSize(window.innerWidth, window.innerHeight);
-        }
-        if (this.saoPass && typeof this.saoPass.setSize === 'function') {
-            this.saoPass.setSize(window.innerWidth, window.innerHeight);
-        }
-        if (this.aoDepthTexture) {
-            const ratio = this.renderer.getPixelRatio();
-            this.aoDepthTexture.image.width = Math.max(1, Math.floor(window.innerWidth * ratio));
-            this.aoDepthTexture.image.height = Math.max(1, Math.floor(window.innerHeight * ratio));
-            this.aoDepthTexture.needsUpdate = true;
-        }
-        this._syncAODepthAndCameraUniforms(this.ssaoPass || this.saoPass);
+        resizePostEffectsPasses(this);
     }
 
     render() {
@@ -2874,14 +2567,7 @@ float cylinderSurfH( vec3 v ) {
             this.aoDepthTexture = null;
         }
 
-        if (this.outputPass) {
-            if (this.composer) {
-                const idx = this.composer.passes.indexOf(this.outputPass);
-                if (idx !== -1) this.composer.passes.splice(idx, 1);
-            }
-            this.outputPass.dispose();
-            this.outputPass = null;
-        }
+        disposePresentationOutputPass(this);
         if (this.studio) {
             this.studio.dispose();
             this.studio = null;
@@ -2962,13 +2648,10 @@ float cylinderSurfH( vec3 v ) {
         this._obsidianRotQuats = null;
         this._obsidianScales = null;
 
-        if (this.ambientInstManager) {
-            this.ambientInstManager.dispose();
-            this.ambientInstManager = null;
+        if (this.ambientDust) {
+            this.ambientDust.dispose();
+            this.ambientDust = null;
         }
-        this.ambientParticles = [];
-        this._ambientLiving = [];
-        this._ambientFreeSlots = [];
 
         if (this.track9SphereGroup) {
             this.scene.remove(this.track9SphereGroup);
@@ -3052,15 +2735,12 @@ float cylinderSurfH( vec3 v ) {
             this.roomGroup = null;
         }
 
-        if (this._roomEnvTexture) {
-            this._roomEnvTexture.dispose();
-            this._roomEnvTexture = null;
-        }
-        if (this.pmremGenerator) {
-            this.pmremGenerator.dispose();
-            this.pmremGenerator = null;
-        }
-        this.scene.environment = null;
+        disposeStudioRoomEnvironmentMap(
+            { pmremGenerator: this.pmremGenerator, envMapTexture: this._roomEnvTexture },
+            this.scene
+        );
+        this.pmremGenerator = null;
+        this._roomEnvTexture = null;
 
         if (this.calloutSystem) {
             this.calloutSystem.setScene(null);

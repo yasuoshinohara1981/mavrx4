@@ -9,7 +9,20 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
-import { StudioBox } from '../../lib/StudioBox.js';
+import {
+    StudioBox,
+    attachDepthOfField,
+    attachFilmGrainPass,
+    attachPresentationOutputPass,
+    disposePresentationOutputPass,
+    applyStudioRoomToneAndBackdrop,
+    setupStudioRoomEnvironmentMap,
+    disposeStudioRoomEnvironmentMap,
+    studioBoxOptionsForStudioRoom,
+    ceilingSpotRigOptionsForStudioRoom,
+    setupStudioRoomPromoWallFillLight,
+    STUDIO_CEILING_Y
+} from '../../lib/presentation/index.js';
 import { Scene14Particle } from './Scene14Particle.js';
 
 export class Scene14 extends SceneBase {
@@ -53,6 +66,16 @@ export class Scene14 extends SceneBase {
         this.useFilmGrain = true;     // フィルムグレインON
         this.bloomPass = null;
         this.ssaoPass = null;
+        this.sceneLightingScale = 0.32;
+        this.outputPass = null;
+        this.useSceneFog = true;
+        this.sceneFogDensity = 0.00009;
+        this.sceneFogColor = 0x151820;
+        this.pmremGenerator = null;
+        this._roomEnvTexture = null;
+        this._roomEnvPresentation = null;
+        this.promoWallLightTarget = null;
+        this.promoWallFillLight = null;
 
         this.trackEffects = {
             1: true,
@@ -209,9 +232,18 @@ export class Scene14 extends SceneBase {
             this.camera.updateProjectionMatrix();
         }
 
-        // シャドウマップ設定
+        this.useSSAO = false;
+
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        applyStudioRoomToneAndBackdrop(this.renderer, this.scene, this.sceneLightingScale, {
+            useSceneFog: this.useSceneFog,
+            sceneFogDensity: this.sceneFogDensity,
+            sceneFogColor: this.sceneFogColor
+        });
+        this._roomEnvPresentation = setupStudioRoomEnvironmentMap(this.renderer, this.scene);
+        this.pmremGenerator = this._roomEnvPresentation.pmremGenerator;
+        this._roomEnvTexture = this._roomEnvPresentation.envMapTexture;
 
         this.showGridRuler3D = false; // デフォルトでオフ
         this.initGridRuler3D({
@@ -230,31 +262,25 @@ export class Scene14 extends SceneBase {
         this.initialized = true;
     }
 
-    /**
-     * ライトの設定
-     */
+    /** Scene21 と同一 */
     setupLights() {
-        // シーン13と同じ明るい設定に戻すで！
-        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 0.8);
-        this.scene.add(hemiLight);
-
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
-        this.scene.add(ambientLight);
-
-        const pointLight = new THREE.PointLight(0xffffff, 2.5, 5000); 
-        pointLight.position.set(0, 500, 0); 
-        pointLight.castShadow = true; 
-        pointLight.shadow.camera.near = 10;
-        pointLight.shadow.camera.far = 10000;
-        pointLight.shadow.bias = -0.001;
-        this.scene.add(pointLight);
+        const { promoWallLightTarget, promoWallFillLight } = setupStudioRoomPromoWallFillLight(this.scene, {
+            ceilingY: STUDIO_CEILING_Y
+        });
+        this.promoWallLightTarget = promoWallLightTarget;
+        this.promoWallFillLight = promoWallFillLight;
     }
 
-    /**
-     * 撮影用スタジオ
-     */
+    /** Scene21 と同一の StudioBox + attachCeilingSpotRig */
     createStudioBox() {
-        this.studio = new StudioBox(this.scene);
+        this.studio = new StudioBox(
+            this.scene,
+            studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture)
+        );
+        this.studio.attachCeilingSpotRig(this.studio.studioBox, {
+            includeCeilingPlane: false,
+            ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale)
+        });
     }
 
     /**
@@ -338,11 +364,6 @@ export class Scene14 extends SceneBase {
             }
             mainMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
             mainMesh.instanceColor.needsUpdate = true;
-
-            mainMesh.customDepthMaterial = new THREE.MeshDepthMaterial({
-                depthPacking: THREE.RGBADepthPacking,
-                alphaTest: 0.5
-            });
 
             this.instancedMeshManagers.push(manager);
         }
@@ -491,13 +512,14 @@ export class Scene14 extends SceneBase {
             this.composer.addPass(this.bloomPass);
         }
         if (this.useDOF) {
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 500,
                 aperture: 0.000005,
                 maxblur: 0.003
             });
         }
-        this.addFilmGrainIfEnabled(0.35, false);
+        attachPresentationOutputPass(this);
+        attachFilmGrainPass(this, 0.35, false);
     }
 
     handlePhase(phase) {
@@ -1244,7 +1266,11 @@ export class Scene14 extends SceneBase {
 
     dispose() {
         this.initialized = false;
-if (this.studio) this.studio.dispose();
+        if (this.studio) this.studio.dispose();
+        disposeStudioRoomEnvironmentMap(this._roomEnvPresentation, this.scene);
+        this._roomEnvPresentation = null;
+        this.pmremGenerator = null;
+        this._roomEnvTexture = null;
         this.expandSpheres.forEach(e => {
             if (e.light) this.scene.remove(e.light);
             if (e.mesh) { this.scene.remove(e.mesh); e.mesh.geometry.dispose(); e.mesh.material.dispose(); }
@@ -1266,6 +1292,7 @@ if (this.studio) this.studio.dispose();
             }
             this.ssaoPass.enabled = false;
         }
+        disposePresentationOutputPass(this);
         super.dispose();
     }
 }

@@ -15,6 +15,7 @@ import { PlayerParticle } from '../../lib/PlayerParticle.js';
 import { Scene11_CircleEffect } from './Scene11_CircleEffect.js';
 import { MeshLine, MeshLineMaterial } from 'three.meshline';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { attachDepthOfField } from '../../lib/presentation/index.js';
 // HDRIは重いためGitから除外済み。必要なら assets/hdri/ を復元してコメントを外す
 // import { loadHdrCached } from '../../lib/hdrCache.js';
 // import hdri from '../../assets/hdri/pure_skies/autumn_field_puresky_1k.hdr';
@@ -155,7 +156,7 @@ export class Scene11 extends SceneTemplate {
 
         // DOF（BokehPass）の初期化
         if (this.useDOF) {
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 500.0,
                 aperture: 0.000002,
                 maxblur: 0.0015

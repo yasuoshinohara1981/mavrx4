@@ -12,8 +12,13 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SSAOPass } from 'three/examples/jsm/postprocessing/SSAOPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { StudioBox } from '../../lib/StudioBox.js';
+import {
+    StudioBox,
+    attachDepthOfField,
+    attachFilmGrainPass,
+    attachPresentationOutputPass,
+    disposePresentationOutputPass
+} from '../../lib/presentation/index.js';
 import { generateLabGrungeTextures } from '../../lib/LabGrungeTextures.js';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { FogNoisePass } from '../../lib/FogNoisePass.js';
@@ -730,10 +735,6 @@ export class Scene18 extends SceneBase {
 
     setupLights() {
         const pureWhite = 0xffffff;
-        // 輪郭とSSAOが真っ黒にならないよう極小フィル（メインはスポットのみ）
-        const ambientLight = new THREE.AmbientLight(pureWhite, 0.085);
-        this.scene.add(ambientLight);
-
         const coneAngle = Math.PI / 4.4;
         this.spotLight = new THREE.SpotLight(
             pureWhite,
@@ -765,6 +766,8 @@ export class Scene18 extends SceneBase {
             envMap: this._roomEnvTexture,
             envMapIntensity: 0.34,
             lightIntensity: 3.6,
+            /** 輪郭とSSAO用の極小フィル（メインはスポットのみ） */
+            ambientIntensity: 0.085,
             grungeEnabled: true,
             maxAnisotropy: this.renderer.capabilities.getMaxAnisotropy(),
             grungeWallRepeat: { x: 6.9, y: 4.1 },
@@ -2044,17 +2047,14 @@ export class Scene18 extends SceneBase {
         }
         if (this.useDOF) {
             // Scene21 と同値（固定ピント。被写界深度は弱めの実写寄りに）
-            this.initDOF({
+            attachDepthOfField(this, {
                 focus: 2100,
                 aperture: 0.0000044,
                 maxblur: 0.0031
             });
         }
-        if (!this.outputPass) {
-            this.outputPass = new OutputPass();
-            this.composer.addPass(this.outputPass);
-        }
-        this.addFilmGrainIfEnabled(0.22, false);
+        attachPresentationOutputPass(this);
+        attachFilmGrainPass(this, 0.22, false);
     }
 
     /**
@@ -2175,14 +2175,7 @@ export class Scene18 extends SceneBase {
             this.ssaoPass.enabled = false;
             this.ssaoPass = null;
         }
-        if (this.outputPass) {
-            if (this.composer) {
-                const idx = this.composer.passes.indexOf(this.outputPass);
-                if (idx !== -1) this.composer.passes.splice(idx, 1);
-            }
-            this.outputPass.dispose();
-            this.outputPass = null;
-        }
+        disposePresentationOutputPass(this);
 
         if (this.ambientInstManager) {
             this.ambientInstManager.dispose();

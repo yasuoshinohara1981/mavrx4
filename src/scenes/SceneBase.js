@@ -1,6 +1,6 @@
 /**
- * シーンの基底クラス
- * すべてのシーンはこのクラスを継承
+ * シーンの基底クラス（ライフサイクル・HUD・OSC・デバッグ等の最低限）。
+ * 被写界深度・グレイン・SSAO/Bloom のような **画面への見せ方** は `lib/presentation` に寄せる。
  */
 
 import * as THREE from 'three';
@@ -13,9 +13,6 @@ import { debugLog } from '../lib/DebugLogger.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
-import { SensorFilmGrainPass } from '../lib/SensorFilmGrainPass.js';
-import { FilmLookPass } from '../lib/FilmLookPass.js';
 import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { createFlareTexture, createGhostTexture } from '../lib/LensflareTextures.js';
 import { SkyDome } from '../lib/SkyDome.js';
@@ -262,66 +259,6 @@ export class SceneBase {
         // デフォルト値を使用（各Sceneで必要に応じてオーバーライド）
     }
     
-    /**
-     * 被写界深度（DOF）エフェクトを初期化
-     */
-    initDOF(params = {}) {
-        if (!this.composer) {
-            this.composer = new EffectComposer(this.renderer);
-            this.composer.addPass(new RenderPass(this.scene, this.camera));
-        }
-
-        // パラメータの統合
-        this.dofParams = { ...this.dofParams, ...params };
-
-        // 既存のパスがあれば削除
-        if (this.bokehPass) {
-            this.composer.removePass(this.bokehPass);
-        }
-
-        this.bokehPass = new BokehPass(this.scene, this.camera, {
-            focus: this.dofParams.focus,
-            aperture: this.dofParams.aperture,
-            maxblur: this.dofParams.maxblur,
-            width: window.innerWidth,
-            height: window.innerHeight
-        });
-
-        this.bokehPass.enabled = this.useDOF;
-        this.composer.addPass(this.bokehPass);
-        
-        debugLog('effect', 'DOF (BokehPass) initialized');
-    }
-
-    /**
-     * フィルムグレインを追加（useFilmGrainがtrueの場合のみ）
-     * initPostProcessingの最後で呼ぶこと
-     * @param {number} [intensity=0.35] - グレイン強度
-     * @param {boolean} [grayscale=false] - グレースケール化するか
-     */
-    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false) {
-        if (!this.useFilmGrain) return;
-        if (!this.composer) {
-            this.composer = new EffectComposer(this.renderer);
-            this.composer.addPass(new RenderPass(this.scene, this.camera));
-        }
-        if (this.filmPass) return; // 既に追加済み
-        // 色収差のみ（soften=0）。ぼかし混ぜは縦横筋の原因になるのでデフォルトオフ。
-        const filmLookCa = 0.0004;
-        const filmLookSoften = 0.0;
-        if (!this.filmLookPass && (filmLookCa > 0.0 || filmLookSoften > 0.0)) {
-            this.filmLookPass = new FilmLookPass({ caAmount: filmLookCa, soften: filmLookSoften });
-            this.composer.addPass(this.filmLookPass);
-            debugLog('effect', 'FilmLookPass (CA only) added');
-        }
-        this.filmPass = new SensorFilmGrainPass(intensity, grayscale);
-        if (this.bokehPass) {
-            this.filmPass.bindBokehPass(this.bokehPass, () => this.useDOF && this.bokehPass && this.bokehPass.enabled);
-        }
-        this.composer.addPass(this.filmPass);
-        debugLog('effect', 'FilmGrain (SensorFilmGrainPass) added');
-    }
-
     /**
      * レンズフレアを追加（useLensFlareがtrueの場合のみ）
      * setup()の後、シーンのライト設定が完了した後に呼ぶこと

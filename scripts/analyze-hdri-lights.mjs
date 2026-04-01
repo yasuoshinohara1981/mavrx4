@@ -3,8 +3,8 @@
  * HDRI から光源位置を解析して JSON を出力する
  * 各 HDRI の最も明るいピクセル（太陽）を検出し、equirectangular から方向ベクトルに変換
  *
- * Usage: node scripts/analyze-hdri-lights.mjs
- * Output: src/assets/hdriLightConfig.json
+ * Usage: node scripts/analyze-hdri-lights.mjs <output.json> [hdriRoot]
+ * 例: node scripts/analyze-hdri-lights.mjs ./hdri-light-config.json src/assets/hdri
  */
 
 import { readExr, readHdr } from 'hdrify';
@@ -13,8 +13,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HDRI_ROOT = path.join(__dirname, '../src/assets/hdri');
-const OUTPUT_PATH = path.join(__dirname, '../src/assets/hdriLightConfig.json');
 
 /** 輝度を計算 (Rec. 709) */
 function luminance(r, g, b) {
@@ -118,6 +116,19 @@ async function analyzeOne(filePath, ext) {
 }
 
 async function main() {
+  const outputArg = process.argv[2];
+  const hdriRootArg = process.argv[3];
+  if (!outputArg) {
+    console.error('Usage: node scripts/analyze-hdri-lights.mjs <output.json> [hdriRoot]');
+    process.exit(1);
+  }
+  const OUTPUT_PATH = path.isAbsolute(outputArg) ? outputArg : path.join(process.cwd(), outputArg);
+  const HDRI_ROOT = hdriRootArg
+    ? path.isAbsolute(hdriRootArg)
+      ? hdriRootArg
+      : path.join(process.cwd(), hdriRootArg)
+    : path.join(__dirname, '../src/assets/hdri');
+
   const files = getAllHdriFiles(HDRI_ROOT);
   const config = {};
 

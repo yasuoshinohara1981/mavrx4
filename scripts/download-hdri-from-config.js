@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * hdriLightConfig.json のキーを元に Poly Haven から HDRI をダウンロード
- * 使い方: node scripts/download-hdri-from-config.js
+ * JSON のキー（パス形式）を元に Poly Haven から HDRI をダウンロード
+ * 使い方: node scripts/download-hdri-from-config.js <config.json>
  *
  * 出力先: src/assets/hdri/{nature|pure_skies|urban}/{filename}
  * 例: src/assets/hdri/nature/dikhololo_night_8k.hdr
@@ -51,13 +51,17 @@ function parseConfigKey(configKey) {
 }
 
 async function main() {
-  const configPath = join(__dirname, '../src/assets/hdriLightConfig.json');
+  const configPath = process.argv[2];
+  if (!configPath) {
+    console.error('Usage: node scripts/download-hdri-from-config.js <config.json>');
+    process.exit(1);
+  }
   const outBase = join(__dirname, '../src/assets/hdri');
 
   const config = JSON.parse(await readFile(configPath, 'utf-8'));
   const keys = Object.keys(config);
 
-  console.log(`📥 hdriLightConfig.json の ${keys.length} 件を Poly Haven からダウンロード\n`);
+  console.log(`📥 ${configPath} の ${keys.length} 件を Poly Haven からダウンロード\n`);
   console.log(`出力先: ${outBase}\n`);
 
   let downloaded = 0;

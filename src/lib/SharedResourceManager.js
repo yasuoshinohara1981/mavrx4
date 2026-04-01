@@ -10,8 +10,6 @@
  */
 
 import { GPUParticleSystem } from './GPUParticleSystem.js';
-import { InstancedMeshManager } from './InstancedMeshManager.js';
-import * as THREE from 'three';
 
 export class SharedResourceManager {
     constructor(renderer) {
@@ -144,31 +142,7 @@ const startTime = performance.now();
             }
         }
     }
-    
-    /**
-     * 共有リソースのテクスチャを初期状態に戻す
-     * シーン切り替え時に呼び出して、テクスチャの状態をリセット
-     */
-    resetResourceToInitialState(sceneName) {
-        const resource = this.activeResources.get(sceneName);
-        if (!resource) {
-            // アクティブでない場合は、プールから取得
-            const config = this.gpuParticlePools[sceneName];
-            if (config && config.pool && config.pool.length > 0) {
-                const pooledResource = config.pool[0];
-                if (pooledResource && pooledResource.resetToInitialState) {
-                    pooledResource.resetToInitialState();
-}
-            }
-        } else {
-            // アクティブなリソースの場合は直接リセット
-            if (resource.resetToInitialState) {
-                resource.resetToInitialState();
-}
-        }
-    }
-    
-    
+
     /**
      * 全リソースをクリーンアップ（アプリ終了時のみ）
      */

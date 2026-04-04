@@ -21,7 +21,7 @@ export function applyStudioRoomToneAndBackdrop(
     sceneLightingScale,
     {
         useSceneFog = true,
-        sceneFogDensity = 0.00009,
+        sceneFogDensity = 0.00015,
         sceneFogColor = 0x151820
     } = {}
 ) {
@@ -89,7 +89,7 @@ export function studioBoxOptionsForStudioRoom(sceneLightingScale, roomEnvTexture
         useLights: true,
         lightIntensity: 8 * L,
         // 影を濃く見せる：均しの Ambient と四隅 Point のフィルを抑える（キーは ceilingSpotRig の Spot）
-        ambientIntensity: 0.075,
+        ambientIntensity: 0.28,
         fluorescentPointIntensity: 260
     };
 }

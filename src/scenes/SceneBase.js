@@ -1,6 +1,6 @@
 /**
- * シーンの基底クラス（ライフサイクル・HUD・OSC・デバッグ等の最低限）。
- * 被写界深度・グレイン・SSAO/Bloom のような **画面への見せ方** は `lib/presentation` に寄せる。
+ * シーンの基底クラス
+ * すべてのシーンはこのクラスを継承
  */
 
 import * as THREE from 'three';
@@ -13,6 +13,12 @@ import { debugLog } from '../lib/DebugLogger.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+import { SensorFilmGrainPass } from '../lib/SensorFilmGrainPass.js';
+import { FilmLookPass } from '../lib/FilmLookPass.js';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
+import { createFlareTexture, createGhostTexture } from '../lib/LensflareTextures.js';
+import { SkyDome } from '../lib/SkyDome.js';
 
 export class SceneBase {
     constructor(renderer, camera) {
@@ -45,9 +51,9 @@ export class SceneBase {
         /** Ctrl+数字のシーンバンク（SceneManagerと同期） */
         this.sceneBankIndex = 0;
         /** 登録シーン総数（HUDのバンク表示用・実際に存在するシーン数） */
-        this.totalSceneCount = 2;
-        /** HUD上の最大スロット番号（登録シーン数に合わせる） */
-        this.maxSceneSlots = 2;
+        this.totalSceneCount = 21;
+        /** HUD上の最大スロット数（100 = 10バンク×10） */
+        this.maxSceneSlots = 100;
         /** 0始まりのシーンインデックス（SceneManagerが切替時に設定） */
         this.sceneIndex = 0;
         this.particleCount = 0;  // パーティクル数
@@ -72,7 +78,12 @@ export class SceneBase {
         this.useDOF = false;   // サブクラスで有効化するためのフラグ
         this.filmLookPass = null;  // 軽いCA＋ソフト（フィルムグレイン直前）
         this.filmPass = null;  // フィルムグレイン用のパス
-        this.useFilmGrain = false;  // サブクラスで有効化するためのフラグ
+        this.useFilmGrain = false;  // サブクラスで有効化するためのフラグ（Scene12以降でON）
+        this.lensFlare = null;      // レンズフレアオブジェクト
+        this.lensFlareLight = null; // フレア用の光源（位置決め用）
+        this.useLensFlare = false;  // サブクラスで有効化するためのフラグ
+        this.skyDome = null;        // HDRIスカイドーム（Scene19のみ有効）
+        this.useSkyDome = false;    // サブクラスで有効化するためのフラグ
         this.dofParams = {
             focus: 1000,
             aperture: 0.000005,
@@ -249,6 +260,122 @@ export class SceneBase {
      */
     setupCameraParticleDistance(cameraParticle) {
         // デフォルト値を使用（各Sceneで必要に応じてオーバーライド）
+    }
+    
+    /**
+     * 被写界深度（DOF）エフェクトを初期化
+     */
+    initDOF(params = {}) {
+        if (!this.composer) {
+            this.composer = new EffectComposer(this.renderer);
+            this.composer.addPass(new RenderPass(this.scene, this.camera));
+        }
+
+        // パラメータの統合
+        this.dofParams = { ...this.dofParams, ...params };
+
+        // 既存のパスがあれば削除
+        if (this.bokehPass) {
+            this.composer.removePass(this.bokehPass);
+        }
+
+        this.bokehPass = new BokehPass(this.scene, this.camera, {
+            focus: this.dofParams.focus,
+            aperture: this.dofParams.aperture,
+            maxblur: this.dofParams.maxblur,
+            width: window.innerWidth,
+            height: window.innerHeight
+        });
+
+        this.bokehPass.enabled = this.useDOF;
+        this.composer.addPass(this.bokehPass);
+        
+        debugLog('effect', 'DOF (BokehPass) initialized');
+    }
+
+    /**
+     * フィルムグレインを追加（useFilmGrainがtrueの場合のみ）
+     * initPostProcessingの最後で呼ぶこと
+     * @param {number} [intensity=0.35] - グレイン強度
+     * @param {boolean} [grayscale=false] - グレースケール化するか
+     */
+    addFilmGrainIfEnabled(intensity = 0.35, grayscale = false) {
+        if (!this.useFilmGrain) return;
+        if (!this.composer) {
+            this.composer = new EffectComposer(this.renderer);
+            this.composer.addPass(new RenderPass(this.scene, this.camera));
+        }
+        if (this.filmPass) return; // 既に追加済み
+        // 色収差のみ（soften=0）。ぼかし混ぜは縦横筋の原因になるのでデフォルトオフ。
+        const filmLookCa = 0.0004;
+        const filmLookSoften = 0.0;
+        if (!this.filmLookPass && (filmLookCa > 0.0 || filmLookSoften > 0.0)) {
+            this.filmLookPass = new FilmLookPass({ caAmount: filmLookCa, soften: filmLookSoften });
+            this.composer.addPass(this.filmLookPass);
+            debugLog('effect', 'FilmLookPass (CA only) added');
+        }
+        this.filmPass = new SensorFilmGrainPass(intensity, grayscale);
+        if (this.bokehPass) {
+            this.filmPass.bindBokehPass(this.bokehPass, () => this.useDOF && this.bokehPass && this.bokehPass.enabled);
+        }
+        this.composer.addPass(this.filmPass);
+        debugLog('effect', 'FilmGrain (SensorFilmGrainPass) added');
+    }
+
+    /**
+     * レンズフレアを追加（useLensFlareがtrueの場合のみ）
+     * setup()の後、シーンのライト設定が完了した後に呼ぶこと
+     * @param {Object} [options] - オプション
+     * @param {THREE.Vector3} [options.position] - フレアの光源位置（デフォルト: 0, 800, 500）
+     * @param {number} [options.intensity=0.3] - フレアの強さ（控えめに）
+     */
+    addLensFlareIfEnabled(options = {}) {
+        if (!this.useLensFlare) return;
+        if (this.lensFlare) return; // 既に追加済み
+
+        const position = options.position || new THREE.Vector3(0, 800, 500);
+        const intensity = options.intensity ?? 0.3;
+
+        // フレア用の光源（強度0で位置決めのみ、シーン照明には影響しない）
+        this.lensFlareLight = new THREE.PointLight(0xffffff, 0, 10000);
+        this.lensFlareLight.position.copy(position);
+        this.scene.add(this.lensFlareLight);
+
+        // プロシージャルテクスチャで軽量フレアを構築
+        const tex0 = createFlareTexture(128, 0.4);
+        const tex1 = createFlareTexture(64, 0.6);
+        const tex2 = createGhostTexture(32, 128);
+
+        this.lensFlare = new Lensflare();
+        this.lensFlare.addElement(new LensflareElement(tex0, 200 * intensity, 0, new THREE.Color(0xffffff)));
+        this.lensFlare.addElement(new LensflareElement(tex1, 80 * intensity, 0.4, new THREE.Color(0xffffee)));
+        this.lensFlare.addElement(new LensflareElement(tex2, 60 * intensity, 0.7, new THREE.Color(0xffffdd)));
+
+        this.lensFlareLight.add(this.lensFlare);
+        debugLog('effect', 'LensFlare added');
+    }
+
+    /**
+     * HDRIスカイドームを適用（useSkyDomeがtrueの場合のみ）
+     * 使用するHDRIは引数でシーン側から渡す
+     * @param {string} hdriUrl - HDRIファイルのURL（importで取得したものを渡す）
+     * @param {Object} [options] - SkyDome.setupのオプション
+     * @returns {Promise<THREE.Texture|null>} envMap（マテリアル用）、無効時はnull
+     */
+    async addSkyDomeIfEnabled(hdriUrl, options = {}) {
+        if (!this.useSkyDome) return null;
+        if (this.skyDome) return this.skyDome.envMap; // 既に適用済み
+
+        this.skyDomeLightConfig = {
+            position: options.sunPosition ? new THREE.Vector3().copy(options.sunPosition) : null,
+            color: options.sunColor ?? 0xffffff,
+            intensity: options.sunIntensity ?? 0.5
+        };
+
+        this.skyDome = new SkyDome(this.scene);
+        const envMap = await this.skyDome.setup(hdriUrl, options);
+        debugLog('effect', 'SkyDome added');
+        return envMap;
     }
 
     /**
@@ -535,6 +662,11 @@ export class SceneBase {
         // Scene02など、deltaTimeを使うシーンのみ、ここで更新する
         // this.time += deltaTime;  // サブクラスで独自更新するため、コメントアウト
         
+        // スカイドームの更新
+        if (this.skyDome && this.useSkyDome) {
+            this.skyDome.update(this.camera);
+        }
+
         // サブクラスの更新処理
         this.onUpdate(deltaTime);
         
@@ -631,11 +763,9 @@ export class SceneBase {
      * 描画処理
      */
     render() {
-        // 背景色を設定（サブクラスで scene.background を Color にしている場合はそれをクリア色に使う。毎回黒固定だと DOF 等で背景が潰れる）
+        // 背景色を設定
         if (this.backgroundWhite) {
             this.renderer.setClearColor(0xffffff);
-        } else if (this.scene && this.scene.background && this.scene.background.isColor) {
-            this.renderer.setClearColor(this.scene.background);
         } else {
             this.renderer.setClearColor(0x000000);
         }
@@ -1064,6 +1194,23 @@ export class SceneBase {
             }
         }
         
+        // スカイドームの破棄
+        if (this.skyDome) {
+            this.skyDome.dispose();
+            this.skyDome = null;
+        }
+        this.skyDomeLightConfig = null;
+
+        // レンズフレアの破棄
+        if (this.lensFlare) {
+            if (this.lensFlare.dispose) this.lensFlare.dispose();
+            this.lensFlare = null;
+        }
+        if (this.lensFlareLight && this.scene) {
+            this.scene.remove(this.lensFlareLight);
+            this.lensFlareLight = null;
+        }
+
         // フィルムルック（CA+ソフト）の破棄
         if (this.filmLookPass) {
             this.filmLookPass.dispose();
@@ -1200,20 +1347,20 @@ export class SceneBase {
     }
     
     /**
-     * リサイズ処理（サブクラスで super.onResize() を呼ぶこと）
+     * リサイズ処理
      */
     onResize() {
+        // 色反転エフェクトのリサイズ
         if (this.colorInversion) {
             this.colorInversion.onResize();
         }
+        
+        // ポストプロセッシングエフェクトのリサイズ
         if (this.composer) {
             this.composer.setSize(window.innerWidth, window.innerHeight);
         }
-        this.resizeScreenshotCanvas();
-        if (this.cameraDebugCanvas) {
-            this.cameraDebugCanvas.width = window.innerWidth;
-            this.cameraDebugCanvas.height = window.innerHeight;
-        }
+        
+        // サブクラスで実装
     }
     
     /**
@@ -1485,7 +1632,20 @@ export class SceneBase {
         this.pendingScreenshotFilename = '';
         this.screenshotExecuting = false;
     }
-
+    
+    /**
+     * リサイズ処理（オーバーライド用）
+     */
+    onResize() {
+        this.resizeScreenshotCanvas();
+        
+        // カメラデバッグ用Canvasをリサイズ
+        if (this.cameraDebugCanvas) {
+            this.cameraDebugCanvas.width = window.innerWidth;
+            this.cameraDebugCanvas.height = window.innerHeight;
+        }
+    }
+    
     /**
      * 3Dグリッドとルーラーを初期化
      * @param {Object} params - グリッドのパラメータ

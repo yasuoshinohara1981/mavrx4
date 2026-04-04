@@ -104,8 +104,8 @@ export function setupPostEffectsPipeline(host, options = {}) {
     if (useDof) {
         attachDepthOfField(host, {
             focus: options.dofFocus ?? 2100,
-            aperture: options.dofAperture ?? 0.0000044,
-            maxblur: options.dofMaxBlur ?? 0.0031
+            aperture: options.dofAperture ?? 0.0000012,
+            maxblur: options.dofMaxBlur ?? 0.0028
         });
     }
 

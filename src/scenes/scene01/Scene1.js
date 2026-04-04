@@ -20,8 +20,13 @@ import {
     disposeStudioRoomEnvironmentMap,
     studioBoxOptionsForStudioRoom,
     ceilingSpotRigOptionsForStudioRoom,
-    applyStudioRoomFloorWallEnvMaps
+    applyStudioRoomFloorWallEnvMaps,
+    STUDIO_ROOM_HALF_W,
+    STUDIO_ROOM_HALF_D,
+    STUDIO_FLOOR_TOP_Y,
+    STUDIO_CEILING_Y
 } from '../../lib/presentation/index.js';
+import { StudioAtmosphere } from '../../lib/StudioAtmosphere.js';
 import { Scene1Particle } from './Scene1Particle.js';
 
 // 分割したモジュールのインポート
@@ -51,6 +56,8 @@ export class Scene1 extends SceneBase {
 
         this.cubeRenderTarget = null;
         this.cubeCamera = null;
+
+        this.atmosphere = null;
 
         /** トラック9で生える金属片 — GPU インスタンス（1 InstancedMesh） */
         this.shards = [];
@@ -137,7 +144,7 @@ export class Scene1 extends SceneBase {
         this.useDOF = true;
         this.useBloom = true;
         this.useSceneFog = true;
-        this.sceneFogDensity = 0.00009;
+        this.sceneFogDensity = 0.00015;
         /** 暖色系フォグ（遠景をやわらかく） */
         this.sceneFogColor = 0x231a14;
         this.useSSAO = true;
@@ -174,12 +181,8 @@ export class Scene1 extends SceneBase {
         this.cableBlobParticle = null;
 
         this.ambientParticleCount = 2000;
-        this.ambientDust = null;
         this.ambientParticleLifetimeMs = 11000;
         this.ambientParticleFadeOutMs = 1400;
-        this.ambientParticlesPerShard = 10;
-        this.ambientParticlesPerCylinder = 12;
-        this.ambientParticlesPerTrack9 = 16;
         this.ambientMinLiving = 180;
 
         this.cylinderInstMesh = null;
@@ -338,55 +341,23 @@ export class Scene1 extends SceneBase {
     _updateTrack9SpherePhysics(deltaTime) { Track9.updateTrack9SpherePhysics(this, deltaTime); }
 
     // 大気関連の委譲
-    createAmbientFloatingParticles() { Atmosphere.createAmbientFloatingParticles(this); }
+    createAmbientFloatingParticles() {
+        this.atmosphere = new StudioAtmosphere(this.scene, {
+            roomHalfW: this.roomHalfW,
+            roomHalfD: this.roomHalfD,
+            floorTopY: this.floorTopY,
+            ceilingY: this.ceilingY,
+            particleCount: this.ambientParticleCount,
+            particleLifetimeMs: this.ambientParticleLifetimeMs,
+            particleFadeOutMs: this.ambientParticleFadeOutMs,
+            minLivingBurst: this.ambientMinLiving
+        });
+    }
     initObsidianDrifters() { Atmosphere.initObsidianDrifters(this); }
     _updateObsidianDrifters(deltaTime) { Atmosphere.updateObsidianDrifters(this, deltaTime); }
     setupAirNoiseVolume() {
-        // ... (Atmosphere.setupAirNoiseVolume(this) if implemented)
-        // Original logic kept for now to ensure stability
-        const volumeGeo = new THREE.BoxGeometry(this.roomHalfW * 2.6, this.ceilingY * 1.3, this.roomHalfD * 2.6);
-        this.airNoiseMaterial = new THREE.ShaderMaterial({
-            uniforms: { uTime: { value: 0.0 }, uDensity: { value: 0.036 }, uColor: { value: new THREE.Color(0xffffff) } },
-            vertexShader: `
-                varying vec3 vWorldPos;
-                void main() {
-                    vec4 wp = modelMatrix * vec4(position, 1.0);
-                    vWorldPos = wp.xyz;
-                    gl_Position = projectionMatrix * viewMatrix * wp;
-                }
-            `,
-            fragmentShader: `
-                varying vec3 vWorldPos;
-                uniform float uTime;
-                uniform float uDensity;
-                uniform vec3 uColor;
-                float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
-                float noise3(vec3 p) {
-                    vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-                    float n000 = hash13(i + vec3(0.0, 0.0, 0.0)); float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
-                    float n010 = hash13(i + vec3(0.0, 1.0, 0.0)); float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
-                    float n001 = hash13(i + vec3(0.0, 0.0, 1.0)); float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
-                    float n011 = hash13(i + vec3(0.0, 1.0, 1.0)); float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
-                    return mix(mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y), mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y), f.z);
-                }
-                float fbm(vec3 p) {
-                    float a = 0.5; float s = 0.0;
-                    for (int i = 0; i < 4; i++) { s += a * noise3(p); p = p * 2.03 + vec3(17.1, 3.7, 11.9); a *= 0.5; }
-                    return s;
-                }
-                void main() {
-                    vec3 p = vWorldPos * 0.0012 + vec3(0.0, uTime * 0.02, uTime * 0.012);
-                    float n = fbm(p);
-                    float vertical = smoothstep(-500.0, 2500.0, vWorldPos.y);
-                    float alpha = uDensity * (0.22 + n * 0.34) * vertical;
-                    gl_FragColor = vec4(uColor, alpha);
-                }
-            `,
-            transparent: true, depthWrite: false, side: THREE.BackSide, blending: THREE.NormalBlending
-        });
-        this.airNoiseVolume = new THREE.Mesh(volumeGeo, this.airNoiseMaterial);
-        this.airNoiseVolume.position.set(0, this.floorTopY + (this.ceilingY - this.floorTopY) * 0.55, 0);
-        this.scene.add(this.airNoiseVolume);
+        // StudioAtmosphere 内で構築されるため、ここでは何もしないか、
+        // 必要に応じてマテリアルのプロパティを上書きする
     }
 
     // 残りのメソッド（OSC ハンドリング、初期化、廃棄など）
@@ -524,6 +495,7 @@ export class Scene1 extends SceneBase {
         this.buildRoom();
         this.studio.attachCeilingSpotRig(this.roomGroup, { ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale) });
         this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
+        if (this.ceilingMesh) this.ceilingMesh.visible = true;
 
         await this._initWallMatteBlack3DText();
         const floorMat = this.roomGroup.children[0].material;
@@ -560,12 +532,9 @@ export class Scene1 extends SceneBase {
         this.pruneExpiredShards();
         this.pruneExpiredCylinders();
         this._updateRedCylinderBurstParticles(deltaTime);
-        if (this.ambientDust) {
-            this.ambientDust.update(deltaTime, this.time);
-            if (this.ambientDust.livingCount < this.ambientMinLiving) {
-                const p = this.shardGroup?.position ?? this._cameraFocusSmoothed ?? new THREE.Vector3(0, this.floorTopY + 600, 0);
-                this.ambientDust.spawnBurst(p, this.ambientMinLiving - this.ambientDust.livingCount);
-            }
+        if (this.atmosphere) {
+            const p = this.shardGroup?.position ?? this._cameraFocusSmoothed ?? new THREE.Vector3(0, this.floorTopY + 600, 0);
+            this.atmosphere.update(deltaTime, this.time, p);
         }
         this._tickTrack9DurationSpawn();
         this._updateTrack9SpherePhysics(deltaTime);
@@ -728,7 +697,7 @@ export class Scene1 extends SceneBase {
         if (this.obsidianMaterial) { this.obsidianMaterial.dispose(); this.obsidianMaterial = null; }
         if (this.obsidianBumpMap) { this.obsidianBumpMap.dispose(); this.obsidianBumpMap = null; }
         this._obsidianPositions = null; this._obsidianVelocities = null; this._obsidianRotQuats = null; this._obsidianScales = null;
-        if (this.ambientDust) { this.ambientDust.dispose(); this.ambientDust = null; }
+        if (this.atmosphere) { this.atmosphere.dispose(); this.atmosphere = null; }
         if (this.track9SphereGroup) {
             this.scene.remove(this.track9SphereGroup);
             for (const sp of this.track9Spheres) { if (sp.mesh && sp.mesh.material) sp.mesh.material.dispose(); }
@@ -749,8 +718,6 @@ export class Scene1 extends SceneBase {
             if (this._laserScanMaterial) { this._laserScanMaterial.dispose(); this._laserScanMaterial = null; }
             this.laserScanMesh = null;
         }
-        if (this.airNoiseVolume) { this.scene.remove(this.airNoiseVolume); if (this.airNoiseVolume.geometry) this.airNoiseVolume.geometry.dispose(); this.airNoiseVolume = null; }
-        if (this.airNoiseMaterial) { this.airNoiseMaterial.dispose(); this.airNoiseMaterial = null; }
         if (this.cubeCamera) { this.scene.remove(this.cubeCamera); this.cubeCamera = null; }
         if (this.cubeRenderTarget) { this.cubeRenderTarget.dispose(); this.cubeRenderTarget = null; }
         if (this.roomGroup) {

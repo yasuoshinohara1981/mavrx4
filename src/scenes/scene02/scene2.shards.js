@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene2Particle } from './Scene2Particle.js';
-import { setRandomRockCharcoalColor } from './scene2.helpers.js';
+import { setRandomEmeraldColor, setHeatmapColorFromUnit } from './scene2.helpers.js';
 
 /**
  * Scene2 パーティクル（立方体インスタンス）関連のロジック
@@ -19,21 +19,35 @@ export function createSpheres(scene) {
         white.fill(1);
         geo.setAttribute('color', new THREE.BufferAttribute(white, 3));
     }
-    const textures = generateFleshTextures();
-    const mat = new THREE.MeshPhysicalMaterial({
-        color: 0xffffff,
-        map: textures.map,
-        bumpMap: textures.bumpMap,
-        bumpScale: 0.34,
-        roughness: 0.35,
-        metalness: 0.68,
-        clearcoat: 0.28,
-        clearcoatRoughness: 0.32,
-        envMapIntensity: 1.75,
-        specularIntensity: 1.1,
-        fog: true,
-        vertexColors: true
-    });
+    const textures = scene.useHeatmapParticleColors ? null : generateEmeraldGemTextures();
+    /** ヒートマップ時は緑アルbedo／透過を使わない（頂点色 × map で暖色が消えるのを防ぐ） */
+    const mat = scene.useHeatmapParticleColors
+        ? new THREE.MeshStandardMaterial({
+            color: 0x444444, // 濃い無彩色ベース
+            roughness: 0.38,
+            metalness: 0.06,
+            envMapIntensity: 1.35,
+            fog: true,
+            vertexColors: true
+        })
+        : new THREE.MeshPhysicalMaterial({
+            color: 0x333333, // 岩石風の濃い色
+            roughness: 0.16,
+            metalness: 0.4, // 金属感を少し上げてキラキラさせる
+            clearcoat: 0.8, // クリアコートを強めて反射を強調
+            clearcoatRoughness: 0.1,
+            envMapIntensity: 1.8, // 環境反射を強める
+            specularIntensity: 1.2,
+            transmission: 0.0, // 透過を完全にオフにして緑っぽさを排除
+            thickness: 0.0,
+            ior: 1.6,
+            attenuationColor: new THREE.Color(0xffffff), // 無彩色に
+            attenuationDistance: 1.0,
+            emissive: new THREE.Color(0x000000), // エミッシブもオフ
+            emissiveIntensity: 0.0,
+            fog: true,
+            vertexColors: true
+        });
     if (scene.scene?.environment) mat.envMap = scene.scene.environment;
 
     scene.instancedMeshManager = new InstancedMeshManager(scene.scene, geo, mat, n);
@@ -61,7 +75,13 @@ export function createSpheres(scene) {
         p.angularVelocity.multiplyScalar(2.0);
         scene.particles.push(p);
 
-        setRandomRockCharcoalColor(scene._colorTmp);
+        if (scene.useHeatmapParticleColors) {
+            setHeatmapColorFromUnit(0, scene._colorTmp);
+        } else {
+            // 岩石風の濃い無彩色ランダム
+            const gray = 0.1 + Math.random() * 0.25;
+            scene._colorTmp.setRGB(gray, gray, gray);
+        }
         scene.instancedMeshManager.setColorAt(i, scene._colorTmp);
         scene.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.scale);
     }
@@ -79,6 +99,15 @@ export function updatePhysics(scene, deltaTime) {
     const halfSize = 4950;
     const tempVec = new THREE.Vector3();
     const visibleCount = Math.min(scene.currentVisibleCount || 0, scene.particles.length);
+    const heatSmooth = scene.heatmapColorSmoothing ?? 0.45;
+    const heatGamma = scene.heatmapResponseGamma ?? 0.4;
+    const heatVelBlend = scene.heatmapVelocityBlend ?? 0;
+
+    if (scene.useHeatmapParticleColors) {
+        for (let i = 0; i < visibleCount; i++) {
+            scene.particles[i].frameForceMax = 0;
+        }
+    }
 
     for (let s = 0; s < subSteps; s++) {
         scene.grid.clear();
@@ -222,6 +251,12 @@ export function updatePhysics(scene, deltaTime) {
                 p.addForce(tempVec);
             }
 
+            if (scene.useHeatmapParticleColors) {
+                const fl = p.force.length();
+                const capped = Math.min(fl, p.maxForce);
+                if (capped > p.frameForceMax) p.frameForceMax = capped;
+            }
+
             p.update();
             p.velocity.multiplyScalar(0.95);
 
@@ -250,6 +285,26 @@ export function updatePhysics(scene, deltaTime) {
     }
 
     if (scene.instancedMeshManager) {
+        if (scene.useHeatmapParticleColors) {
+            let globalForceMax = 0;
+            for (let i = 0; i < visibleCount; i++) {
+                const f = scene.particles[i].frameForceMax;
+                if (f > globalForceMax) globalForceMax = f;
+            }
+            const denom = Math.max(globalForceMax, 1e-5);
+
+            for (let i = 0; i < visibleCount; i++) {
+                const p = scene.particles[i];
+                const rel = Math.min(1, p.frameForceMax / denom);
+                const vRel = Math.min(1, p.velocity.length() / Math.max(p.maxSpeed, 1e-6));
+                let target = rel * (1 - heatVelBlend) + vRel * heatVelBlend;
+                target = Math.pow(THREE.MathUtils.clamp(target, 0, 1), heatGamma);
+                p.heatVisual += (target - p.heatVisual) * heatSmooth;
+                setHeatmapColorFromUnit(p.heatVisual, scene._colorTmp);
+                scene.instancedMeshManager.setColorAt(i, scene._colorTmp);
+            }
+            scene.instancedMeshManager.markColorsNeedsUpdate();
+        }
         for (let i = 0; i < visibleCount; i++) {
             const p = scene.particles[i];
             scene.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.scale);
@@ -282,49 +337,59 @@ export function triggerExpandEffect(scene, velocity = 127) {
 }
 
 /**
- * 内部ユーティリティ：岩肌テクスチャの生成
+ * 内部ユーティリティ：エメラルド内部のシラー・クラック風テクスチャ
  */
-function generateFleshTextures() {
+function generateEmeraldGemTextures() {
     const size = 512;
     const colorCanvas = document.createElement('canvas');
     colorCanvas.width = size; colorCanvas.height = size;
     const cCtx = colorCanvas.getContext('2d');
-    cCtx.fillStyle = '#2a2a2a'; cCtx.fillRect(0, 0, size, size);
-    for (let i = 0; i < 60; i++) {
-        const x = Math.random() * size; const y = Math.random() * size; const r = 5 + Math.random() * 30;
+    const baseGrad = cCtx.createLinearGradient(0, 0, size, size);
+    baseGrad.addColorStop(0, '#145a42');
+    baseGrad.addColorStop(0.45, '#228f68');
+    baseGrad.addColorStop(1, '#186648');
+    cCtx.fillStyle = baseGrad;
+    cCtx.fillRect(0, 0, size, size);
+    for (let i = 0; i < 55; i++) {
+        const x = Math.random() * size; const y = Math.random() * size; const r = 6 + Math.random() * 36;
         const grad = cCtx.createRadialGradient(x, y, 0, x, y, r);
-        const grayVal = 55 + Math.random() * 55;
-        grad.addColorStop(0, `rgba(${grayVal}, ${grayVal}, ${grayVal}, 0.35)`);
-        grad.addColorStop(1, 'rgba(40, 40, 40, 0)');
+        const g = 165 + Math.random() * 75;
+        const rCh = 45 + Math.random() * 55;
+        grad.addColorStop(0, `rgba(${rCh}, ${g}, ${95 + Math.random() * 55}, 0.48)`);
+        grad.addColorStop(1, 'rgba(24, 90, 65, 0)');
         cCtx.fillStyle = grad; cCtx.beginPath(); cCtx.arc(x, y, r, 0, Math.PI * 2); cCtx.fill();
     }
-    for (let i = 0; i < 200; i++) {
-        const x = Math.random() * size; const y = Math.random() * size; const r = 0.5 + Math.random() * 1.5;
-        cCtx.fillStyle = Math.random() > 0.5 ? 'rgba(20, 22, 24, 0.45)' : 'rgba(90, 92, 96, 0.35)';
+    for (let i = 0; i < 220; i++) {
+        const x = Math.random() * size; const y = Math.random() * size; const r = 0.4 + Math.random() * 1.8;
+        const deep = Math.random() > 0.5;
+        cCtx.fillStyle = deep
+            ? 'rgba(18, 72, 52, 0.42)'
+            : `rgba(${70 + Math.random() * 50}, ${175 + Math.random() * 60}, ${110 + Math.random() * 50}, 0.4)`;
         cCtx.beginPath(); cCtx.arc(x, y, r, 0, Math.PI * 2); cCtx.fill();
     }
     const bumpCanvas = document.createElement('canvas');
     bumpCanvas.width = size; bumpCanvas.height = size;
     const bCtx = bumpCanvas.getContext('2d');
-    bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 0, size, size);
-    bCtx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
-    for (let i = 0; i < 30; i++) {
-        bCtx.lineWidth = 1 + Math.random() * 2;
+    bCtx.fillStyle = '#9ec4b0'; bCtx.fillRect(0, 0, size, size);
+    bCtx.strokeStyle = 'rgba(28, 72, 52, 0.45)';
+    for (let i = 0; i < 28; i++) {
+        bCtx.lineWidth = 0.8 + Math.random() * 2.2;
         let x = Math.random() * size; let y = Math.random() * size;
         bCtx.beginPath(); bCtx.moveTo(x, y);
-        for (let j = 0; j < 8; j++) { x += (Math.random() - 0.5) * 60; y += (Math.random() - 0.5) * 60; bCtx.lineTo(x, y); }
+        for (let j = 0; j < 8; j++) { x += (Math.random() - 0.5) * 58; y += (Math.random() - 0.5) * 58; bCtx.lineTo(x, y); }
         bCtx.stroke();
     }
-    for (let i = 0; i < 100; i++) {
-        const x = Math.random() * size; const y = Math.random() * size; const r = 5 + Math.random() * 20;
+    for (let i = 0; i < 95; i++) {
+        const x = Math.random() * size; const y = Math.random() * size; const r = 4 + Math.random() * 22;
         const grad = bCtx.createRadialGradient(x, y, 0, x, y, r);
-        const val = Math.random() > 0.3 ? 255 : 0;
-        grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.5)`);
-        grad.addColorStop(1, 'rgba(128, 128, 128, 0)');
+        const val = Math.random() > 0.35 ? 240 : 45;
+        grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.45)`);
+        grad.addColorStop(1, 'rgba(128, 138, 132, 0)');
         bCtx.fillStyle = grad; bCtx.beginPath(); bCtx.arc(x, y, r, 0, Math.PI * 2); bCtx.fill();
     }
     const colorTex = new THREE.CanvasTexture(colorCanvas);
     colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
+    colorTex.colorSpace = THREE.SRGBColorSpace;
     const bumpTex = new THREE.CanvasTexture(bumpCanvas);
     bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
     return { map: colorTex, bumpMap: bumpTex };

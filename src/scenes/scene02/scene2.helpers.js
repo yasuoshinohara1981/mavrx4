@@ -33,6 +33,36 @@ export function setRandomRockCharcoalColor(out) {
 }
 
 /**
+ * エメラルド／ベリル系のランダム（明るめ黄緑〜ジュエリー緑）
+ */
+export function setRandomEmeraldColor(out) {
+    const h = 0.36 + Math.random() * 0.14;
+    const s = 0.5 + Math.random() * 0.35;
+    const l = 0.42 + Math.random() * 0.28;
+    out.setHSL(h, s, l);
+    out.offsetHSL((Math.random() - 0.5) * 0.04, (Math.random() - 0.5) * 0.08, (Math.random() - 0.5) * 0.06);
+    out.r += (Math.random() - 0.5) * 0.04;
+    out.g += (Math.random() - 0.5) * 0.05;
+    out.b += (Math.random() - 0.5) * 0.04;
+    out.r = THREE.MathUtils.clamp(out.r, 0.08, 0.62);
+    out.g = THREE.MathUtils.clamp(out.g, 0.35, 0.98);
+    out.b = THREE.MathUtils.clamp(out.b, 0.12, 0.72);
+}
+
+/**
+ * 力の強さ t（0=弱 1=強）を青系→黄→赤のヒートマップにする。
+ * HSL で直接指定（MeshPhysical の緑 map と掛け算しても暖色が潰れにくい）。
+ */
+export function setHeatmapColorFromUnit(t, out) {
+    t = THREE.MathUtils.clamp(t, 0, 1);
+    const te = t * t * (3 - 2 * t);
+    const h = 0.58 * (1 - te);
+    const s = 0.78 + 0.18 * te;
+    const l = 0.2 + 0.55 * te;
+    out.setHSL(h, s, l);
+}
+
+/**
  * OSC の trackNumber が数値化できない／未設定のときは address から拾う
  */
 export function parseTrackNumber(trackNumber, message) {

@@ -24,6 +24,7 @@ import * as Helpers from './scene2.helpers.js';
 import * as Motion from './scene2.motion.js';
 import * as Room from './scene2.room.js';
 import * as Shards from './scene2.shards.js';
+import { StudioAtmosphere } from '../../lib/StudioAtmosphere.js';
 
 export class Scene2 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -46,7 +47,7 @@ export class Scene2 extends SceneBase {
         this.useDOF = true;
         this.useBloom = true;
         this.useSceneFog = true;
-        this.sceneFogDensity = 0.00009;
+        this.sceneFogDensity = 0.00015;
         /** 暖色系フォグ（Scene1 と同系統） */
         this.sceneFogColor = 0x231a14;
         this.useSSAO = true;
@@ -67,6 +68,13 @@ export class Scene2 extends SceneBase {
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
 
+        this.atmosphere = null;
+
+        this.laserScanMesh = null;
+        this._laserScanMaterial = null;
+        this.wallTitleGroup = null;
+        this._wallTitleMaterial = null;
+
         this.airNoiseVolume = null;
         this.airNoiseMaterial = null;
 
@@ -79,6 +87,11 @@ export class Scene2 extends SceneBase {
         this.roomHalfD = 5000;
         this.floorTopY = -498;
         this.ceilingY = 5500;
+
+        this.ambientParticleCount = 2000;
+        this.ambientParticleLifetimeMs = 11000;
+        this.ambientParticleFadeOutMs = 1400;
+        this.ambientMinLiving = 180;
 
         this.sphereCount = 5000;
         this.spawnRadius = 1200;
@@ -136,6 +149,8 @@ export class Scene2 extends SceneBase {
         this.heatmapVelocityBlend = 0;
     }
 
+    static TICK_LOOP = 36864;
+
     // ヘルパー・ユーティリティの委譲
     normalizeMidiVelocity(v) { return Helpers.normalizeMidiVelocity(v); }
     _setRandomRockCharcoalColor(out) { Helpers.setRandomRockCharcoalColor(out); }
@@ -148,13 +163,29 @@ export class Scene2 extends SceneBase {
 
     // 部屋・ライトの委譲
     buildRoom() { Room.buildRoom(this); }
+    _initWallMatteBlack3DText() { return Room.initWallMatteBlack3DText(this); }
     setupLights() { Room.setupLights(this); }
-    setupAirNoiseVolume() { Room.setupAirNoiseVolume(this); }
+    _initLaserScan() { Room.initLaserScan(this); }
+    _updateWallLaserScan() { Room.updateWallLaserScan(this, Scene2.TICK_LOOP); }
 
     // パーティクル・インスタンスの委譲
     createSpheres() { Shards.createSpheres(this); }
     updatePhysics(deltaTime) { Shards.updatePhysics(this, deltaTime); }
     triggerExpandEffect(velocity = 127) { Shards.triggerExpandEffect(this, velocity); }
+
+    // 大気関連の委譲
+    createAmbientFloatingParticles() {
+        this.atmosphere = new StudioAtmosphere(this.scene, {
+            roomHalfW: this.roomHalfW,
+            roomHalfD: this.roomHalfD,
+            floorTopY: this.floorTopY,
+            ceilingY: this.ceilingY,
+            particleCount: this.ambientParticleCount,
+            particleLifetimeMs: this.ambientParticleLifetimeMs,
+            particleFadeOutMs: this.ambientParticleFadeOutMs,
+            minLivingBurst: this.ambientMinLiving
+        });
+    }
 
     _applyEnvMapToSphereMaterial() {
         const m = this.instancedMeshManager?.getMainMesh()?.material;
@@ -213,13 +244,21 @@ export class Scene2 extends SceneBase {
         this._roomEnvTexture = this._roomEnvPresentation.envMapTexture;
 
         this.studio = new StudioBox(this.scene, studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture));
+        // Scene1 と同様、StudioBox の箱自体は非表示にして独自構築の部屋（またはタイル設定）を使う
         if (this.studio.studioBox) this.studio.studioBox.visible = false;
 
         this.buildRoom();
         if (this.roomGroup) this.roomGroup.visible = !voidMode;
 
         if (!voidMode) {
-            this.studio.attachCeilingSpotRig(this.roomGroup, { includeCeilingPlane: false, ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale) });
+            this.studio.attachCeilingSpotRig(this.roomGroup, { 
+                includeCeilingPlane: true, // 独自天井を消したので、リグ側の天井を表示する
+                ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale)
+            });
+            this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
+            if (this.ceilingMesh) {
+                this.ceilingMesh.visible = true;
+            }
         }
         if (this.roomGroup) {
             const floorMat = this.roomGroup.children[0].material;
@@ -228,13 +267,15 @@ export class Scene2 extends SceneBase {
         }
 
         this.setupLights();
-        this.setupAirNoiseVolume();
         this.createSpheres();
+        this.createAmbientFloatingParticles();
         this._applyEnvMapToSphereMaterial();
 
         if (this.calloutSystem) this.calloutSystem.setScene(this.scene);
         this.setupCameraParticleDistances();
         this.initPostProcessing();
+        await this._initWallMatteBlack3DText();
+        this._initLaserScan();
         this.initialized = true;
     }
 
@@ -246,6 +287,10 @@ export class Scene2 extends SceneBase {
     onUpdate(deltaTime) {
         if (!this.initialized) return;
         this.time += deltaTime;
+        if (this.atmosphere) {
+            const p = this._centerSmoothed ?? new THREE.Vector3(0, this.floorTopY + 600, 0);
+            this.atmosphere.update(deltaTime, this.time, p);
+        }
         this.currentVisibleCount = this.sphereCount;
         this.setParticleCount(this.sphereCount);
         if (this.instancedMeshManager) {
@@ -292,7 +337,6 @@ export class Scene2 extends SceneBase {
         this._smoothCenterFromParticles(deltaTime);
         this.updateCamera();
 
-        if (this.airNoiseMaterial?.uniforms?.uTime) this.airNoiseMaterial.uniforms.uTime.value = this.time;
         const mainInst = this.instancedMeshManager?.getMainMesh();
         const focusTargets = [this.roomGroup, mainInst].filter(Boolean);
         if (this.useAutoFocusDOF) this.updateAutoFocus(focusTargets);
@@ -300,6 +344,7 @@ export class Scene2 extends SceneBase {
         updateSsaoDistanceAttenuation(this, this._centerSmoothed);
 
         if (this.calloutSystem) this.calloutSystem.update(deltaTime, this.time, this.camera, { autoGenerate: false, maxCount: 8, margin: 200 });
+        this._updateWallLaserScan();
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -325,10 +370,20 @@ export class Scene2 extends SceneBase {
             }
             this._voidBlackSoloLights = null;
         }
-        if (this.airNoiseVolume) { this.scene.remove(this.airNoiseVolume); if (this.airNoiseVolume.geometry) this.airNoiseVolume.geometry.dispose(); this.airNoiseVolume = null; }
-        if (this.airNoiseMaterial) { this.airNoiseMaterial.dispose(); this.airNoiseMaterial = null; }
         if (this.promoWallFillLight) { this.scene.remove(this.promoWallFillLight); this.promoWallFillLight.dispose(); this.promoWallFillLight = null; }
         if (this.promoWallLightTarget) { this.scene.remove(this.promoWallLightTarget); this.promoWallLightTarget = null; }
+        if (this.laserScanMesh) {
+            this.scene.remove(this.laserScanMesh); if (this.laserScanMesh.geometry) this.laserScanMesh.geometry.dispose();
+            if (this._laserScanMaterial) { this._laserScanMaterial.dispose(); this._laserScanMaterial = null; }
+            this.laserScanMesh = null;
+        }
+        if (this.wallTitleGroup) {
+            this.scene.remove(this.wallTitleGroup);
+            this.wallTitleGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+            this.wallTitleGroup = null;
+        }
+        if (this._wallTitleMaterial) { this._wallTitleMaterial.dispose(); this._wallTitleMaterial = null; }
+        if (this.atmosphere) { this.atmosphere.dispose(); this.atmosphere = null; }
         if (this.roomGroup) {
             this.scene.remove(this.roomGroup); const seenMats = new Set(); const seenTex = new Set();
             this.roomGroup.traverse((o) => {

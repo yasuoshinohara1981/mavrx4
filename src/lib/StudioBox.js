@@ -29,7 +29,7 @@ export class StudioBox {
         /** 全体をほんのり均す（シャドウは残す薄さ）。0 で無効扱い */
         this.useAmbientLight = options.useAmbientLight !== undefined ? options.useAmbientLight : true;
         this.ambientIntensity =
-            options.ambientIntensity !== undefined ? options.ambientIntensity : 0.16;
+            options.ambientIntensity !== undefined ? options.ambientIntensity : 0.4;
         this.ambientColor = options.ambientColor !== undefined ? options.ambientColor : this.lightColor;
         
         // 追加パラメータ（既存の挙動を壊さないようにデフォルト値を設定）

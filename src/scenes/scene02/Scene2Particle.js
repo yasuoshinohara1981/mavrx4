@@ -1,5 +1,5 @@
 /**
- * Scene2Particle: Scene2（インスタンス立方体群）用パーティクル
+ * Scene2Particle: Scene2（エメラルド風インスタンス立方体群）用パーティクル
  */
 
 import { Particle } from '../../lib/Particle.js';
@@ -50,6 +50,11 @@ export class Scene2Particle extends Particle {
         this.maxSpeed = 30.0;
         this.maxForce = 2.0;
         this.friction = 0.05;
+
+        /** サブステップ内で観測した力の最大（update 前、clamp 前の長さ） */
+        this.frameForceMax = 0;
+        /** ヒートマップ表示用にスムーズした 0〜1 */
+        this.heatVisual = 0;
     }
 
     updateRotation(dt) {

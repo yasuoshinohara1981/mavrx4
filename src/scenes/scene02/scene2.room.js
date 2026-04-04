@@ -4,6 +4,7 @@ import {
     applyStudioRoomFloorWallEnvMaps,
     setupStudioRoomPromoWallFillLight
 } from '../../lib/presentation/index.js';
+import { generateRockPBRTextures } from '../../lib/RockPBRTextures.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
@@ -16,19 +17,18 @@ import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.
  * 部屋の構築（床・壁）
  */
 export function buildRoom(scene) {
-    const floorTpl = StudioBox.createFloorTileTextures();
-    const wallTpl = StudioBox.createWallTileTextures();
     const L = scene.sceneLightingScale ?? 1;
-    const studioRough = 0.8;
+    const rockTex = generateRockPBRTextures(1024, { seed: 456, maxAnisotropy: 8 });
 
-    // 床メッシュの作成（StudioBox 共通の見た目）
+    // 床メッシュの作成（岩石質感）
     const floorConcreteMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        map: floorTpl.map,
-        bumpMap: floorTpl.bumpMap,
-        bumpScale: 1.0,
-        roughness: studioRough * 0.3,
-        metalness: 0.2,
+        map: rockTex.map,
+        normalMap: rockTex.normalMap,
+        roughnessMap: rockTex.roughnessMap,
+        aoMap: rockTex.aoMap,
+        roughness: 1.0,
+        metalness: 0.1,
         envMapIntensity: 1.0 * 1.3 * (0.55 + 0.45 * L),
         fog: true
     });
@@ -41,13 +41,14 @@ export function buildRoom(scene) {
     scene.roomGroup = new THREE.Group();
     scene.roomGroup.add(floor);
 
-    // 壁メッシュの作成（StudioBox 共通の見た目）
+    // 壁メッシュの作成（岩石質感）
     const wallConcreteMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        map: wallTpl.map,
-        bumpMap: wallTpl.bumpMap,
-        bumpScale: 1.0,
-        roughness: studioRough * 0.5,
+        map: rockTex.map,
+        normalMap: rockTex.normalMap,
+        roughnessMap: rockTex.roughnessMap,
+        aoMap: rockTex.aoMap,
+        roughness: 1.0,
         metalness: 0.1,
         envMapIntensity: 1.0 * (0.55 + 0.45 * L),
         fog: true

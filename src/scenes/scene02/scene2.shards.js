@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene2Particle } from './Scene2Particle.js';
 import { setRandomEmeraldColor, setHeatmapColorFromUnit } from './scene2.helpers.js';
+import { generateRockPBRTextures } from '../../lib/RockPBRTextures.js';
 
 /**
  * Scene2 パーティクル（立方体インスタンス）関連のロジック
@@ -19,11 +20,14 @@ export function createSpheres(scene) {
         white.fill(1);
         geo.setAttribute('color', new THREE.BufferAttribute(white, 3));
     }
-    const textures = scene.useHeatmapParticleColors ? null : generateEmeraldGemTextures();
+    
+    // メインパーティクル用に岩石テクスチャを生成
+    const rockTex = generateRockPBRTextures(512, { seed: 789, maxAnisotropy: 4 });
+
     /** ヒートマップ時は緑アルbedo／透過を使わない（頂点色 × map で暖色が消えるのを防ぐ） */
     const mat = scene.useHeatmapParticleColors
         ? new THREE.MeshStandardMaterial({
-            color: 0xffffff, // 0x888888 -> 0xffffff
+            color: 0xffffff,
             roughness: 0.38,
             metalness: 0.06,
             envMapIntensity: 1.35,
@@ -31,7 +35,11 @@ export function createSpheres(scene) {
             vertexColors: false // ヒートマップを使わないので頂点色は不要
         })
         : new THREE.MeshPhysicalMaterial({
-            color: 0xffffff, // 0x888888 -> 0xffffff
+            color: 0xffffff,
+            map: rockTex.map,
+            normalMap: rockTex.normalMap,
+            roughnessMap: rockTex.roughnessMap,
+            aoMap: rockTex.aoMap,
             roughness: 0.16,
             metalness: 0.6, // キラキラ感アップ
             clearcoat: 1.0, // クリアコート最大

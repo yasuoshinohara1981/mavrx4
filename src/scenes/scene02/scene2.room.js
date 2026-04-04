@@ -4,7 +4,6 @@ import {
     applyStudioRoomFloorWallEnvMaps,
     setupStudioRoomPromoWallFillLight
 } from '../../lib/presentation/index.js';
-import { generateRockPBRTextures } from '../../lib/RockPBRTextures.js';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
@@ -17,19 +16,20 @@ import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.
  * 部屋の構築（床・壁）
  */
 export function buildRoom(scene) {
+    const floorTpl = StudioBox.createFloorTileTextures();
+    const wallTpl = StudioBox.createWallTileTextures();
     const L = scene.sceneLightingScale ?? 1;
-    const rockTex = generateRockPBRTextures(1024, { seed: 456, maxAnisotropy: 8 });
+    const studioRough = 0.8;
 
-    // 床メッシュの作成（岩石質感）
+    // 床メッシュの作成（StudioBox 共通の見た目）
     const floorConcreteMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff, // 0x888888 -> 0xffffff
-        map: rockTex.map,
-        normalMap: rockTex.normalMap,
-        roughnessMap: rockTex.roughnessMap,
-        aoMap: rockTex.aoMap,
-        roughness: 0.8,
+        color: 0xffffff,
+        map: floorTpl.map,
+        bumpMap: floorTpl.bumpMap,
+        bumpScale: 1.0,
+        roughness: studioRough * 0.3,
         metalness: 0.2,
-        envMapIntensity: 2.5 * 1.3 * (0.55 + 0.45 * L),
+        envMapIntensity: 1.0 * 1.3 * (0.55 + 0.45 * L),
         fog: true
     });
     const slab = 24;
@@ -41,16 +41,15 @@ export function buildRoom(scene) {
     scene.roomGroup = new THREE.Group();
     scene.roomGroup.add(floor);
 
-    // 壁メッシュの作成（岩石質感）
+    // 壁メッシュの作成（StudioBox 共通の見た目）
     const wallConcreteMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff, // 0x888888 -> 0xffffff
-        map: rockTex.map,
-        normalMap: rockTex.normalMap,
-        roughnessMap: rockTex.roughnessMap,
-        aoMap: rockTex.aoMap,
-        roughness: 0.8,
-        metalness: 0.2,
-        envMapIntensity: 2.5 * (0.55 + 0.45 * L),
+        color: 0xffffff,
+        map: wallTpl.map,
+        bumpMap: wallTpl.bumpMap,
+        bumpScale: 1.0,
+        roughness: studioRough * 0.5,
+        metalness: 0.1,
+        envMapIntensity: 1.0 * (0.55 + 0.45 * L),
         fog: true
     });
     const wallH = scene.ceilingY - scene.floorTopY;

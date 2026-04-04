@@ -93,7 +93,7 @@ export class Scene2 extends SceneBase {
         this.ambientParticleFadeOutMs = 1400;
         this.ambientMinLiving = 180;
 
-        this.sphereCount = 5000;
+        this.sphereCount = 7000;
         this.spawnRadius = 1200;
         this.instancedMeshManager = null;
         this.particles = [];

@@ -23,7 +23,7 @@ export function createSpheres(scene) {
     /** ヒートマップ時は緑アルbedo／透過を使わない（頂点色 × map で暖色が消えるのを防ぐ） */
     const mat = scene.useHeatmapParticleColors
         ? new THREE.MeshStandardMaterial({
-            color: 0x444444, // 濃い無彩色ベース
+            color: 0x888888, // 0x444444 -> 0x888888
             roughness: 0.38,
             metalness: 0.06,
             envMapIntensity: 1.35,
@@ -31,13 +31,13 @@ export function createSpheres(scene) {
             vertexColors: false // ヒートマップを使わないので頂点色は不要
         })
         : new THREE.MeshPhysicalMaterial({
-            color: 0x333333, // 岩石風の濃い色
+            color: 0x888888, // 0x333333 -> 0x888888
             roughness: 0.16,
-            metalness: 0.4, // 金属感を少し上げてキラキラさせる
-            clearcoat: 0.8, // クリアコートを強めて反射を強調
-            clearcoatRoughness: 0.1,
-            envMapIntensity: 1.8, // 環境反射を強める
-            specularIntensity: 1.2,
+            metalness: 0.6, // キラキラ感アップ
+            clearcoat: 1.0, // クリアコート最大
+            clearcoatRoughness: 0.05,
+            envMapIntensity: 2.5, // 環境反射を大幅強化
+            specularIntensity: 1.5,
             transmission: 0.0, // 透過を完全にオフにして緑っぽさを排除
             thickness: 0.0,
             ior: 1.6,

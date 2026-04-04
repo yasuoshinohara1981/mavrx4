@@ -86,8 +86,8 @@ export function createSpheres(scene) {
         if (scene.useHeatmapParticleColors) {
             setHeatmapColorFromUnit(0, scene._colorTmp);
         } else {
-            // 岩石風の無彩色ランダム（チャコール・黒寄り）
-            const gray = 0.15 + Math.random() * 0.3;
+            // 冷えた溶岩風の濃いチャコールグレー（ランダム）
+            const gray = 0.05 + Math.random() * 0.15;
             scene._colorTmp.setRGB(gray, gray, gray);
         }
         scene.instancedMeshManager.setColorAt(i, scene._colorTmp);

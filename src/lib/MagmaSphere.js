@@ -24,9 +24,9 @@ export class MagmaSphere {
             uniforms: {
                 uTime: { value: 0 },
                 uRadius: { value: this.radius },
-                uBaseColor: { value: new THREE.Color(0x010000) }, // 漆黒の岩肌
-                uMagmaColor: { value: new THREE.Color(0xcc1100) }, // 深い赤
-                uInnerColor: { value: new THREE.Color(0xffaa00) }  // 灼熱のオレンジ
+                uBaseColor: { value: new THREE.Color(0x000000) }, // 漆黒
+                uMagmaColor: { value: new THREE.Color(0x440400) }, // 極暗の赤
+                uInnerColor: { value: new THREE.Color(0x883300) }  // 鈍く光る橙
             },
             vertexShader: `
                 varying vec3 vNormal;
@@ -201,18 +201,18 @@ export class MagmaSphere {
                     float spec = pow(max(dot(perturbedNormal, halfDir), 0.0), mix(2.0, 128.0, 1.0 - currentRoughness));
                     
                     // 6. カラー合成
-                    vec3 rockColor = uBaseColor * (0.6 + h2 * 0.4);
+                    vec3 rockColor = uBaseColor * (0.2 + h2 * 0.2);
                     vec3 magmaColor = mix(uMagmaColor, uInnerColor, pow(heat, 3.0));
                     
                     // 溶岩の揺らぎ
                     float flicker = snoise(vec3(uTime * 0.5)) * 0.05 + 0.95;
                     vec3 finalColor = mix(rockColor * diff * ao, magmaColor * flicker, heat);
                     
-                    // 中心部の強力な発光
-                    finalColor += uInnerColor * pow(heat, 5.0) * 6.0 * flicker;
+                    // 中心部の鈍い発光（さらに強度を抑える）
+                    finalColor += uInnerColor * pow(heat, 5.0) * 2.0 * flicker;
                     
-                    // 鏡面反射を追加（キラキラ感）
-                    finalColor += vec3(0.4) * spec * (1.0 - heat) * ao;
+                    // 鏡面反射を追加（控えめに）
+                    finalColor += vec3(0.2) * spec * (1.0 - heat) * ao;
                     
                     // 7. フレネル（縁をさらに深く暗く）
                     float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.5);

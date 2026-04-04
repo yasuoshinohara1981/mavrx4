@@ -28,7 +28,7 @@ export function createSpheres(scene) {
             metalness: 0.06,
             envMapIntensity: 1.35,
             fog: true,
-            vertexColors: true
+            vertexColors: false // ヒートマップを使わないので頂点色は不要
         })
         : new THREE.MeshPhysicalMaterial({
             color: 0x333333, // 岩石風の濃い色
@@ -46,7 +46,7 @@ export function createSpheres(scene) {
             emissive: new THREE.Color(0x000000), // エミッシブもオフ
             emissiveIntensity: 0.0,
             fog: true,
-            vertexColors: true
+            vertexColors: false // 頂点色は使わずベースカラーのみ
         });
     if (scene.scene?.environment) mat.envMap = scene.scene.environment;
 

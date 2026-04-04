@@ -140,7 +140,7 @@ export class Scene2 extends SceneBase {
         this._voidBlackSoloLights = null;
 
         /** true: インスタンス色を力の強さヒートマップ（赤＝強・青〜黒＝弱） */
-        this.useHeatmapParticleColors = true;
+        this.useHeatmapParticleColors = false;
         /** ヒートマップの追従（0〜1、大きいほど素早く変化） */
         this.heatmapColorSmoothing = 0.45;
         /** 力の相対値を表示 t に変換する指数（小さいほど暖色域に寄りやすい） */

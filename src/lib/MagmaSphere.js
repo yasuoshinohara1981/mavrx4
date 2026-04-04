@@ -173,10 +173,10 @@ export class MagmaSphere {
                     
                     // 岩石質感の細かいノイズ（ラフネスマップ効果）
                     float rockDetail = snoise(vPosition * 0.15);
-                    float roughness = mix(0.9, 0.4, rockDetail);
                     
-                    // 溶岩の熱分布
-                    float heat = smoothstep(-0.4, 0.7, n);
+                    // 溶岩の熱分布（中心ほど熱く、外側ほど冷えるように反転）
+                    // vNoise は -1.0〜1.0 程度。高い部分（外側）ほど冷えるようにする
+                    float heat = smoothstep(0.8, -0.5, n);
                     
                     // ライティング計算（簡易的な鏡面反射）
                     vec3 viewDir = normalize(vViewPosition);
@@ -186,17 +186,18 @@ export class MagmaSphere {
                     vec3 rockColor = uBaseColor * (0.8 + rockDetail * 0.4);
                     vec3 magmaColor = mix(uMagmaColor, uInnerColor, pow(heat, 3.0));
                     
+                    // 中心（heatが高い）ほど明るく、外（heatが低い）ほど岩の色
                     vec3 finalColor = mix(rockColor, magmaColor, heat);
                     
-                    // 溶岩部分のみ発光を強く
-                    finalColor += magmaColor * pow(heat, 2.0) * 3.0;
+                    // 中心部の発光を大幅強化
+                    finalColor += uInnerColor * pow(heat, 4.0) * 5.0;
                     
-                    // 鏡面反射を追加（キラキラ感）
-                    finalColor += vec3(0.5) * spec * (1.0 - heat);
+                    // 鏡面反射を追加（冷えた岩の部分のみ）
+                    finalColor += vec3(0.3) * spec * (1.0 - heat);
                     
-                    // フレネル効果で奥行き
-                    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 3.0);
-                    finalColor *= (1.0 - fresnel * 0.6);
+                    // フレネル効果で外側をさらに暗く沈ませる
+                    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.0);
+                    finalColor *= (1.0 - fresnel * 0.8);
                     
                     gl_FragColor = vec4(finalColor, 1.0);
                 }

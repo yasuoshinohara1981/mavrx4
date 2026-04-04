@@ -22,14 +22,14 @@ export function buildRoom(scene) {
 
     // 床メッシュの作成（岩石質感）
     const floorConcreteMat = new THREE.MeshStandardMaterial({
-        color: 0x888888, // 0xffffff から 0x888888 (テクスチャが乗るので中間色)
+        color: 0xffffff, // 0x888888 -> 0xffffff
         map: rockTex.map,
         normalMap: rockTex.normalMap,
         roughnessMap: rockTex.roughnessMap,
         aoMap: rockTex.aoMap,
         roughness: 0.8,
         metalness: 0.2,
-        envMapIntensity: 2.5 * 1.3 * (0.55 + 0.45 * L), // 反射を大幅強化
+        envMapIntensity: 2.5 * 1.3 * (0.55 + 0.45 * L),
         fog: true
     });
     const slab = 24;
@@ -43,14 +43,14 @@ export function buildRoom(scene) {
 
     // 壁メッシュの作成（岩石質感）
     const wallConcreteMat = new THREE.MeshStandardMaterial({
-        color: 0x888888,
+        color: 0xffffff, // 0x888888 -> 0xffffff
         map: rockTex.map,
         normalMap: rockTex.normalMap,
         roughnessMap: rockTex.roughnessMap,
         aoMap: rockTex.aoMap,
         roughness: 0.8,
         metalness: 0.2,
-        envMapIntensity: 2.5 * (0.55 + 0.45 * L), // 反射を大幅強化
+        envMapIntensity: 2.5 * (0.55 + 0.45 * L),
         fog: true
     });
     const wallH = scene.ceilingY - scene.floorTopY;

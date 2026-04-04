@@ -76,9 +76,9 @@ export function generateRockPBRTextures(size = 1024, options = {}) {
     const rImg = rCtx.createImageData(size, size);
     const aoImg = aoCtx.createImageData(size, size);
 
-    const baseCol = new THREE.Color(0x333333); // 濃いグレー
-    const rockCol1 = new THREE.Color(0x222222);
-    const rockCol2 = new THREE.Color(0x444444);
+    const baseCol = new THREE.Color(0xffffff); // 0x333333 -> 0xffffff
+    const rockCol1 = new THREE.Color(0xdddddd);
+    const rockCol2 = new THREE.Color(0xeeeeee);
     const pixCol = new THREE.Color();
 
     const scale = 4.5;

@@ -23,7 +23,7 @@ export function createSpheres(scene) {
     /** ヒートマップ時は緑アルbedo／透過を使わない（頂点色 × map で暖色が消えるのを防ぐ） */
     const mat = scene.useHeatmapParticleColors
         ? new THREE.MeshStandardMaterial({
-            color: 0x888888, // 0x444444 -> 0x888888
+            color: 0xffffff, // 0x888888 -> 0xffffff
             roughness: 0.38,
             metalness: 0.06,
             envMapIntensity: 1.35,
@@ -31,7 +31,7 @@ export function createSpheres(scene) {
             vertexColors: false // ヒートマップを使わないので頂点色は不要
         })
         : new THREE.MeshPhysicalMaterial({
-            color: 0x888888, // 0x333333 -> 0x888888
+            color: 0xffffff, // 0x888888 -> 0xffffff
             roughness: 0.16,
             metalness: 0.6, // キラキラ感アップ
             clearcoat: 1.0, // クリアコート最大
@@ -78,8 +78,8 @@ export function createSpheres(scene) {
         if (scene.useHeatmapParticleColors) {
             setHeatmapColorFromUnit(0, scene._colorTmp);
         } else {
-            // 岩石風の濃い無彩色ランダム
-            const gray = 0.1 + Math.random() * 0.25;
+            // 岩石風の無彩色ランダム（明るめ）
+            const gray = 0.6 + Math.random() * 0.3;
             scene._colorTmp.setRGB(gray, gray, gray);
         }
         scene.instancedMeshManager.setColorAt(i, scene._colorTmp);

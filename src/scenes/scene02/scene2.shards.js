@@ -129,8 +129,27 @@ export function updatePhysics(scene, deltaTime) {
             scene.grid.get(key).push(i);
         }
 
+        const magmaPos = scene.magma?.position;
+        const magmaRadius = scene.magma?.radius ?? 0;
+
         for (let idx = 0; idx < visibleCount; idx++) {
             const p = scene.particles[idx];
+
+            // マグマとの衝突判定
+            if (magmaPos && magmaRadius > 0) {
+                const diff = tempVec.copy(p.position).sub(magmaPos);
+                const dist = diff.length();
+                const minDist = magmaRadius + p.radius + 20; // 余裕を持たせる
+                if (dist < minDist) {
+                    const pushForce = (minDist - dist) * 0.5;
+                    p.addForce(diff.normalize().multiplyScalar(pushForce));
+                    // 速度を外向きに反射させる
+                    const dot = p.velocity.dot(diff);
+                    if (dot < 0) {
+                        p.velocity.addScaledVector(diff, -dot * 1.5);
+                    }
+                }
+            }
 
             if (scene.currentMode === scene.MODE_DRIFT_FIELD) {
                 const x = p.position.x;

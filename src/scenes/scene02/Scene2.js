@@ -25,6 +25,7 @@ import * as Motion from './scene2.motion.js';
 import * as Room from './scene2.room.js';
 import * as Shards from './scene2.shards.js';
 import { StudioAtmosphere } from '../../lib/StudioAtmosphere.js';
+import { MagmaSphere } from '../../lib/MagmaSphere.js';
 
 export class Scene2 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
@@ -40,6 +41,8 @@ export class Scene2 extends SceneBase {
         this.ceilingMesh = null;
         this.pmremGenerator = null;
         this._roomEnvTexture = null;
+
+        this.magma = null;
 
         this.sceneLightingScale = 0.32;
         this._roomEnvPresentation = null;
@@ -267,6 +270,7 @@ export class Scene2 extends SceneBase {
         }
 
         this.setupLights();
+        this.magma = new MagmaSphere(this.scene, { radius: 450, position: new THREE.Vector3(0, 900, 0) });
         this.createSpheres();
         this.createAmbientFloatingParticles();
         this._applyEnvMapToSphereMaterial();
@@ -334,6 +338,7 @@ export class Scene2 extends SceneBase {
 
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
+        if (this.magma) this.magma.update(this.time);
         this._smoothCenterFromParticles(deltaTime);
         this.updateCamera();
 
@@ -384,6 +389,7 @@ export class Scene2 extends SceneBase {
         }
         if (this._wallTitleMaterial) { this._wallTitleMaterial.dispose(); this._wallTitleMaterial = null; }
         if (this.atmosphere) { this.atmosphere.dispose(); this.atmosphere = null; }
+        if (this.magma) { this.magma.dispose(); this.magma = null; }
         if (this.roomGroup) {
             this.scene.remove(this.roomGroup); const seenMats = new Set(); const seenTex = new Set();
             this.roomGroup.traverse((o) => {

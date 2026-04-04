@@ -3,6 +3,7 @@ import * as THREE from 'three';
 /**
  * MagmaSphere: テクスチャを一切使わず、シェーダー内で高度なプロシージャル計算を行い、
  * リアルな法線、粗さ、高さを動的に生成するマグマの塊。
+ * 動きを極限までスローにし、微細なノイズを加えることで「CGっぽさ」を排除した。
  */
 export class MagmaSphere {
     constructor(scene, options = {}) {
@@ -17,16 +18,15 @@ export class MagmaSphere {
     }
 
     setup() {
-        // 歪みを極限まで滑らかにするためにセグメント数を 256 まで引き上げ
         const geo = new THREE.SphereGeometry(this.radius, 256, 256);
         
         this.material = new THREE.ShaderMaterial({
             uniforms: {
                 uTime: { value: 0 },
                 uRadius: { value: this.radius },
-                uBaseColor: { value: new THREE.Color(0x020100) }, // 極暗の岩
-                uMagmaColor: { value: new THREE.Color(0xff1100) }, // 深い赤
-                uInnerColor: { value: new THREE.Color(0xffcc00) }  // 灼熱の黄
+                uBaseColor: { value: new THREE.Color(0x010000) }, // 漆黒の岩肌
+                uMagmaColor: { value: new THREE.Color(0xcc1100) }, // 粘り気のある深い赤
+                uInnerColor: { value: new THREE.Color(0xff8800) }  // 鈍く光るオレンジ
             },
             vertexShader: `
                 varying vec3 vNormal;
@@ -88,13 +88,13 @@ export class MagmaSphere {
                     vNormal = normal;
                     vPosition = position;
                     
-                    // 多層ノイズによる複雑な形状変形
-                    float n = snoise(position * 0.0015 + uTime * 0.15) * 1.0;
-                    n += snoise(position * 0.004 - uTime * 0.3) * 0.5;
-                    n += snoise(position * 0.01 + uTime * 0.6) * 0.2;
+                    // 動きを大幅にスローダウン (uTime * 0.05)
+                    float n = snoise(position * 0.0012 + uTime * 0.05) * 1.0;
+                    n += snoise(position * 0.003 - uTime * 0.08) * 0.5;
+                    n += snoise(position * 0.008 + uTime * 0.12) * 0.2;
                     vNoise = n;
                     
-                    float displacement = n * 180.0;
+                    float displacement = n * 160.0;
                     vec3 newPosition = position + normal * displacement;
                     vec4 mvPosition = modelViewMatrix * vec4(newPosition, 1.0);
                     vViewPosition = -mvPosition.xyz;
@@ -161,43 +161,42 @@ export class MagmaSphere {
                 }
 
                 void main() {
-                    // プロシージャルバンプ/ノーマルの計算
-                    float epsilon = 0.1;
+                    // プロシージャルな微細ディテール
+                    float detail = snoise(vPosition * 0.1 + uTime * 0.02);
+                    float microDetail = snoise(vPosition * 0.5);
+                    
+                    // 法線摂動（より複雑な計算でCGっぽさを消す）
+                    float epsilon = 0.05;
                     float n = vNoise;
-                    float nx = snoise(vPosition + vec3(epsilon, 0, 0) * 0.01 + uTime * 0.15);
-                    float ny = snoise(vPosition + vec3(0, epsilon, 0) * 0.01 + uTime * 0.15);
-                    float nz = snoise(vPosition + vec3(0, 0, epsilon) * 0.01 + uTime * 0.15);
+                    float nx = snoise(vPosition + vec3(epsilon, 0, 0) * 0.02 + uTime * 0.05);
+                    float ny = snoise(vPosition + vec3(0, epsilon, 0) * 0.02 + uTime * 0.05);
+                    float nz = snoise(vPosition + vec3(0, 0, epsilon) * 0.02 + uTime * 0.05);
+                    vec3 bumpNormal = normalize(vNormal + (vec3(nx, ny, nz) - n) * 1.5);
                     
-                    // 擬似的な法線摂動（ノーマルマップ効果）
-                    vec3 bumpNormal = normalize(vNormal + (vec3(nx, ny, nz) - n) * 2.0);
+                    // 熱分布（動きをスローに）
+                    float heat = smoothstep(0.7, -0.4, n + detail * 0.15);
                     
-                    // 岩石質感の細かいノイズ（ラフネスマップ効果）
-                    float rockDetail = snoise(vPosition * 0.15);
-                    
-                    // 溶岩の熱分布（中心ほど熱く、外側ほど冷えるように反転）
-                    // vNoise は -1.0〜1.0 程度。高い部分（外側）ほど冷えるようにする
-                    float heat = smoothstep(0.8, -0.5, n);
-                    
-                    // ライティング計算（簡易的な鏡面反射）
+                    // ライティング
                     vec3 viewDir = normalize(vViewPosition);
-                    float spec = pow(max(dot(reflect(-vec3(0,1,0), bumpNormal), viewDir), 0.0), 32.0);
+                    float spec = pow(max(dot(reflect(-vec3(0.2, 1.0, 0.1), bumpNormal), viewDir), 0.0), 16.0);
                     
-                    // カラー合成
-                    vec3 rockColor = uBaseColor * (0.8 + rockDetail * 0.4);
-                    vec3 magmaColor = mix(uMagmaColor, uInnerColor, pow(heat, 3.0));
+                    // カラー合成（より暗く、鈍い階調に）
+                    vec3 rockColor = uBaseColor * (0.7 + microDetail * 0.3);
+                    vec3 magmaColor = mix(uMagmaColor, uInnerColor, pow(heat, 2.5));
                     
-                    // 中心（heatが高い）ほど明るく、外（heatが低い）ほど岩の色
-                    vec3 finalColor = mix(rockColor, magmaColor, heat);
+                    // 溶岩の「揺らぎ」を追加
+                    float flicker = snoise(vec3(uTime * 0.8)) * 0.05 + 0.95;
+                    vec3 finalColor = mix(rockColor, magmaColor * flicker, heat);
                     
-                    // 中心部の発光を大幅強化
-                    finalColor += uInnerColor * pow(heat, 4.0) * 5.0;
+                    // 中心部の鈍い発光
+                    finalColor += uInnerColor * pow(heat, 5.0) * 4.0 * flicker;
                     
-                    // 鏡面反射を追加（冷えた岩の部分のみ）
-                    finalColor += vec3(0.3) * spec * (1.0 - heat);
+                    // 鏡面反射（CGっぽさを抑えるため控えめに、かつ不規則に）
+                    finalColor += vec3(0.2) * spec * (1.0 - heat) * (0.8 + microDetail * 0.2);
                     
-                    // フレネル効果で外側をさらに暗く沈ませる
-                    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.0);
-                    finalColor *= (1.0 - fresnel * 0.8);
+                    // フレネル（縁を深く沈める）
+                    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 1.5);
+                    finalColor *= (1.0 - fresnel * 0.9);
                     
                     gl_FragColor = vec4(finalColor, 1.0);
                 }

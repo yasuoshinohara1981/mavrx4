@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /**
  * MagmaSphere: テクスチャを一切使わず、シェーダー内で高度なプロシージャル計算を行い、
  * リアルな法線、粗さ、高さを動的に生成するマグマの塊。
- * 動きを極限までスローにし、微細なノイズを加えることで「CGっぽさ」を排除した。
+ * バンプとラフネスによる深い陰影を追求し、実在感を高めた。
  */
 export class MagmaSphere {
     constructor(scene, options = {}) {
@@ -25,8 +25,8 @@ export class MagmaSphere {
                 uTime: { value: 0 },
                 uRadius: { value: this.radius },
                 uBaseColor: { value: new THREE.Color(0x010000) }, // 漆黒の岩肌
-                uMagmaColor: { value: new THREE.Color(0xcc1100) }, // 粘り気のある深い赤
-                uInnerColor: { value: new THREE.Color(0xff8800) }  // 鈍く光るオレンジ
+                uMagmaColor: { value: new THREE.Color(0xcc1100) }, // 深い赤
+                uInnerColor: { value: new THREE.Color(0xffaa00) }  // 灼熱のオレンジ
             },
             vertexShader: `
                 varying vec3 vNormal;
@@ -88,10 +88,10 @@ export class MagmaSphere {
                     vNormal = normal;
                     vPosition = position;
                     
-                    // 動きを大幅にスローダウン (uTime * 0.05)
-                    float n = snoise(position * 0.0012 + uTime * 0.05) * 1.0;
-                    n += snoise(position * 0.003 - uTime * 0.08) * 0.5;
-                    n += snoise(position * 0.008 + uTime * 0.12) * 0.2;
+                    // 多層ノイズによる形状変形（スロー）
+                    float n = snoise(position * 0.0012 + uTime * 0.04) * 1.0;
+                    n += snoise(position * 0.003 - uTime * 0.07) * 0.5;
+                    n += snoise(position * 0.008 + uTime * 0.1) * 0.2;
                     vNoise = n;
                     
                     float displacement = n * 160.0;
@@ -161,42 +161,62 @@ export class MagmaSphere {
                 }
 
                 void main() {
-                    // プロシージャルな微細ディテール
-                    float detail = snoise(vPosition * 0.1 + uTime * 0.02);
-                    float microDetail = snoise(vPosition * 0.5);
+                    vec3 pos = vPosition;
                     
-                    // 法線摂動（より複雑な計算でCGっぽさを消す）
-                    float epsilon = 0.05;
-                    float n = vNoise;
-                    float nx = snoise(vPosition + vec3(epsilon, 0, 0) * 0.02 + uTime * 0.05);
-                    float ny = snoise(vPosition + vec3(0, epsilon, 0) * 0.02 + uTime * 0.05);
-                    float nz = snoise(vPosition + vec3(0, 0, epsilon) * 0.02 + uTime * 0.05);
-                    vec3 bumpNormal = normalize(vNormal + (vec3(nx, ny, nz) - n) * 1.5);
+                    // 1. 高度マップ（Bump）の多層計算
+                    float h0 = snoise(pos * 0.015);
+                    float h1 = snoise(pos * 0.04) * 0.5;
+                    float h2 = snoise(pos * 0.1) * 0.25;
+                    float bumpHeight = h0 + h1 + h2;
                     
-                    // 熱分布（動きをスローに）
-                    float heat = smoothstep(0.7, -0.4, n + detail * 0.15);
+                    // 2. 精密な法線摂動（Normal Map効果）
+                    // 周囲のサンプルから勾配を求めて法線を歪ませる
+                    float eps = 0.02;
+                    float nx = snoise((pos + vec3(eps, 0, 0)) * 0.04);
+                    float ny = snoise((pos + vec3(0, eps, 0)) * 0.04);
+                    float nz = snoise((pos + vec3(0, 0, eps)) * 0.04);
+                    vec3 grad = (vec3(nx, ny, nz) - h1) / eps;
+                    vec3 perturbedNormal = normalize(vNormal - grad * 0.5);
                     
-                    // ライティング
+                    // 3. ラフネスマップの計算
+                    // 岩肌はガサガサ(1.0)、溶岩はツルツル(0.1)
+                    float rockRoughness = clamp(0.7 + snoise(pos * 0.2) * 0.3, 0.5, 1.0);
+                    float magmaRoughness = 0.15;
+                    
+                    // 4. 熱分布（中心ほど熱い）
+                    float heat = smoothstep(0.7, -0.4, vNoise + h0 * 0.2);
+                    float currentRoughness = mix(rockRoughness, magmaRoughness, pow(heat, 2.0));
+                    
+                    // 5. ライティング計算
                     vec3 viewDir = normalize(vViewPosition);
-                    float spec = pow(max(dot(reflect(-vec3(0.2, 1.0, 0.1), bumpNormal), viewDir), 0.0), 16.0);
+                    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
+                    vec3 halfDir = normalize(lightDir + viewDir);
                     
-                    // カラー合成（より暗く、鈍い階調に）
-                    vec3 rockColor = uBaseColor * (0.7 + microDetail * 0.3);
-                    vec3 magmaColor = mix(uMagmaColor, uInnerColor, pow(heat, 2.5));
+                    // 拡散反射（法線摂動による深い影）
+                    float diff = max(dot(perturbedNormal, lightDir), 0.0);
+                    // アンビエントオクルージョン（凹んでいる部分を暗く）
+                    float ao = clamp(1.0 + bumpHeight * 0.5, 0.2, 1.0);
                     
-                    // 溶岩の「揺らぎ」を追加
-                    float flicker = snoise(vec3(uTime * 0.8)) * 0.05 + 0.95;
-                    vec3 finalColor = mix(rockColor, magmaColor * flicker, heat);
+                    // 鏡面反射（ラフネス依存）
+                    float spec = pow(max(dot(perturbedNormal, halfDir), 0.0), mix(2.0, 128.0, 1.0 - currentRoughness));
                     
-                    // 中心部の鈍い発光
-                    finalColor += uInnerColor * pow(heat, 5.0) * 4.0 * flicker;
+                    // 6. カラー合成
+                    vec3 rockColor = uBaseColor * (0.6 + h2 * 0.4);
+                    vec3 magmaColor = mix(uMagmaColor, uInnerColor, pow(heat, 3.0));
                     
-                    // 鏡面反射（CGっぽさを抑えるため控えめに、かつ不規則に）
-                    finalColor += vec3(0.2) * spec * (1.0 - heat) * (0.8 + microDetail * 0.2);
+                    // 溶岩の揺らぎ
+                    float flicker = snoise(vec3(uTime * 0.5)) * 0.05 + 0.95;
+                    vec3 finalColor = mix(rockColor * diff * ao, magmaColor * flicker, heat);
                     
-                    // フレネル（縁を深く沈める）
-                    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 1.5);
-                    finalColor *= (1.0 - fresnel * 0.9);
+                    // 中心部の強力な発光
+                    finalColor += uInnerColor * pow(heat, 5.0) * 6.0 * flicker;
+                    
+                    // 鏡面反射を追加（キラキラ感）
+                    finalColor += vec3(0.4) * spec * (1.0 - heat) * ao;
+                    
+                    // 7. フレネル（縁をさらに深く暗く）
+                    float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.5);
+                    finalColor *= (1.0 - fresnel * 0.95);
                     
                     gl_FragColor = vec4(finalColor, 1.0);
                 }

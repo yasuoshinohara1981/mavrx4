@@ -190,15 +190,15 @@ export class MagmaSphere {
                     // 5. ライティング計算
                     vec3 viewDir = normalize(vViewPosition);
                     vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
-                    vec3 halfDir = normalize(lightDir + viewDir);
                     
                     // 拡散反射（法線摂動による深い影）
                     float diff = max(dot(perturbedNormal, lightDir), 0.0);
                     // アンビエントオクルージョン（凹んでいる部分を暗く）
                     float ao = clamp(1.0 + bumpHeight * 0.5, 0.2, 1.0);
                     
-                    // 鏡面反射（ラフネス依存）
-                    float spec = pow(max(dot(perturbedNormal, halfDir), 0.0), mix(2.0, 128.0, 1.0 - currentRoughness));
+                    // 鏡面反射を極限まで抑える（マットな質感）
+                    // spec 指数を下げて広範囲に拡散させ、強度も大幅カット
+                    float spec = pow(max(dot(perturbedNormal, normalize(lightDir + viewDir)), 0.0), 2.0) * 0.05;
                     
                     // 6. カラー合成
                     vec3 rockColor = uBaseColor * (0.2 + h2 * 0.2);
@@ -208,11 +208,11 @@ export class MagmaSphere {
                     float flicker = snoise(vec3(uTime * 0.5)) * 0.05 + 0.95;
                     vec3 finalColor = mix(rockColor * diff * ao, magmaColor * flicker, heat);
                     
-                    // 中心部の鈍い発光（さらに強度を抑える）
+                    // 中心部の鈍い発光
                     finalColor += uInnerColor * pow(heat, 5.0) * 2.0 * flicker;
                     
-                    // 鏡面反射を追加（控えめに）
-                    finalColor += vec3(0.2) * spec * (1.0 - heat) * ao;
+                    // 鏡面反射を追加（ほぼ見えないレベルに抑制）
+                    finalColor += vec3(0.1) * spec * (1.0 - heat) * ao;
                     
                     // 7. フレネル（縁をさらに深く暗く）
                     float fresnel = pow(1.0 - max(dot(normalize(vNormal), viewDir), 0.0), 2.5);

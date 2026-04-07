@@ -271,7 +271,8 @@ export class Scene2 extends SceneBase {
 
         this.setupLights();
         this.magma = new MagmaSphere(this.scene, { radius: 450, position: new THREE.Vector3(0, 900, 0) });
-        this.magma.mesh.geometry.computeVertexNormals(); // 法線の再計算でドメインワープを滑らかに
+        // this.magma.mesh.geometry.computeVertexNormals(); // MeshStandardMaterial ベースなので不要
+
 
         this.createSpheres();
         this.createAmbientFloatingParticles();

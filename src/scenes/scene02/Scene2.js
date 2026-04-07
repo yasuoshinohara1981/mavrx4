@@ -248,7 +248,7 @@ export class Scene2 extends SceneBase {
 
         const magmaLightColor = 0xff6622; // 赤すぎない、マグマらしいオレンジ寄りの色
         const studioOptions = studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture);
-        studioOptions.ambientIntensity = 0.18; // 0.08 -> 0.18 少し明るさを戻す
+        studioOptions.ambientIntensity = 0.32; // 0.18 -> 0.32 さらに明るさを戻す（デフォルト 0.28 より少し明るめ）
         studioOptions.lightColor = 0xffffff; // 蛍光灯は元の白に戻す
         studioOptions.ambientColor = magmaLightColor; // 環境光はマグマの照り返し色
 

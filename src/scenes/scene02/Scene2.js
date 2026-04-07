@@ -248,7 +248,7 @@ export class Scene2 extends SceneBase {
 
         const magmaLightColor = 0xff6622; // 赤すぎない、マグマらしいオレンジ寄りの色
         const studioOptions = studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture);
-        studioOptions.ambientIntensity = 0.08; // 部屋をさらに暗く
+        studioOptions.ambientIntensity = 0.18; // 0.08 -> 0.18 少し明るさを戻す
         studioOptions.lightColor = 0xffffff; // 蛍光灯は元の白に戻す
         studioOptions.ambientColor = magmaLightColor; // 環境光はマグマの照り返し色
 
@@ -262,6 +262,7 @@ export class Scene2 extends SceneBase {
         if (!voidMode) {
             const spotOptions = ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale);
             spotOptions.emissiveColor = magmaLightColor; // 天井の発光色
+            spotOptions.emissiveIntensity = 25.0; // ブルームを強めるために発光強度を大幅アップ (デフォルト 8.5)
             spotOptions.shadowDebugSpot.color = magmaLightColor; // スポットライトの色
 
             this.studio.attachCeilingSpotRig(this.roomGroup, { 

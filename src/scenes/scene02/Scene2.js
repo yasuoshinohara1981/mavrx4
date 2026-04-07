@@ -246,11 +246,11 @@ export class Scene2 extends SceneBase {
         this.pmremGenerator = this._roomEnvPresentation.pmremGenerator;
         this._roomEnvTexture = this._roomEnvPresentation.envMapTexture;
 
-        const magmaColor = 0xff3300; // マグマ風のオレンジレッド
+        const magmaLightColor = 0xff6622; // 赤すぎない、マグマらしいオレンジ寄りの色
         const studioOptions = studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture);
         studioOptions.ambientIntensity = 0.08; // 部屋をさらに暗く
-        studioOptions.lightColor = magmaColor; // 蛍光灯の色
-        studioOptions.ambientColor = magmaColor; // 環境光の色
+        studioOptions.lightColor = 0xffffff; // 蛍光灯は元の白に戻す
+        studioOptions.ambientColor = magmaLightColor; // 環境光はマグマの照り返し色
 
         this.studio = new StudioBox(this.scene, studioOptions);
         // Scene1 と同様、StudioBox の箱自体は非表示にして独自構築の部屋（またはタイル設定）を使う
@@ -261,8 +261,8 @@ export class Scene2 extends SceneBase {
 
         if (!voidMode) {
             const spotOptions = ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale);
-            spotOptions.emissiveColor = magmaColor; // 天井の発光色
-            spotOptions.shadowDebugSpot.color = magmaColor; // スポットライトの色
+            spotOptions.emissiveColor = magmaLightColor; // 天井の発光色
+            spotOptions.shadowDebugSpot.color = magmaLightColor; // スポットライトの色
 
             this.studio.attachCeilingSpotRig(this.roomGroup, { 
                 includeCeilingPlane: true, // 独自天井を消したので、リグ側の天井を表示する

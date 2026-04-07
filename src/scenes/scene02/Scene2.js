@@ -51,8 +51,8 @@ export class Scene2 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00015;
-        /** 暖色系フォグ（Scene1 と同系統） */
-        this.sceneFogColor = 0x231a14;
+        /** マグマに合わせた暗い赤系のフォグ */
+        this.sceneFogColor = 0x050100;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
@@ -246,7 +246,13 @@ export class Scene2 extends SceneBase {
         this.pmremGenerator = this._roomEnvPresentation.pmremGenerator;
         this._roomEnvTexture = this._roomEnvPresentation.envMapTexture;
 
-        this.studio = new StudioBox(this.scene, studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture));
+        const magmaColor = 0xff3300; // マグマ風のオレンジレッド
+        const studioOptions = studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture);
+        studioOptions.ambientIntensity = 0.08; // 部屋をさらに暗く
+        studioOptions.lightColor = magmaColor; // 蛍光灯の色
+        studioOptions.ambientColor = magmaColor; // 環境光の色
+
+        this.studio = new StudioBox(this.scene, studioOptions);
         // Scene1 と同様、StudioBox の箱自体は非表示にして独自構築の部屋（またはタイル設定）を使う
         if (this.studio.studioBox) this.studio.studioBox.visible = false;
 
@@ -254,9 +260,13 @@ export class Scene2 extends SceneBase {
         if (this.roomGroup) this.roomGroup.visible = !voidMode;
 
         if (!voidMode) {
+            const spotOptions = ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale);
+            spotOptions.emissiveColor = magmaColor; // 天井の発光色
+            spotOptions.shadowDebugSpot.color = magmaColor; // スポットライトの色
+
             this.studio.attachCeilingSpotRig(this.roomGroup, { 
                 includeCeilingPlane: true, // 独自天井を消したので、リグ側の天井を表示する
-                ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale)
+                ...spotOptions
             });
             this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
             if (this.ceilingMesh) {

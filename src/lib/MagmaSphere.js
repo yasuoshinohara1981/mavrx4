@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { generateRockPBRTextures } from './RockPBRTextures.js';
 
 /**
- * MagmaSphere: ドメインワープと非線形な変形（Exponential/Power）を極限まで強化。
- * 均一な「トゲトゲ」を排除し、滑らかな平原と、突如現れる巨大な「岩の塊」の対比を実現。
+ * MagmaSphere: ノイズの周波数を大幅に下げ、低周波のうねりと巨大な「岩の塊」を表現。
+ * ギザギザした細部を削ぎ落とし、スケール感のあるダイナミックな形状を実現。
  */
 export class MagmaSphere {
     constructor(scene, options = {}) {
@@ -89,13 +89,14 @@ export class MagmaSphere {
                     m = m * m;
                     return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
                 }
-                float fbm(vec3 p) {
+                // 周波数を下げたFBM（大きなうねり用）
+                float fbm_low(vec3 p) {
                     float v = 0.0;
                     float a = 0.5;
                     vec3 shift = vec3(100);
-                    for (int i = 0; i < 3; ++i) {
+                    for (int i = 0; i < 2; ++i) { // レイヤーを減らして細部を削る
                         v += a * snoise(p);
-                        p = p * 2.0 + shift;
+                        p = p * 1.8 + shift; // 倍率を下げて緩やかに
                         a *= 0.5;
                     }
                     return v;
@@ -107,35 +108,33 @@ export class MagmaSphere {
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 `
-                vec3 p = position * 0.0012;
-                float t = uTime * 0.12;
+                // 周波数を大幅に下げて、巨大なスケール感にする
+                vec3 p = position * 0.0006; 
+                float t = uTime * 0.08;
                 
-                // 強力なドメインワープ（座標を大きく歪ませて「疎密」を作る）
+                // ドメインワープも緩やかに（ギザギザを抑える）
                 vec3 q = vec3(
-                    fbm(p + vec3(0.0, 0.0, t)),
-                    fbm(p + vec3(5.2, 1.3, t)),
-                    fbm(p + vec3(1.7, 9.2, t))
+                    fbm_low(p + vec3(0.0, 0.0, t)),
+                    fbm_low(p + vec3(5.2, 1.3, t)),
+                    fbm_low(p + vec3(1.7, 9.2, t))
                 );
                 
-                // 歪んだ座標でメインのノイズを計算
-                vWarpedPos = p + 6.0 * q; 
-                float noiseVal = fbm(vWarpedPos);
+                vWarpedPos = p + 3.0 * q; 
+                float noiseVal = fbm_low(vWarpedPos);
                 
-                // 0〜1に正規化
                 float normalizedNoise = noiseVal * 0.5 + 0.5;
                 
-                // 指数関数的な加工（トゲトゲを「塊」に変える）
-                // 低い部分は極限まで平坦に、高い部分だけが急激に盛り上がる
-                float clumpy = pow(normalizedNoise, 6.0); 
+                // 盛り上がりを「巨大な塊」にする（緩やかなpow）
+                float clumpy = pow(normalizedNoise, 4.0); 
                 
-                // 場所によって「平原」と「塊」を切り替えるためのバイアス
-                float mask = snoise(p * 0.4 + t * 0.1) * 0.5 + 0.5;
-                mask = smoothstep(0.3, 0.7, mask); // マスクをパキッとさせる
+                // マスクも巨大で緩やかに
+                float mask = snoise(p * 0.2 + t * 0.05) * 0.5 + 0.5;
+                mask = smoothstep(0.2, 0.8, mask);
                 
                 vDistortion = clumpy * mask;
                 
-                // 盛り上がりを大きくして、よりダイナミックな「塊」にする
-                vec3 transformed = position + normal * vDistortion * 280.0;
+                // 変形の大きさをさらに巨大に（380.0までアップ）
+                vec3 transformed = position + normal * vDistortion * 380.0;
                 `
             );
 
@@ -146,20 +145,18 @@ export class MagmaSphere {
                 `
                 #include <emissivemap_fragment>
                 
-                // 歪んだ座標を使って、テクスチャの模様にも偏りを作る
-                float patternBias = snoise(vWarpedPos * 0.4 + uTime * 0.08) * 0.5 + 0.5;
+                // 模様の疎密も緩やかに
+                float patternBias = snoise(vWarpedPos * 0.2 + uTime * 0.05) * 0.5 + 0.5;
                 
-                // 盛り上がっている「塊」の部分だけを強烈に発光させる
-                float glow = smoothstep(0.1, 0.6, vDistortion);
+                // 巨大な塊の部分を発光させる
+                float glow = smoothstep(0.1, 0.5, vDistortion);
                 
-                // 模様の疎密（特定の場所だけ模様が濃くなるように）
-                float detailMask = pow(patternBias, 3.0);
+                float detailMask = pow(patternBias, 2.0);
                 
                 vec3 magmaColor = vec3(1.0, 0.35, 0.05);
-                float pulse = 0.8 + 0.2 * sin(uTime * 1.2);
+                float pulse = 0.85 + 0.15 * sin(uTime * 1.0);
                 
-                // 発光にも強烈な偏りを持たせる
-                totalEmissiveRadiance += magmaColor * glow * 10.0 * pulse * detailMask;
+                totalEmissiveRadiance += magmaColor * glow * 12.0 * pulse * detailMask;
                 `
             );
 

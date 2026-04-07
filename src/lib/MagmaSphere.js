@@ -2,9 +2,8 @@ import * as THREE from 'three';
 import { generateRockPBRTextures } from './RockPBRTextures.js';
 
 /**
- * MagmaSphere: メインパーティクルと同じ RockPBRTextures を使用し、
- * 内部から溶岩が滲み出ているような質感を MeshStandardMaterial で表現。
- * 頂点シェーダーを大幅に強化し、ごつごつした多層ノイズによる変形を実現。
+ * MagmaSphere: ドメインワープ（Domain Warping）を頂点シェーダーに導入し、
+ * ノイズの疎密と偏りを作ることで「鋭い山脈」と「滑らかな丸み」が共存する複雑な形状を実現。
  */
 export class MagmaSphere {
     constructor(scene, options = {}) {
@@ -19,10 +18,7 @@ export class MagmaSphere {
     }
 
     setup() {
-        // 頂点数（セグメント数）を増やして、より細かい「ごつごつ感」を出せるようにする
         const geo = new THREE.SphereGeometry(this.radius, 256, 256);
-        
-        // メインパーティクルと同じ手法でテクスチャを生成
         const rockTex = generateRockPBRTextures(1024, { seed: 456, maxAnisotropy: 8 });
         
         this.material = new THREE.MeshStandardMaterial({
@@ -42,7 +38,6 @@ export class MagmaSphere {
         this.material.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
             
-            // 頂点シェーダーの拡張：多層ノイズ（FBM）による複雑な変形
             shader.vertexShader = `
                 varying float vDistortion;
                 uniform float uTime;
@@ -95,14 +90,14 @@ export class MagmaSphere {
                     return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
                 }
 
-                // 多層ノイズ（FBM）でごつごつ感を出す
+                // ドメインワープ用の多層ノイズ
                 float fbm(vec3 p) {
                     float v = 0.0;
                     float a = 0.5;
                     vec3 shift = vec3(100);
-                    for (int i = 0; i < 4; ++i) {
+                    for (int i = 0; i < 3; ++i) {
                         v += a * snoise(p);
-                        p = p * 2.1 + shift;
+                        p = p * 2.0 + shift;
                         a *= 0.5;
                     }
                     return v;
@@ -112,18 +107,32 @@ export class MagmaSphere {
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 `
-                // 低周波の大きなうねり
-                float bigNoise = snoise(position * 0.0015 + uTime * 0.2);
-                // 中周波のごつごつ感
-                float midNoise = fbm(position * 0.005 - uTime * 0.3);
-                // 高周波の細かいディテール
-                float smallNoise = snoise(position * 0.02 + uTime * 0.5) * 0.2;
+                vec3 p = position * 0.0015;
+                float t = uTime * 0.15;
                 
-                float d = bigNoise * 0.6 + midNoise * 0.4 + smallNoise;
-                vDistortion = d;
+                // ドメインワープ: ノイズの入力座標をさらにノイズで歪ませる（偏りを作る）
+                vec3 q = vec3(
+                    fbm(p + vec3(0.0, 0.0, t)),
+                    fbm(p + vec3(5.2, 1.3, t)),
+                    fbm(p + vec3(1.7, 9.2, t))
+                );
                 
-                // 形状をごつごつさせる（displacement）
-                vec3 transformed = position + normal * d * 120.0;
+                // 歪んだ座標でメインのノイズを計算
+                float noiseVal = fbm(p + 4.0 * q);
+                
+                // 非線形な加工（pow）で「鋭い山脈」と「滑らかな谷」の対比を作る
+                // 0〜1に正規化してから加工
+                float normalizedNoise = noiseVal * 0.5 + 0.5;
+                float jagged = pow(normalizedNoise, 3.0); // 盛り上がりを鋭く
+                float smoothVal = smoothstep(0.0, 1.0, normalizedNoise); // 全体を滑らかに
+                
+                // 鋭さと滑らかさを場所によってブレンド（これ自体もノイズで偏らせる）
+                float bias = snoise(p * 0.5 + t * 0.2) * 0.5 + 0.5;
+                float finalDist = mix(smoothVal, jagged, bias);
+                
+                vDistortion = finalDist * 2.0 - 1.0;
+                
+                vec3 transformed = position + normal * vDistortion * 180.0;
                 `
             );
 
@@ -137,15 +146,12 @@ export class MagmaSphere {
                 `
                 #include <emissivemap_fragment>
                 
-                // 歪みが大きい（盛り上がっている）部分や、谷間に溶岩を配置
-                float glow = smoothstep(0.3, 0.7, vDistortion);
-                // 谷間（ノイズが低い部分）にも溶岩が溜まっている演出
-                float valley = smoothstep(0.0, -0.5, vDistortion) * 0.5;
+                // 歪みが大きい（山脈の頂上）部分を発光させる
+                float glow = smoothstep(0.2, 0.8, vDistortion);
+                vec3 magmaColor = vec3(1.0, 0.3, 0.05);
+                float pulse = 0.85 + 0.15 * sin(uTime * 1.5);
                 
-                vec3 magmaColor = vec3(1.0, 0.25, 0.05);
-                float pulse = 0.8 + 0.2 * sin(uTime * 2.0);
-                
-                totalEmissiveRadiance += magmaColor * (glow + valley) * 6.0 * pulse;
+                totalEmissiveRadiance += magmaColor * glow * 7.0 * pulse;
                 `
             );
 

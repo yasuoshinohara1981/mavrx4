@@ -113,7 +113,7 @@ export class MagmaSphere {
                     vViewPosition = -mvPosition.xyz;
                     gl_Position = projectionMatrix * mvPosition;
                 }
-            `,old_string:,
+            `,
             fragmentShader: `
                 varying vec3 vNormal;
                 varying vec3 vPosition;

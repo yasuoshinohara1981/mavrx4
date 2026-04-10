@@ -24,7 +24,8 @@ import {
     STUDIO_ROOM_HALF_W,
     STUDIO_ROOM_HALF_D,
     STUDIO_FLOOR_TOP_Y,
-    STUDIO_CEILING_Y
+    STUDIO_CEILING_Y,
+    STUDIO_ROOM_SCENE_FOG_COLOR
 } from '../../lib/presentation/index.js';
 import { StudioAtmosphere } from '../../lib/StudioAtmosphere.js';
 import { Scene1Particle } from './Scene1Particle.js';
@@ -145,8 +146,8 @@ export class Scene1 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00015;
-        /** 暖色系フォグ（遠景をやわらかく） */
-        this.sceneFogColor = 0x231a14;
+        /** フォグ色は {@link STUDIO_ROOM_SCENE_FOG_COLOR} と同期 */
+        this.sceneFogColor = STUDIO_ROOM_SCENE_FOG_COLOR;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.bloomPass = null;

@@ -16,7 +16,8 @@ import {
     studioBoxOptionsForStudioRoom,
     ceilingSpotRigOptionsForStudioRoom,
     applyStudioRoomFloorWallEnvMaps,
-    StudioBox
+    StudioBox,
+    STUDIO_ROOM_SCENE_FOG_COLOR
 } from '../../lib/presentation/index.js';
 
 // 分割したモジュールのインポート
@@ -51,8 +52,8 @@ export class Scene2 extends SceneBase {
         this.useBloom = true;
         this.useSceneFog = true;
         this.sceneFogDensity = 0.00015;
-        /** マグマに合わせた暗い赤系のフォグ */
-        this.sceneFogColor = 0x050100;
+        /** void 以外は共通の暖色フォグ（{@link STUDIO_ROOM_SCENE_FOG_COLOR}） */
+        this.sceneFogColor = STUDIO_ROOM_SCENE_FOG_COLOR;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
@@ -246,13 +247,7 @@ export class Scene2 extends SceneBase {
         this.pmremGenerator = this._roomEnvPresentation.pmremGenerator;
         this._roomEnvTexture = this._roomEnvPresentation.envMapTexture;
 
-        const magmaLightColor = 0xff6622; // 赤すぎない、マグマらしいオレンジ寄りの色
-        const studioOptions = studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture);
-        studioOptions.ambientIntensity = 0.32; // 0.18 -> 0.32 さらに明るさを戻す（デフォルト 0.28 より少し明るめ）
-        studioOptions.lightColor = 0xffffff; // 蛍光灯は元の白に戻す
-        studioOptions.ambientColor = magmaLightColor; // 環境光はマグマの照り返し色
-
-        this.studio = new StudioBox(this.scene, studioOptions);
+        this.studio = new StudioBox(this.scene, studioBoxOptionsForStudioRoom(this.sceneLightingScale, this._roomEnvTexture));
         // Scene1 と同様、StudioBox の箱自体は非表示にして独自構築の部屋（またはタイル設定）を使う
         if (this.studio.studioBox) this.studio.studioBox.visible = false;
 
@@ -260,19 +255,9 @@ export class Scene2 extends SceneBase {
         if (this.roomGroup) this.roomGroup.visible = !voidMode;
 
         if (!voidMode) {
-            const spotOptions = ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale);
-            spotOptions.emissiveColor = magmaLightColor; // 天井の発光色
-            spotOptions.emissiveIntensity = 25.0; // ブルームを強めるために発光強度を大幅アップ (デフォルト 8.5)
-            spotOptions.shadowDebugSpot.color = magmaLightColor; // スポットライトの色
-
-            this.studio.attachCeilingSpotRig(this.roomGroup, { 
-                includeCeilingPlane: true, // 独自天井を消したので、リグ側の天井を表示する
-                ...spotOptions
-            });
+            this.studio.attachCeilingSpotRig(this.roomGroup, { ...ceilingSpotRigOptionsForStudioRoom(this.sceneLightingScale) });
             this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
-            if (this.ceilingMesh) {
-                this.ceilingMesh.visible = true;
-            }
+            if (this.ceilingMesh) this.ceilingMesh.visible = true;
         }
         if (this.roomGroup) {
             const floorMat = this.roomGroup.children[0].material;

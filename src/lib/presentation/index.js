@@ -32,6 +32,7 @@ export {
     STUDIO_FLOOR_TOP_Y,
     STUDIO_CEILING_Y,
     ROOM_ENV_PMREM_INTENSITY,
+    STUDIO_ROOM_SCENE_FOG_COLOR,
     applyStudioRoomToneAndBackdrop,
     setupStudioRoomEnvironmentMap,
     disposeStudioRoomEnvironmentMap,

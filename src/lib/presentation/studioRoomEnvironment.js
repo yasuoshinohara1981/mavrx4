@@ -12,6 +12,9 @@ export const STUDIO_CEILING_Y = 5500;
 /** RoomEnvironment PMREM の fromScene 第2引数（Three 例と同系） */
 export const ROOM_ENV_PMREM_INTENSITY = 0.04;
 
+/** 距離フォグ・背景の既定色（シーンはこれを参照して統一すると調整が1か所で済む） */
+export const STUDIO_ROOM_SCENE_FOG_COLOR = 0x3a2a1c;
+
 /**
  * トーンマップ・露出ブースト・背景・フォグ（IBL は {@link setupStudioRoomEnvironmentMap}）
  */
@@ -22,11 +25,11 @@ export function applyStudioRoomToneAndBackdrop(
     {
         useSceneFog = true,
         sceneFogDensity = 0.00015,
-        sceneFogColor = 0x151820
+        sceneFogColor = STUDIO_ROOM_SCENE_FOG_COLOR
     } = {}
 ) {
     applyStandardPresentationRenderer(renderer, sceneLightingScale);
-    renderer.toneMappingExposure *= 1.82;
+    renderer.toneMappingExposure *= 1.96;
     StudioBox.applySceneBackdrop(scene, {
         backgroundHex: sceneFogColor,
         fogDensity: sceneFogDensity,
@@ -87,10 +90,10 @@ export function studioBoxOptionsForStudioRoom(sceneLightingScale, roomEnvTexture
         envMapIntensity: 0,
         useFloorTile: false,
         useLights: true,
-        lightIntensity: 8 * L,
+        lightIntensity: 10.5 * L,
         // 影を濃く見せる：均しの Ambient と四隅 Point のフィルを抑える（キーは ceilingSpotRig の Spot）
-        ambientIntensity: 0.28,
-        fluorescentPointIntensity: 260
+        ambientIntensity: 0.4,
+        fluorescentPointIntensity: 330
     };
 }
 
@@ -115,7 +118,7 @@ export function ceilingSpotRigOptionsForStudioRoom(sceneLightingScale) {
             cameraNear: 800,
             cameraFar: 9000,
             // キー光を少し上げて明暗差を取る（フィルは studioBox 側で抑制）
-            intensity: 2_750_000
+            intensity: 3_150_000
         }
     };
 }

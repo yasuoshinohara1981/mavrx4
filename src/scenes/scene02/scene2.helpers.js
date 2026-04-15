@@ -58,7 +58,7 @@ export function setHeatmapColorFromUnit(t, out) {
     const te = t * t * (3 - 2 * t);
     const h = 0.58 * (1 - te);
     const s = 0.78 + 0.18 * te;
-    const l = 0.2 + 0.55 * te;
+    const l = 0.12 + 0.38 * te;
     out.setHSL(h, s, l);
 }
 

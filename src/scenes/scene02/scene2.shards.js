@@ -27,25 +27,25 @@ export function createSpheres(scene) {
     /** ヒートマップ時は緑アルbedo／透過を使わない（頂点色 × map で暖色が消えるのを防ぐ） */
     const mat = scene.useHeatmapParticleColors
         ? new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            roughness: 0.38,
-            metalness: 0.06,
-            envMapIntensity: 1.35,
+            color: 0xd8d8d8,
+            roughness: 0.44,
+            metalness: 0.05,
+            envMapIntensity: 0.95,
             fog: true,
             vertexColors: false // ヒートマップを使わないので頂点色は不要
         })
         : new THREE.MeshPhysicalMaterial({
-            color: 0xffffff,
+            color: 0xd0d0d0,
             map: rockTex.map,
             normalMap: rockTex.normalMap,
             roughnessMap: rockTex.roughnessMap,
             aoMap: rockTex.aoMap,
-            roughness: 0.16,
-            metalness: 0.6, // キラキラ感アップ
-            clearcoat: 1.0, // クリアコート最大
-            clearcoatRoughness: 0.05,
-            envMapIntensity: 2.5, // 環境反射を大幅強化
-            specularIntensity: 1.5,
+            roughness: 0.22,
+            metalness: 0.38,
+            clearcoat: 0.72,
+            clearcoatRoughness: 0.08,
+            envMapIntensity: 1.45,
+            specularIntensity: 1.05,
             transmission: 0.0, // 透過を完全にオフにして緑っぽさを排除
             thickness: 0.0,
             ior: 1.6,
@@ -86,8 +86,8 @@ export function createSpheres(scene) {
         if (scene.useHeatmapParticleColors) {
             setHeatmapColorFromUnit(0, scene._colorTmp);
         } else {
-            // 冷えた溶岩風の濃いチャコールグレー（ランダム）
-            const gray = 0.05 + Math.random() * 0.15;
+            // 冷えた溶岩風の濃いチャコールグレー（ランダム・全体的に暗め）
+            const gray = 0.018 + Math.random() * 0.065;
             scene._colorTmp.setRGB(gray, gray, gray);
         }
         scene.instancedMeshManager.setColorAt(i, scene._colorTmp);
@@ -129,146 +129,212 @@ export function updatePhysics(scene, deltaTime) {
             scene.grid.get(key).push(i);
         }
 
-        const magmaPos = scene.magma?.position;
-        const magmaRadius = scene.magma?.radius ?? 0;
+            const magmaPos = scene.magma?.position ?? new THREE.Vector3(0, 900, 0);
+            const magmaRadius = scene.magma?.radius ?? 0;
 
-        for (let idx = 0; idx < visibleCount; idx++) {
-            const p = scene.particles[idx];
+            for (let idx = 0; idx < visibleCount; idx++) {
+                const p = scene.particles[idx];
 
-            // マグマとの衝突判定
-            if (magmaPos && magmaRadius > 0) {
-                const diff = tempVec.copy(p.position).sub(magmaPos);
-                const dist = diff.length();
-                const minDist = magmaRadius + p.radius + 20; // 余裕を持たせる
-                if (dist < minDist) {
-                    const pushForce = (minDist - dist) * 0.5;
-                    p.addForce(diff.normalize().multiplyScalar(pushForce));
-                    // 速度を外向きに反射させる
-                    const dot = p.velocity.dot(diff);
-                    if (dot < 0) {
-                        p.velocity.addScaledVector(diff, -dot * 1.5);
+                // マグマとの衝突判定
+                const diffToMagma = tempVec.copy(p.position).sub(magmaPos);
+                const distToMagma = diffToMagma.length();
+                if (magmaRadius > 0) {
+                    const minDist = magmaRadius + p.radius + 20; // 余裕を持たせる
+                    if (distToMagma < minDist) {
+                        const pushForce = (minDist - distToMagma) * 0.5;
+                        p.addForce(diffToMagma.clone().normalize().multiplyScalar(pushForce));
+                        // 速度を外向きに反射させる
+                        const dot = p.velocity.dot(diffToMagma);
+                        if (dot < 0) {
+                            p.velocity.addScaledVector(diffToMagma, -dot * 1.5);
+                        }
                     }
                 }
-            }
 
-            if (scene.currentMode === scene.MODE_DRIFT_FIELD) {
-                const x = p.position.x;
-                const y = p.position.y;
-                const z = p.position.z;
-                const tt = scene.time;
-                const fx = Math.sin(y * 0.0011 + tt * 0.37) * Math.cos(z * 0.00085 + tt * 0.21);
-                const fy = Math.sin(z * 0.001 + tt * 0.29) * Math.cos(x * 0.00092 + tt * 0.18);
-                const fz = Math.sin(x * 0.00115 + tt * 0.33) * Math.cos(y * 0.00088 + tt * 0.24);
-                tempVec.set(fx, fy, fz).multiplyScalar(38 * p.strayFactor);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_UPTHRUST) {
-                p.velocity.multiplyScalar(0.97);
-                tempVec.set(0, 14 * p.strayFactor, 0);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_HELIX_RAIL) {
-                const R = 820 * p.strayRadiusOffset;
-                const pitch = 0.42;
-                const theta = idx * 0.12 + p.phaseOffset * 0.4 + scene.time * 0.38;
-                const ty = (theta * pitch * 180) % 4200 - 400;
-                const tx = Math.cos(theta) * R;
-                const tz = Math.sin(theta) * R;
-                p.velocity.y *= 0.9;
-                const spiralSpringK = 0.048 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * spiralSpringK, 0, (tz - p.position.z) * spiralSpringK);
-                p.addForce(tempVec);
-                const hSpring = 0.035 * p.strayFactor;
-                tempVec.set(0, (ty - p.position.y) * hSpring, 0);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_LEMNISCATE) {
-                const t = scene.time * 0.52 + idx * 0.0012 + p.phaseOffset;
-                const a = 900 * p.strayRadiusOffset;
-                const tx = (a * Math.sin(t)) / (1 + Math.sin(t) * Math.sin(t));
-                const ty = 700 + a * 0.5 * Math.sin(t) * Math.cos(t);
-                const tz = a * 0.55 * Math.sin(2 * t + 0.3);
-                const springK = 0.012 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_HONEYCOMB) {
-                const q = idx % 56;
-                const r = Math.floor(idx / 56) % 44;
-                const size = 95;
-                const tx = size * (1.5 * q) + p.targetOffset.x * 0.04;
-                const tz = size * (0.5 * Math.sqrt(3) * q + Math.sqrt(3) * r) + p.targetOffset.z * 0.04;
-                const ty = (q * 0.12 + r * 0.09) * 55 + 520 + p.targetOffset.y * 0.05;
-                const wallSpringK = 0.011 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * wallSpringK, (ty - p.position.y) * wallSpringK, (tz - p.position.z) * wallSpringK);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_BEAT_INTERFERENCE) {
-                const w1 = 1.07;
-                const w2 = 1.19;
-                const cols = Math.floor(Math.sqrt(scene.sphereCount));
-                const spacing = 4200 / cols;
-                const tx = ((idx % cols) - cols * 0.5) * spacing + p.targetOffset.x * 0.06;
-                const tz = (Math.floor(idx / cols) - cols * 0.5) * spacing + p.targetOffset.z * 0.06;
-                const ty = 820 + Math.sin(w1 * scene.time + idx * 0.07) * 520 * p.strayRadiusOffset + Math.sin(w2 * scene.time + idx * 0.11) * 380 * p.strayRadiusOffset;
-                const waveSpringK = 0.01 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * waveSpringK, (ty - p.position.y) * waveSpringK, (tz - p.position.z) * waveSpringK);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_BINARY_ROTATE) {
-                const t = scene.time * 0.24;
-                const cx = Math.cos(t) * 780;
-                const cz = Math.sin(t) * 780;
-                const c1x = cx; const c1z = cz;
-                const c2x = -cx; const c2z = -cz;
-                const soft = 120;
-                const d1 = Math.hypot(p.position.x - c1x, p.position.z - c1z) + soft;
-                const d2 = Math.hypot(p.position.x - c2x, p.position.z - c2z) + soft;
-                const pull = 52000 * p.strayFactor;
-                tempVec.set(
-                    ((c1x - p.position.x) * pull) / (d1 * d1) + ((c2x - p.position.x) * pull) / (d2 * d2),
-                    ((900 - p.position.y) * 0.022 * p.strayFactor),
-                    ((c1z - p.position.z) * pull) / (d1 * d1) + ((c2z - p.position.z) * pull) / (d2 * d2)
-                );
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_DNA_HELIX) {
-                const strand = idx % 2;
-                const along = Math.floor(idx / 2);
-                const theta = along * 0.065 + scene.time * 0.48 + p.phaseOffset;
-                const R = 340 * p.strayRadiusOffset;
-                const rise = along * 2.4 - 900;
-                const tx = Math.cos(theta + strand * Math.PI) * R;
-                const tz = Math.sin(theta + strand * Math.PI) * R;
-                const ty = rise + strand * 55 + 1100;
-                const pillarSpringK = 0.0115 * p.strayFactor;
-                tempVec.set((tx - p.position.x) * pillarSpringK, (ty - p.position.y) * pillarSpringK, (tz - p.position.z) * pillarSpringK);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_TOROIDAL_VORTEX) {
-                const xz = Math.sqrt(p.position.x * p.position.x + p.position.z * p.position.z) + 1e-4;
-                const s = 0.016 * p.strayFactor;
-                const fx = -p.position.z * s;
-                const fz = p.position.x * s;
-                const fy = Math.sin((xz - 820) * 0.0031 + scene.time * 0.5) * 0.45 * p.strayFactor;
-                tempVec.set(fx, fy, fz);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_TRIPLE_WELL) {
-                const wells = [[0, 900, 0], [-520, 750, 420], [480, 820, -380]];
-                let fx = 0; let fy = 0; let fz = 0;
-                for (let w = 0; w < 3; w++) {
-                    const dx = wells[w][0] - p.position.x;
-                    const dy = wells[w][1] - p.position.y;
-                    const dz = wells[w][2] - p.position.z;
-                    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 90;
-                    const pull = (420 * p.strayFactor) / d;
-                    fx += (dx / d) * pull; fy += (dy / d) * pull; fz += (dz / d) * pull;
-                }
-                tempVec.set(fx, fy, fz);
-                p.addForce(tempVec);
-            } else if (scene.currentMode === scene.MODE_PRECESS_ORBIT) {
-                const t = scene.time * 0.44 + idx * 0.0011;
-                const pre = scene.time * 0.1 + p.phaseOffset * 0.2;
-                const a = 640 * p.strayRadiusOffset;
-                const b = 400 * p.strayRadiusOffset;
-                const x0 = Math.cos(pre) * (a * Math.cos(t)) - Math.sin(pre) * (b * Math.sin(t));
-                const z0 = Math.sin(pre) * (a * Math.cos(t)) + Math.cos(pre) * (b * Math.sin(t));
-                const y0 = 920 + Math.sin(t * 2.1 + p.phaseOffset) * 220;
-                const springK = 0.012 * p.strayFactor;
-                tempVec.set((x0 - p.position.x) * springK, (y0 - p.position.y) * springK, (z0 - p.position.z) * springK);
-                p.addForce(tempVec);
+                if (scene.currentMode === scene.MODE_DRIFT_FIELD) {
+                    // マグマの周りを漂うフィールド
+                    const tt = scene.time;
+                    const noiseScale = 0.001;
+                    const fx = Math.sin(p.position.y * noiseScale + tt * 0.37) * Math.cos(p.position.z * noiseScale + tt * 0.21);
+                    const fy = Math.sin(p.position.z * noiseScale + tt * 0.29) * Math.cos(p.position.x * noiseScale + tt * 0.18);
+                    const fz = Math.sin(p.position.x * noiseScale + tt * 0.33) * Math.cos(p.position.y * noiseScale + tt * 0.24);
+                    
+                    // マグマへの緩やかな引力
+                    const pull = diffToMagma.clone().normalize().multiplyScalar(-0.05);
+                    p.addForce(tempVec.set(fx, fy, fz).multiplyScalar(38 * p.strayFactor).add(pull));
+
+                } else if (scene.currentMode === scene.MODE_UPTHRUST) {
+                    // マグマから噴き出すような上昇気流
+                    p.velocity.multiplyScalar(0.97);
+                    const horizontalPull = diffToMagma.clone();
+                    horizontalPull.y = 0;
+                    const distH = horizontalPull.length();
+                    const inward = horizontalPull.normalize().multiplyScalar(-distH * 0.001); // 中心に寄せる
+                    tempVec.set(inward.x, 18 * p.strayFactor, inward.z);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_HELIX_RAIL) {
+                    // マグマを中心とした垂直螺旋
+                    const R = (magmaRadius + 250) * p.strayRadiusOffset;
+                    const theta = idx * 0.12 + p.phaseOffset * 0.4 + scene.time * 0.5;
+                    const ty = ((theta * 0.42 * 180) % 2500) - 1000 + magmaPos.y;
+                    const tx = magmaPos.x + Math.cos(theta) * R;
+                    const tz = magmaPos.z + Math.sin(theta) * R;
+                    
+                    const springK = 0.05 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_LEMNISCATE) {
+                    // マグマを貫く8の字軌道（クロス）
+                    const t = scene.time * 0.6 + idx * 0.0012 + p.phaseOffset;
+                    const a = (magmaRadius + 450) * p.strayRadiusOffset;
+                    const tx = magmaPos.x + (a * Math.sin(t)) / (1 + Math.sin(t) * Math.sin(t));
+                    const ty = magmaPos.y + a * 0.5 * Math.sin(t) * Math.cos(t);
+                    const tz = magmaPos.z + a * 0.6 * Math.sin(2 * t);
+                    
+                    const springK = 0.015 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_HONEYCOMB) {
+                    // マグマを囲む多層リング（円環状）
+                    const ringIdx = idx % 5;
+                    const angle = (idx / scene.sphereCount) * Math.PI * 2 + scene.time * 0.2;
+                    const R = (magmaRadius + 150 + ringIdx * 180) * p.strayRadiusOffset;
+                    const tx = magmaPos.x + Math.cos(angle) * R;
+                    const tz = magmaPos.z + Math.sin(angle) * R;
+                    const ty = magmaPos.y + (ringIdx - 2) * 120 + Math.sin(scene.time + idx) * 30;
+                    
+                    const springK = 0.02 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_BEAT_INTERFERENCE) {
+                    // マグマの上下で交差する波（クロス）
+                    const t = scene.time * 0.8;
+                    const R = (magmaRadius + 400) * p.strayRadiusOffset;
+                    const angle = (idx / scene.sphereCount) * Math.PI * 2;
+                    const side = idx % 2 === 0 ? 1 : -1;
+                    
+                    const tx = magmaPos.x + Math.cos(angle) * R;
+                    const tz = magmaPos.z + Math.sin(angle) * R;
+                    const ty = magmaPos.y + side * (Math.sin(t + angle * 4) * 400);
+                    
+                    const springK = 0.015 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_BINARY_ROTATE) {
+                    // マグマを軸にした二重回転リング（円環状）
+                    const t = scene.time * 0.5;
+                    const R = (magmaRadius + 350) * p.strayRadiusOffset;
+                    const orbitIdx = idx % 2;
+                    const speed = orbitIdx === 0 ? 1 : -1.2;
+                    const angle = (idx / (scene.sphereCount/2)) * Math.PI * 2 + t * speed;
+                    
+                    const tx = magmaPos.x + Math.cos(angle) * R;
+                    const tz = magmaPos.z + Math.sin(angle) * R;
+                    const ty = magmaPos.y + Math.cos(t * 0.5 + orbitIdx * Math.PI) * 250;
+                    
+                    const springK = 0.025 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_DNA_HELIX) {
+                    // マグマを包む二重螺旋（円環＋垂直）
+                    const strand = idx % 2;
+                    const along = (idx / scene.sphereCount);
+                    const theta = along * Math.PI * 8 + scene.time * 1.0;
+                    const R = (magmaRadius + 200) * p.strayRadiusOffset;
+                    const tx = magmaPos.x + Math.cos(theta + strand * Math.PI) * R;
+                    const tz = magmaPos.z + Math.sin(theta + strand * Math.PI) * R;
+                    const ty = magmaPos.y + (along - 0.5) * 2000;
+                    
+                    const springK = 0.02 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_TOROIDAL_VORTEX) {
+                    // マグマを囲むドーナツ状の渦（円環状）
+                    const diff = tempVec.copy(p.position).sub(magmaPos);
+                    const rXZ = Math.sqrt(diff.x * diff.x + diff.z * diff.z) + 1e-4;
+                    const targetR = magmaRadius + 400;
+                    
+                    // 円環への引き寄せ
+                    const pullR = (targetR - rXZ) * 0.05;
+                    const pullY = (magmaPos.y - p.position.y) * 0.05;
+                    
+                    // 回転
+                    const tangent = new THREE.Vector3(-diff.z, 0, diff.x).normalize().multiplyScalar(15);
+                    
+                    p.addForce(tangent.add(new THREE.Vector3(diff.x / rXZ * pullR, pullY, diff.z / rXZ * pullR)));
+
+                } else if (scene.currentMode === scene.MODE_TRIPLE_WELL) {
+                    // マグマを中心とした三方向へのクロス放射
+                    const t = scene.time * 0.5;
+                    const dirIdx = idx % 3;
+                    const angle = (dirIdx / 3) * Math.PI * 2 + t * 0.2;
+                    const dist = ((idx / 3) / (scene.sphereCount / 3)) * 1200;
+                    
+                    const tx = magmaPos.x + Math.cos(angle) * dist;
+                    const ty = magmaPos.y + Math.sin(t + idx * 0.01) * 250;
+                    const tz = magmaPos.z + Math.sin(angle) * dist;
+                    
+                    const springK = 0.01 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_PRECESS_ORBIT) {
+                    // マグマを巡る歳差運動軌道（球体状）
+                    const t = scene.time * 0.5 + idx * 0.01;
+                    const R = (magmaRadius + 500) * p.strayRadiusOffset;
+                    const phi = Math.acos(Math.sin(t * 0.3));
+                    const theta = t;
+                    
+                    const tx = magmaPos.x + R * Math.sin(phi) * Math.cos(theta);
+                    const ty = magmaPos.y + R * Math.sin(phi) * Math.sin(theta);
+                    const tz = magmaPos.z + R * Math.cos(phi);
+                    
+                    const springK = 0.02 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * springK, (ty - p.position.y) * springK, (tz - p.position.z) * springK);
+                    p.addForce(tempVec);
+
+                } else if (scene.currentMode === scene.MODE_SPHERE_SHELL) {
+                    const center = scene.magma?.position ?? new THREE.Vector3(0, 900, 0);
+                    const baseR = (magmaRadius + 400) * p.strayRadiusOffset;
+                    const timeScale = scene.time * 0.3 + p.phaseOffset;
+                    const r = baseR + Math.sin(timeScale * 1.5) * 100;
+                    
+                    const theta = (idx * 0.13 + scene.time * 0.2) % (Math.PI * 2);
+                    const phi = (idx * 0.07 + scene.time * 0.15) % Math.PI;
+                    
+                    const tx = center.x + r * Math.sin(phi) * Math.cos(theta);
+                    const ty = center.y + r * Math.cos(phi);
+                    const tz = center.z + r * Math.sin(phi) * Math.sin(theta);
+                    
+                    const shellSpringK = 0.015 * p.strayFactor;
+                    tempVec.set((tx - p.position.x) * shellSpringK, (ty - p.position.y) * shellSpringK, (tz - p.position.z) * shellSpringK);
+                    p.addForce(tempVec);
+                } else if (scene.currentMode === scene.MODE_SPHERE_VORTEX) {
+                    const center = scene.magma?.position ?? new THREE.Vector3(0, 900, 0);
+                    const diff = tempVec.copy(p.position).sub(center);
+                    const dist = diff.length() + 1e-4;
+                    
+                    // 球体への引き寄せ
+                    const targetR = (magmaRadius + 300) * p.strayRadiusOffset;
+                const pull = (targetR - dist) * 0.02 * p.strayFactor;
+                p.addForce(diff.clone().normalize().multiplyScalar(pull));
+                
+                // 渦巻き（軸回転）
+                const orbitSpeed = 0.8 * p.strayFactor;
+                const axis = new THREE.Vector3(0, 1, 0).applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.sin(scene.time * 0.2) * 0.5);
+                const tangent = new THREE.Vector3().crossVectors(axis, diff).normalize();
+                p.addForce(tangent.multiplyScalar(orbitSpeed * 15));
+                
+                // 極方向への移動
+                const up = axis.clone().multiplyScalar(Math.cos(scene.time * 0.5 + p.phaseOffset) * 5 * p.strayFactor);
+                p.addForce(up);
             } else {
                 const tx = p.targetOffset.x;
                 const ty = p.targetOffset.y + 200;

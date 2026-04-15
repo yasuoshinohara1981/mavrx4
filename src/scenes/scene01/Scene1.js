@@ -28,6 +28,7 @@ import {
     STUDIO_ROOM_SCENE_FOG_COLOR
 } from '../../lib/presentation/index.js';
 import { StudioAtmosphere } from '../../lib/StudioAtmosphere.js';
+import { generateFleshVeinTextures } from '../../lib/FleshVeinTextures.js';
 import { Scene1Particle } from './Scene1Particle.js';
 
 // 分割したモジュールのインポート
@@ -145,7 +146,7 @@ export class Scene1 extends SceneBase {
         this.useDOF = true;
         this.useBloom = true;
         this.useSceneFog = true;
-        this.sceneFogDensity = 0.00015;
+        this.sceneFogDensity = 0.00005;
         /** フォグ色は {@link STUDIO_ROOM_SCENE_FOG_COLOR} と同期 */
         this.sceneFogColor = STUDIO_ROOM_SCENE_FOG_COLOR;
         this.useSSAO = true;
@@ -396,50 +397,7 @@ export class Scene1 extends SceneBase {
     }
 
     generateFleshTextures() {
-        const size = 512;
-        const colorCanvas = document.createElement('canvas');
-        colorCanvas.width = size; colorCanvas.height = size;
-        const cCtx = colorCanvas.getContext('2d');
-        cCtx.fillStyle = '#888888'; cCtx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 100; i++) {
-            const x = Math.random() * size; const y = Math.random() * size; const r = 20 + Math.random() * 60;
-            const grad = cCtx.createRadialGradient(x, y, 0, x, y, r);
-            const grayVal = 120 + Math.random() * 80;
-            grad.addColorStop(0, `rgba(${grayVal}, ${grayVal}, ${grayVal}, 0.5)`);
-            grad.addColorStop(1, 'rgba(136, 136, 136, 0)');
-            cCtx.fillStyle = grad; cCtx.beginPath(); cCtx.arc(x, y, r, 0, Math.PI * 2); cCtx.fill();
-        }
-        cCtx.strokeStyle = 'rgba(200, 200, 200, 0.5)';
-        for (let i = 0; i < 30; i++) {
-            cCtx.lineWidth = 0.8 + Math.random() * 2.0;
-            let x = Math.random() * size; let y = Math.random() * size;
-            cCtx.beginPath(); cCtx.moveTo(x, y);
-            let angle = Math.random() * Math.PI * 2;
-            for (let j = 0; j < 40; j++) { angle += (Math.random() - 0.5) * 1.2; x += Math.cos(angle) * 8; y += Math.sin(angle) * 8; cCtx.lineTo(x, y); }
-            cCtx.stroke();
-        }
-        const bumpCanvas = document.createElement('canvas');
-        bumpCanvas.width = size; bumpCanvas.height = size;
-        const bCtx = bumpCanvas.getContext('2d');
-        bCtx.fillStyle = '#808080'; bCtx.fillRect(0, 0, size, size);
-        for (let i = 0; i < 500; i++) {
-            const x = Math.random() * size; const y = Math.random() * size; const r = 1 + Math.random() * 3;
-            const isBump = Math.random() > 0.5; bCtx.fillStyle = isBump ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
-            bCtx.beginPath(); bCtx.arc(x, y, r, 0, Math.PI * 2); bCtx.fill();
-        }
-        for (let i = 0; i < 50; i++) {
-            const x = Math.random() * size; const y = Math.random() * size; const r = 10 + Math.random() * 30;
-            const grad = bCtx.createRadialGradient(x, y, 0, x, y, r);
-            const val = Math.random() > 0.5 ? 255 : 0;
-            grad.addColorStop(0, `rgba(${val}, ${val}, ${val}, 0.4)`);
-            grad.addColorStop(1, 'rgba(128, 128, 128, 0)');
-            bCtx.fillStyle = grad; bCtx.beginPath(); bCtx.arc(x, y, r, 0, Math.PI * 2); bCtx.fill();
-        }
-        const colorTex = new THREE.CanvasTexture(colorCanvas);
-        colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping; colorTex.colorSpace = THREE.SRGBColorSpace;
-        const bumpTex = new THREE.CanvasTexture(bumpCanvas);
-        bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping; bumpTex.colorSpace = THREE.LinearSRGBColorSpace;
-        return { map: colorTex, bumpMap: bumpTex };
+        return generateFleshVeinTextures(512);
     }
 
     triggerPulse(velocity = 127) {

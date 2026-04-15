@@ -51,7 +51,7 @@ export class Scene2 extends SceneBase {
         this.useDOF = true;
         this.useBloom = true;
         this.useSceneFog = true;
-        this.sceneFogDensity = 0.00015;
+        this.sceneFogDensity = 0.00005;
         /** void 以外は共通の暖色フォグ（{@link STUDIO_ROOM_SCENE_FOG_COLOR}） */
         this.sceneFogColor = STUDIO_ROOM_SCENE_FOG_COLOR;
         this.useSSAO = true;
@@ -97,8 +97,8 @@ export class Scene2 extends SceneBase {
         this.ambientParticleFadeOutMs = 1400;
         this.ambientMinLiving = 180;
 
-        this.sphereCount = 7000;
-        this.spawnRadius = 1200;
+        this.sphereCount = 5000;
+        this.spawnRadius = 800;
         this.instancedMeshManager = null;
         this.particles = [];
         this.gridSize = 120;
@@ -106,7 +106,7 @@ export class Scene2 extends SceneBase {
         this.expandSpheres = [];
         this.modeTimer = 0;
         this.modeInterval = 10.0;
-        this.totalModeCount = 11;
+        this.totalModeCount = 13;
         this.useGravity = false;
         this.spiralMode = false;
         this.torusMode = false;
@@ -124,8 +124,11 @@ export class Scene2 extends SceneBase {
         this.MODE_TOROIDAL_VORTEX = 8;
         this.MODE_TRIPLE_WELL = 9;
         this.MODE_PRECESS_ORBIT = 10;
+        this.MODE_SPHERE_SHELL = 11;
+        this.MODE_SPHERE_VORTEX = 12;
 
         this.currentMode = this.MODE_DRIFT_FIELD;
+        this.totalModeCount = 13;
         this.modeHistory = new Set([this.MODE_DRIFT_FIELD]);
 
         this._tmpV = new THREE.Vector3();
@@ -266,7 +269,11 @@ export class Scene2 extends SceneBase {
         }
 
         this.setupLights();
-        this.magma = new MagmaSphere(this.scene, { radius: 450, position: new THREE.Vector3(0, 900, 0) });
+        this.magma = new MagmaSphere(this.scene, {
+            radius: 450,
+            position: new THREE.Vector3(0, 900, 0),
+            sceneLightingScale: this.sceneLightingScale
+        });
         // this.magma.mesh.geometry.computeVertexNormals(); // MeshStandardMaterial ベースなので不要
 
 
@@ -304,7 +311,7 @@ export class Scene2 extends SceneBase {
         this.modeTimer += deltaTime;
         if (this.modeTimer >= this.modeInterval) {
             this.modeTimer = 0;
-            const weights = [1.0, 1.2, 1.5, 1.5, 1.0, 1.0, 1.2, 1.0, 0.8, 1.5, 1.05];
+            const weights = [1.0, 1.2, 1.5, 1.5, 1.0, 1.0, 1.2, 1.0, 0.8, 1.5, 1.05, 1.8, 1.8];
             const unvisitedModes = [];
             for (let i = 0; i < this.totalModeCount; i++) { if (!this.modeHistory.has(i)) unvisitedModes.push(i); }
             let nextMode = -1;
@@ -353,6 +360,21 @@ export class Scene2 extends SceneBase {
 
     handleTrackNumber(trackNumber, message) {
         const tn = Helpers.parseTrackNumber(trackNumber, message);
+        
+        // トラック5: 溶岩の速度制御
+        if (tn === 5) {
+            const args = message.args || [];
+            const v1 = args[1] != null ? Number(args[1]) : NaN;
+            const v0 = args[0] != null ? Number(args[0]) : NaN;
+            let velocity = Number.isFinite(v1) ? v1 : Number.isFinite(v0) ? v0 : 64;
+            if (this.magma) {
+                // velocity 0-127 を速度倍率 0.5-5.0 くらいにマップするやで！
+                const scale = 0.5 + (velocity / 127.0) * 4.5;
+                this.magma.setSpeedScale(scale);
+            }
+            return;
+        }
+
         if (tn !== 6) return;
         const args = message.args || [];
         const v1 = args[1] != null ? Number(args[1]) : NaN;

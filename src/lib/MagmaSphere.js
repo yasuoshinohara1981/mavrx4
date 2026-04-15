@@ -1,47 +1,54 @@
 import * as THREE from 'three';
-import { generateRockPBRTextures } from './RockPBRTextures.js';
+import { generateFleshVeinTextures } from './FleshVeinTextures.js';
 
 /**
- * MagmaSphere: ノイズの周波数を大幅に下げ、低周波のうねりと巨大な「岩の塊」を表現。
- * ギザギザした細部を削ぎ落とし、スケール感のあるダイナミックな形状を実現。
+ * MagmaSphere: 低周波ノイズでうねる球体。アルベドは Scene1 トラック9 系の血管／組織風プロシージャルテクスチャ。
  */
 export class MagmaSphere {
     constructor(scene, options = {}) {
         this.scene = scene;
         this.radius = options.radius ?? 400;
         this.position = options.position ?? new THREE.Vector3(0, 900, 0);
+        this.sceneLightingScale = options.sceneLightingScale ?? 1;
         
         this.mesh = null;
         this.material = null;
+        this.speedScale = 1.0;
+        this.targetSpeedScale = 1.0;
         
         this.setup();
     }
 
     setup() {
         const geo = new THREE.SphereGeometry(this.radius, 256, 256);
-        const rockTex = generateRockPBRTextures(1024, { seed: 456, maxAnisotropy: 8 });
-        
+        const fleshTex = generateFleshVeinTextures(1024, { seed: 9241 });
+        const L = this.sceneLightingScale;
+        const env = this.scene.environment;
+
         this.material = new THREE.MeshStandardMaterial({
-            color: 0x111111,
-            map: rockTex.map,
-            normalMap: rockTex.normalMap,
-            roughnessMap: rockTex.roughnessMap,
-            aoMap: rockTex.aoMap,
-            roughness: 0.9,
-            metalness: 0.1,
-            envMapIntensity: 1.0,
-            emissive: 0x000000,
-            emissiveIntensity: 0.0,
+            color: 0xd5d9df,
+            map: fleshTex.map,
+            bumpMap: fleshTex.bumpMap,
+            bumpScale: 3.0,
+            roughness: 0.44,
+            metalness: 0.22,
+            envMap: env,
+            envMapIntensity: 0.68 * (0.55 + 0.45 * L),
+            emissive: 0x2a2d32,
+            emissiveIntensity: 0.2,
+            fog: true,
             transparent: false
         });
 
         this.material.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
+            shader.uniforms.uSpeedScale = { value: 1.0 };
             
             const commonNoise = `
                 varying float vDistortion;
                 varying vec3 vWarpedPos;
                 uniform float uTime;
+                uniform float uSpeedScale;
                 
                 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
                 vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -101,6 +108,26 @@ export class MagmaSphere {
                     }
                     return v;
                 }
+
+                // 高周波のディテールノイズ（模様のムラ用）
+                float fbm_detail(vec3 p) {
+                    float v = 0.0;
+                    float a = 0.5;
+                    for (int i = 0; i < 4; ++i) {
+                        v += a * snoise(p);
+                        p = p * 2.2;
+                        a *= 0.5;
+                    }
+                    return v;
+                }
+
+                // さらに複雑な質感を出すためのマルチスケールノイズ
+                float multi_noise(vec3 p) {
+                    float n1 = fbm_low(p * 0.5);
+                    float n2 = fbm_detail(p * 2.0 + n1);
+                    float n3 = snoise(p * 5.0 + n2);
+                    return n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
+                }
             `;
 
             shader.vertexShader = commonNoise + shader.vertexShader;
@@ -110,7 +137,7 @@ export class MagmaSphere {
                 `
                 // 周波数を大幅に下げて、巨大なスケール感にする
                 vec3 p = position * 0.0006; 
-                float t = uTime * 0.08;
+                float t = uTime * 0.08 * uSpeedScale;
                 
                 // ドメインワープも緩やかに（ギザギザを抑える）
                 vec3 q = vec3(
@@ -133,8 +160,9 @@ export class MagmaSphere {
                 
                 vDistortion = clumpy * mask;
                 
-                // 変形の大きさをさらに巨大に（380.0までアップ）
-                vec3 transformed = position + normal * vDistortion * 380.0;
+                // 変形の大きさをさらに巨大に（380.0 -> 650.0まで大幅アップ！）
+                // うねりの振幅を強くして、シルエットをよりダイナミックにするやで！
+                vec3 transformed = position + normal * vDistortion * 650.0;
                 `
             );
 
@@ -146,17 +174,36 @@ export class MagmaSphere {
                 #include <emissivemap_fragment>
                 
                 // 模様の疎密も緩やかに
-                float patternBias = snoise(vWarpedPos * 0.2 + uTime * 0.05) * 0.5 + 0.5;
+                float patternBias = snoise(vWarpedPos * 0.2 + uTime * 0.05 * uSpeedScale) * 0.5 + 0.5;
+                
+                // --- 模様の均一さを解消するためのノイズ追加 ---
+                // 1. マップのUVにノイズを乗せて歪ませる
+                vec3 noiseCoord = vWarpedPos * 1.5 + uTime * 0.1 * uSpeedScale;
+                float mapDistortion = fbm_detail(noiseCoord) * 0.2;
+                
+                // 2. 表面のムラ（血管テクスチャのディテールを潰しすぎないよう岩より弱め）
+                float surfaceNoise = multi_noise(vWarpedPos * 2.5 - uTime * 0.02 * uSpeedScale) * 0.5 + 0.5;
+                surfaceNoise = pow(surfaceNoise, 1.65);
+                
+                float spotNoise = snoise(vWarpedPos * 0.8 + uTime * 0.03 * uSpeedScale);
+                float darkSpots = smoothstep(0.3, 0.7, spotNoise);
+                
+                diffuseColor.rgb *= (0.55 + 0.45 * surfaceNoise) * (1.0 - 0.32 * darkSpots);
                 
                 // 巨大な塊の部分を発光させる
                 float glow = smoothstep(0.1, 0.5, vDistortion);
                 
-                float detailMask = pow(patternBias, 2.0);
+                // 発光部分にもノイズを掛けて「パチパチ」したムラを作る
+                // ここもマルチスケールで不規則にするやで！
+                float emissiveNoise = multi_noise(vWarpedPos * 6.0 + uTime * 0.4 * uSpeedScale) * 0.5 + 0.5;
+                float detailMask = pow(patternBias, 2.0) * (0.5 + 0.5 * emissiveNoise);
                 
-                vec3 magmaColor = vec3(1.0, 0.35, 0.05);
-                float pulse = 0.85 + 0.15 * sin(uTime * 1.0);
+                vec3 magmaColor = vec3(1.0, 0.22, 0.12);
+                float pulse = 0.85 + 0.15 * sin(uTime * 1.0 * uSpeedScale);
                 
-                totalEmissiveRadiance += magmaColor * glow * 12.0 * pulse * detailMask;
+                // 発光強度をさらに強化（12.0 -> 35.0へ爆上げ！）
+                // シーン全体を照らすような圧倒的なエネルギー感を出すやで！
+                totalEmissiveRadiance += magmaColor * glow * 35.0 * pulse * detailMask;
                 `
             );
 
@@ -169,9 +216,17 @@ export class MagmaSphere {
     }
 
     update(time) {
+        // 速度倍率をスムーズに目標値に近づける
+        this.speedScale += (this.targetSpeedScale - this.speedScale) * 0.1;
+
         if (this.material.userData.shader) {
             this.material.userData.shader.uniforms.uTime.value = time;
+            this.material.userData.shader.uniforms.uSpeedScale.value = this.speedScale;
         }
+    }
+
+    setSpeedScale(scale) {
+        this.targetSpeedScale = scale;
     }
 
     dispose() {
@@ -180,9 +235,7 @@ export class MagmaSphere {
             this.mesh.geometry.dispose();
             this.material.dispose();
             if (this.material.map) this.material.map.dispose();
-            if (this.material.normalMap) this.material.normalMap.dispose();
-            if (this.material.roughnessMap) this.material.roughnessMap.dispose();
-            if (this.material.aoMap) this.material.aoMap.dispose();
+            if (this.material.bumpMap) this.material.bumpMap.dispose();
         }
     }
 }

@@ -33,6 +33,34 @@ export function setRandomRockCharcoalColor(out) {
 }
 
 /**
+ * ブルーグレー〜無彩グレー〜黒付近のランダム（Box パーティクル用）
+ */
+export function setRandomBlueGrayParticleColor(out) {
+    const roll = Math.random();
+    if (roll < 0.4) {
+        const h = 0.54 + Math.random() * 0.11;
+        const s = 0.05 + Math.random() * 0.16;
+        const l = 0.07 + Math.random() * 0.3;
+        out.setHSL(h, s, l);
+    } else if (roll < 0.75) {
+        const l = 0.05 + Math.random() * 0.34;
+        out.setHSL(0, 0, l);
+    } else {
+        const h = 0.52 + Math.random() * 0.14;
+        const s = Math.random() * 0.07;
+        const l = 0.012 + Math.random() * 0.09;
+        out.setHSL(h, s, l);
+    }
+    out.offsetHSL((Math.random() - 0.5) * 0.018, (Math.random() - 0.5) * 0.035, (Math.random() - 0.5) * 0.04);
+    out.r += (Math.random() - 0.5) * 0.028;
+    out.g += (Math.random() - 0.5) * 0.028;
+    out.b += (Math.random() - 0.5) * 0.032;
+    out.r = THREE.MathUtils.clamp(out.r, 0.01, 0.48);
+    out.g = THREE.MathUtils.clamp(out.g, 0.01, 0.46);
+    out.b = THREE.MathUtils.clamp(out.b, 0.012, 0.52);
+}
+
+/**
  * エメラルド／ベリル系のランダム（明るめ黄緑〜ジュエリー緑）
  */
 export function setRandomEmeraldColor(out) {

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { InstancedMeshManager } from '../../lib/InstancedMeshManager.js';
 import { Scene2Particle } from './Scene2Particle.js';
-import { setRandomEmeraldColor, setHeatmapColorFromUnit } from './scene2.helpers.js';
+import { setRandomBlueGrayParticleColor, setHeatmapColorFromUnit } from './scene2.helpers.js';
 import { generateRockPBRTextures } from '../../lib/RockPBRTextures.js';
 
 /**
@@ -86,9 +86,7 @@ export function createSpheres(scene) {
         if (scene.useHeatmapParticleColors) {
             setHeatmapColorFromUnit(0, scene._colorTmp);
         } else {
-            // 冷えた溶岩風の濃いチャコールグレー（ランダム・全体的に暗め）
-            const gray = 0.018 + Math.random() * 0.065;
-            scene._colorTmp.setRGB(gray, gray, gray);
+            setRandomBlueGrayParticleColor(scene._colorTmp);
         }
         scene.instancedMeshManager.setColorAt(i, scene._colorTmp);
         scene.instancedMeshManager.setMatrixAt(i, p.position, p.rotation, p.scale);

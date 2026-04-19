@@ -212,6 +212,8 @@ export class MagmaSphere {
 
         this.mesh = new THREE.Mesh(geo, this.material);
         this.mesh.position.copy(this.position);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
         this.scene.add(this.mesh);
     }
 

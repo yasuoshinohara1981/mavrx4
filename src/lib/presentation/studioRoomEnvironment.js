@@ -91,9 +91,9 @@ export function studioBoxOptionsForStudioRoom(sceneLightingScale, roomEnvTexture
         useFloorTile: false,
         useLights: true,
         lightIntensity: 10.5 * L,
-        // 影を濃く見せる：均しの Ambient と四隅 Point のフィルを抑える（キーは ceilingSpotRig の Spot）
-        ambientIntensity: 0.08,
-        fluorescentPointIntensity: 95
+        // 影を濃く見せる：均しの Ambient と四隅 Point のフィルを抑え、キー Spot（ceilingSpotRig）との明暗差を広げる
+        ambientIntensity: 0.032,
+        fluorescentPointIntensity: 36
     };
 }
 
@@ -117,8 +117,9 @@ export function ceilingSpotRigOptionsForStudioRoom(sceneLightingScale) {
             shadowNormalBias: 0.028,
             cameraNear: 800,
             cameraFar: 9000,
-            // キー光を少し上げて明暗差を取る（フィルは studioBox 側で抑制）
-            intensity: 3_650_000
+            // キー光を強め＋ペナンブラを絞り、シャドウをはっきり見せる（フィルは studioBox 側で抑制）
+            intensity: 5_800_000,
+            penumbra: 0.26
         }
     };
 }

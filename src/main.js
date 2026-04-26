@@ -17,7 +17,7 @@ import { SharedResourceManager } from './lib/SharedResourceManager.js';
 // false: ライブモード（全てのシーンをプリロード）
 const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
 
-// デフォルトシーンのインデックス（0 = Scene1, 1 = Scene2）
+// デフォルトシーンのインデックス（0 = Scene1, 1 = Scene2, 2 = Scene3）
 const DEFAULT_SCENE_INDEX = 1;
 
 // ============================================

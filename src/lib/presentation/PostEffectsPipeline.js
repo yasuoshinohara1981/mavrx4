@@ -77,7 +77,8 @@ export function setupPostEffectsPipeline(host, options = {}) {
     if (useSsao) {
         const w = window.innerWidth;
         const h = window.innerHeight;
-        host.ssaoPass = new SSAOPass(host.scene, host.camera, w, h);
+        const ssaoKernelSize = options.ssaoKernelSize ?? 32;
+        host.ssaoPass = new SSAOPass(host.scene, host.camera, w, h, ssaoKernelSize);
         host.ssaoPass.kernelRadius = options.ssaoKernelRadius ?? host.ssaoNearKernelRadius ?? 9.2;
         host.ssaoPass.minDistance = options.ssaoMinDistance ?? host.ssaoNearMinDistance ?? 0.018;
         host.ssaoPass.maxDistance = options.ssaoMaxDistance ?? host.ssaoNearMaxDistance ?? 0.165;

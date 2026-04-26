@@ -61,10 +61,10 @@ export class Scene2 extends SceneBase {
         this.ssaoPass = null;
         this.saoPass = null;
         this.aoDepthTexture = null;
-        this.ssaoNearKernelRadius = 9.2;
-        this.ssaoNearMinDistance = 0.018;
-        this.ssaoNearMaxDistance = 0.165;
-        this.ssaoFarAttenuation = 0.62;
+        this.ssaoNearKernelRadius = 14;
+        this.ssaoNearMinDistance = 0.012;
+        this.ssaoNearMaxDistance = 0.24;
+        this.ssaoFarAttenuation = 0.82;
         this.outputPass = null;
 
         this.fillPointLight = null;
@@ -230,7 +230,6 @@ export class Scene2 extends SceneBase {
     async setup() {
         if (this.initialized) return;
         await super.setup();
-        this.useSSAO = false;
         const voidMode = this.voidBlackSoloMode;
         this.renderer.shadowMap.enabled = !voidMode;
         if (!voidMode) {
@@ -272,7 +271,8 @@ export class Scene2 extends SceneBase {
         this.magma = new MagmaSphere(this.scene, {
             radius: 450,
             position: new THREE.Vector3(0, 900, 0),
-            sceneLightingScale: this.sceneLightingScale
+            sceneLightingScale: this.sceneLightingScale,
+            shapeMorphStrength: 1.0
         });
         // this.magma.mesh.geometry.computeVertexNormals(); // MeshStandardMaterial ベースなので不要
 
@@ -344,7 +344,7 @@ export class Scene2 extends SceneBase {
 
         this.updatePhysics(deltaTime);
         this.updateExpandSpheres();
-        if (this.magma) this.magma.update(this.time);
+        if (this.magma) this.magma.update(this.time, this.phase);
         this._smoothCenterFromParticles(deltaTime);
         this.updateCamera();
 
@@ -384,7 +384,9 @@ export class Scene2 extends SceneBase {
         if (this.trackEffects[6]) this.triggerExpandEffect(velocity);
     }
 
-    initPostProcessing() { setupPostEffectsPipeline(this, {}); }
+    initPostProcessing() {
+        setupPostEffectsPipeline(this, { ssaoKernelSize: 48 });
+    }
     onResize() { super.onResize(); resizePostEffectsPasses(this); }
 
     dispose() {

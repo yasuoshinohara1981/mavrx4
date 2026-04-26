@@ -15,6 +15,9 @@ export class MagmaSphere {
         this.material = null;
         this.speedScale = 1.0;
         this.targetSpeedScale = 1.0;
+        this.morphPhase = 0.0;
+        this.targetMorphPhase = 0.0;
+        this.shapeMorphStrength = options.shapeMorphStrength ?? 1.0;
         
         this.setup();
     }
@@ -43,12 +46,17 @@ export class MagmaSphere {
         this.material.onBeforeCompile = (shader) => {
             shader.uniforms.uTime = { value: 0 };
             shader.uniforms.uSpeedScale = { value: 1.0 };
+            shader.uniforms.uMorphPhase = { value: 0.0 };
+            shader.uniforms.uShapeMorphStrength = { value: this.shapeMorphStrength };
             
             const commonNoise = `
                 varying float vDistortion;
                 varying vec3 vWarpedPos;
                 uniform float uTime;
                 uniform float uSpeedScale;
+                uniform float uMorphPhase;
+                uniform float uShapeMorphStrength;
+                const float MORPH_PI = 3.141592653589793;
                 
                 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
                 vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -128,6 +136,64 @@ export class MagmaSphere {
                     float n3 = snoise(p * 5.0 + n2);
                     return n1 * 0.5 + n2 * 0.3 + n3 * 0.2;
                 }
+
+                vec3 rotateY(vec3 p, float a) {
+                    float c = cos(a);
+                    float s = sin(a);
+                    return vec3(c * p.x - s * p.z, p.y, s * p.x + c * p.z);
+                }
+
+                vec3 cuboidFromSphere(vec3 pos, vec3 extents) {
+                    float r = max(length(pos), 0.0001);
+                    vec3 dir = normalize(pos);
+                    float denom = max(max(abs(dir.x) / extents.x, abs(dir.y) / extents.y), abs(dir.z) / extents.z);
+                    return dir / max(denom, 0.0001) * r;
+                }
+
+                vec3 coneFromSphere(vec3 pos, float topRadius, float bottomRadius, float heightScale) {
+                    float r = max(length(pos), 0.0001);
+                    float y = clamp(pos.y / r, -1.0, 1.0);
+                    vec2 xz = pos.xz;
+                    float xzLen = length(xz);
+                    vec2 dir = xzLen > 0.0001 ? xz / xzLen : vec2(1.0, 0.0);
+                    float taper = mix(bottomRadius, topRadius, (y + 1.0) * 0.5);
+                    return vec3(dir * r * taper, y * r * heightScale);
+                }
+
+                vec3 facetedPrism(vec3 pos, float sides, vec3 extents) {
+                    vec3 boxPos = cuboidFromSphere(pos, extents);
+                    float angle = atan(boxPos.z, boxPos.x);
+                    float snapped = floor(angle / (2.0 * MORPH_PI) * sides + 0.5) / sides * 2.0 * MORPH_PI;
+                    float radial = length(boxPos.xz);
+                    vec2 faceted = vec2(cos(snapped), sin(snapped)) * radial;
+                    boxPos.xz = mix(boxPos.xz, faceted, 0.68);
+                    return boxPos;
+                }
+
+                vec3 shapeTarget(vec3 pos, float shapeIndex, float time) {
+                    float r = max(length(pos), 0.0001);
+                    float yNorm = clamp(pos.y / r, -1.0, 1.0);
+                    vec3 tallCube = cuboidFromSphere(pos, vec3(0.52, 1.85, 0.52));
+                    vec3 twisted = rotateY(cuboidFromSphere(pos, vec3(0.68, 1.48, 0.68)), yNorm * 2.9 + sin(time * 0.7) * 0.55);
+                    vec3 cone = rotateY(coneFromSphere(pos, 0.16, 1.12, 1.72), time * 0.28);
+                    vec3 prism = rotateY(facetedPrism(pos, 7.0, vec3(0.84, 1.25, 0.84)), yNorm * 1.1 + time * 0.18);
+                    vec3 shard = facetedPrism(pos, 5.0, vec3(0.44 + 0.18 * sin(yNorm * 7.0 + time), 1.65, 0.74));
+                    shard += normalize(pos) * snoise(pos * 0.006 + vec3(time * 0.25, 3.0, -time * 0.17)) * r * 0.22;
+                    float waist = 0.32 + 0.78 * pow(abs(yNorm), 0.58);
+                    vec3 hourglass = vec3(pos.x * waist, pos.y * 1.62, pos.z * waist);
+                    vec3 spiralCone = rotateY(coneFromSphere(pos, 0.28, 1.0, 1.62), yNorm * 4.4 + time * 0.45);
+                    vec3 slab = rotateY(cuboidFromSphere(pos, vec3(0.34, 2.08, 0.92)), time * 0.22);
+
+                    if (shapeIndex < 0.5) return pos;
+                    if (shapeIndex < 1.5) return tallCube;
+                    if (shapeIndex < 2.5) return twisted;
+                    if (shapeIndex < 3.5) return cone;
+                    if (shapeIndex < 4.5) return prism;
+                    if (shapeIndex < 5.5) return shard;
+                    if (shapeIndex < 6.5) return hourglass;
+                    if (shapeIndex < 7.5) return spiralCone;
+                    return slab;
+                }
             `;
 
             shader.vertexShader = commonNoise + shader.vertexShader;
@@ -135,8 +201,19 @@ export class MagmaSphere {
             shader.vertexShader = shader.vertexShader.replace(
                 '#include <begin_vertex>',
                 `
+                float morphPhase = mod(max(uMorphPhase, 0.0), 9.0);
+                float shapeA = floor(morphPhase);
+                float shapeB = mod(shapeA + 1.0, 9.0);
+                float shapeMix = smoothstep(0.0, 1.0, fract(morphPhase));
+                float restless = 0.5 + 0.5 * sin(uTime * 0.45 + morphPhase * 1.7);
+                vec3 morphedA = shapeTarget(position, shapeA, uTime);
+                vec3 morphedB = shapeTarget(position, shapeB, uTime);
+                vec3 shapeMorphed = mix(morphedA, morphedB, shapeMix);
+                shapeMorphed += normalize(position) * snoise(position * 0.004 + vec3(uTime * 0.16, morphPhase, -uTime * 0.11)) * 120.0 * restless;
+                vec3 shapedPosition = mix(position, shapeMorphed, clamp(uShapeMorphStrength, 0.0, 1.0));
+
                 // 周波数を大幅に下げて、巨大なスケール感にする
-                vec3 p = position * 0.0006; 
+                vec3 p = shapedPosition * 0.0006; 
                 float t = uTime * 0.08 * uSpeedScale;
                 
                 // ドメインワープも緩やかに（ギザギザを抑える）
@@ -162,7 +239,7 @@ export class MagmaSphere {
                 
                 // 変形の大きさをさらに巨大に（380.0 -> 650.0まで大幅アップ！）
                 // うねりの振幅を強くして、シルエットをよりダイナミックにするやで！
-                vec3 transformed = position + normal * vDistortion * 650.0;
+                vec3 transformed = shapedPosition + normalize(shapedPosition) * vDistortion * 650.0;
                 `
             );
 
@@ -217,13 +294,18 @@ export class MagmaSphere {
         this.scene.add(this.mesh);
     }
 
-    update(time) {
+    update(time, phase = 0) {
         // 速度倍率をスムーズに目標値に近づける
         this.speedScale += (this.targetSpeedScale - this.speedScale) * 0.1;
+        const nextPhase = Number.isFinite(phase) ? phase : 0;
+        this.targetMorphPhase = THREE.MathUtils.clamp(nextPhase, 0, 8.999);
+        this.morphPhase += (this.targetMorphPhase - this.morphPhase) * 0.08;
 
         if (this.material.userData.shader) {
             this.material.userData.shader.uniforms.uTime.value = time;
             this.material.userData.shader.uniforms.uSpeedScale.value = this.speedScale;
+            this.material.userData.shader.uniforms.uMorphPhase.value = this.morphPhase;
+            this.material.userData.shader.uniforms.uShapeMorphStrength.value = this.shapeMorphStrength;
         }
     }
 

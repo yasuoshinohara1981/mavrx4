@@ -28,9 +28,9 @@ export function createSpheres(scene) {
     const mat = scene.useHeatmapParticleColors
         ? new THREE.MeshStandardMaterial({
             color: 0xd8d8d8,
-            roughness: 0.44,
-            metalness: 0.05,
-            envMapIntensity: 0.95,
+            roughness: 0.52,
+            metalness: 0.04,
+            envMapIntensity: 0.52,
             fog: true,
             vertexColors: false // ヒートマップを使わないので頂点色は不要
         })
@@ -40,12 +40,12 @@ export function createSpheres(scene) {
             normalMap: rockTex.normalMap,
             roughnessMap: rockTex.roughnessMap,
             aoMap: rockTex.aoMap,
-            roughness: 0.22,
-            metalness: 0.38,
-            clearcoat: 0.72,
-            clearcoatRoughness: 0.08,
-            envMapIntensity: 1.45,
-            specularIntensity: 1.05,
+            roughness: 0.38,
+            metalness: 0.18,
+            clearcoat: 0.38,
+            clearcoatRoughness: 0.22,
+            envMapIntensity: 0.72,
+            specularIntensity: 0.62,
             transmission: 0.0, // 透過を完全にオフにして緑っぽさを排除
             thickness: 0.0,
             ior: 1.6,

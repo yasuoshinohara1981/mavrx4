@@ -42,6 +42,15 @@ export class CalloutSystem {
         // コールアウトの寿命管理と3D追従
         for (let i = this.callouts.length - 1; i >= 0; i--) {
             const callout = this.callouts[i];
+            if (typeof callout.refreshWorldPos === 'function') {
+                const np = callout.refreshWorldPos();
+                if (np) {
+                    callout.worldPos.copy(np);
+                    if (callout.mesh3D) callout.mesh3D.position.copy(np);
+                } else {
+                    callout.life = Math.min(callout.life, 0.12);
+                }
+            }
             const elapsed = time - callout.startTime;
             callout.life -= deltaTime;
             
@@ -143,7 +152,9 @@ export class CalloutSystem {
             time = 0,
             worldPos = null,
             duration = 5.0,
-            labelText = null
+            labelText = null,
+            refreshWorldPos = null,
+            skipWorldJitter = false
         } = params;
 
         let x, y;
@@ -153,7 +164,7 @@ export class CalloutSystem {
             const height = window.innerHeight;
             x = margin + Math.random() * (width - margin * 2);
             y = margin + Math.random() * (height - margin * 2);
-        } else if (this.use3DCallouts) {
+        } else if (this.use3DCallouts && !skipWorldJitter) {
             // 3D化時：Z位置をランダマイズ（球体付近で ±150 程度）
             pos.z += (Math.random() - 0.5) * 300;
         }
@@ -180,7 +191,8 @@ export class CalloutSystem {
             horizProgress: 0,
             textCharCount: 0,
             use3D: false,
-            mesh3D: null
+            mesh3D: null,
+            refreshWorldPos: typeof refreshWorldPos === 'function' ? refreshWorldPos : null
         };
 
         // 3Dコールアウト：worldPos あり & use3DCallouts & scene あり

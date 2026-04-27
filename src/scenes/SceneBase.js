@@ -61,6 +61,15 @@ export class SceneBase {
         
         // 色反転エフェクト（共通化）
         this.colorInversion = null;
+        /** true のシーンではトラック2が色反転ではなく全画面ストロボ（Scene3 など） */
+        this.useTrack2Strobe = false;
+        this.strobeFlashPass = null;
+        /** トラック2ストロボの現在強度（0〜1）。実ライト連動用にサブクラスが参照 */
+        this.strobeFlashIntensity = 0;
+        /** トラック2 OSC 用のフラッシュ減衰値（0〜1） */
+        this._strobeImpulse = 0;
+        /** 数字キー2トグルON中にキーを押し続けている間のベース光量（キーアップで解除） */
+        this._strobeFromKeypad = false;
         
         // ポストプロセッシングエフェクト（共通化）
         this.composer = null;
@@ -464,12 +473,26 @@ export class SceneBase {
      */
     applyTrackEffectsToPostPasses() {
         if (this.colorInversion && this.colorInversion.initialized) {
-            const on = !!this.trackEffects[2];
-            this.colorInversion.setEnabled(on);
-            this.colorInversion.endTime = 0;
-            if (this.colorInversion.inversionPass) {
-                this.colorInversion.inversionPass.enabled = on;
+            if (this.useTrack2Strobe) {
+                this.colorInversion.setEnabled(false);
+                this.colorInversion.endTime = 0;
+                if (this.colorInversion.inversionPass) {
+                    this.colorInversion.inversionPass.enabled = false;
+                }
+            } else {
+                const on = !!this.trackEffects[2];
+                this.colorInversion.setEnabled(on);
+                this.colorInversion.endTime = 0;
+                if (this.colorInversion.inversionPass) {
+                    this.colorInversion.inversionPass.enabled = on;
+                }
             }
+        }
+
+        if (this.useTrack2Strobe && this.strobeFlashPass && !this.trackEffects[2]) {
+            this._strobeImpulse = 0;
+            this._strobeFromKeypad = false;
+            this.strobeFlashPass.uniforms.uFlash.value = 0;
         }
 
         if (this.chromaticAberrationPass) {
@@ -630,10 +653,23 @@ export class SceneBase {
         // 色反転エフェクトの更新（サスティン終了チェック）
         if (this.colorInversion) {
             this.colorInversion.update();
-            // trackEffects[2]がfalseの場合は確実にオフにする
-            if (!this.trackEffects[2] && this.colorInversion.isEnabled()) {
+            // trackEffects[2]がfalseの場合は確実にオフにする（ストロボモードでは常に反転オフ）
+            if (this.useTrack2Strobe && this.colorInversion.isEnabled()) {
+                this.colorInversion.setEnabled(false);
+            } else if (!this.trackEffects[2] && this.colorInversion.isEnabled()) {
                 this.colorInversion.setEnabled(false);
             }
+        }
+
+        if (this.useTrack2Strobe && this.strobeFlashPass) {
+            const u = this.strobeFlashPass.uniforms.uFlash;
+            const sustain = this._strobeFromKeypad ? 0.78 : 0;
+            this._strobeImpulse *= Math.exp(-deltaTime * 17);
+            if (this._strobeImpulse < 0.002) this._strobeImpulse = 0;
+            u.value = Math.min(1, Math.max(sustain, this._strobeImpulse));
+            this.strobeFlashIntensity = u.value;
+        } else {
+            this.strobeFlashIntensity = 0;
         }
         
         // 色収差エフェクトの更新（サスティン終了チェック）
@@ -946,29 +982,37 @@ export class SceneBase {
             return;  // 処理済み
         }
         
-        // トラック2: 色反転エフェクト（OSCで制御、共通化）
+        // トラック2: 色反転 or 全画面ストロボ（OSC）
         if (trackNumber === 2) {
             const args = message.args || [];
-            // args = [noteNumber, velocity, durationMs, ???]
             const noteNumber = args[0] || 64;
-            const velocity = args[1] || 127.0;
+            const rawVel = args[1];
+            const velocity =
+                rawVel != null && rawVel !== '' && !Number.isNaN(Number(rawVel)) ? Number(rawVel) : 127.0;
             const durationMs = args[2] || 0.0;
+
+            if (this.useTrack2Strobe) {
+                debugLog('effect', `handleOSC track2 strobe: args=${JSON.stringify(args)}, vel=${velocity}`);
+                if (this.strobeFlashPass) {
+                    const spike = THREE.MathUtils.clamp(velocity / 127, 0, 1) * 0.96;
+                    this._strobeImpulse = Math.min(1, Math.max(this._strobeImpulse, spike));
+                }
+                return;
+            }
+
             debugLog('colorInversion', `handleOSC track2: args=${JSON.stringify(args)}, note=${noteNumber}, velocity=${velocity}, durationMs=${durationMs}`);
             if (this.colorInversion) {
-                // durationMsが0の場合はトグル動作（キー入力時）
                 if (durationMs === 0 && args.length === 0) {
                     const currentState = this.colorInversion.isEnabled();
                     this.colorInversion.setEnabled(!currentState);
-                    // endTimeをリセット
                     this.colorInversion.endTime = 0;
                     debugLog('colorInversion', `Track 2: ${!currentState ? 'ON' : 'OFF'} (トグル)`);
                 } else {
-                    // durationMsが指定されている場合はapplyを使用（OSC時）
                     debugLog('colorInversion', `apply呼び出し前: velocity=${velocity}, durationMs=${durationMs}`);
                     this.colorInversion.apply(velocity, durationMs);
                 }
             }
-            return;  // 処理済み
+            return;
         }
         
         // トラック3: 色収差エフェクト（共通化）
@@ -1010,9 +1054,15 @@ export class SceneBase {
      * キーアップ処理（全シーン共通）
      */
     handleKeyUp(trackNumber) {
-        // トラック2: 色反転エフェクト（キーが離されたら無効）
+        // トラック2: 色反転 or ストロボ（キーが離されたら無効／キーパッド持続解除）
         if (trackNumber === 2) {
-            if (this.colorInversion) {
+            if (this.useTrack2Strobe) {
+                this._strobeFromKeypad = false;
+                this._strobeImpulse = 0;
+                if (this.strobeFlashPass) {
+                    this.strobeFlashPass.uniforms.uFlash.value = 0;
+                }
+            } else if (this.colorInversion) {
                 this.colorInversion.setEnabled(false);
                 debugLog('colorInversion', 'Track 2: OFF (キー解放)');
             }
@@ -1064,10 +1114,16 @@ export class SceneBase {
                 this.switchCameraRandom();
             }
         } else if (trackNumber === 2) {
-            // 色反転エフェクト
-            if (this.colorInversion) {
+            if (this.useTrack2Strobe) {
+                this._strobeFromKeypad = isOn;
+                if (!isOn) {
+                    this._strobeImpulse = 0;
+                    if (this.strobeFlashPass) {
+                        this.strobeFlashPass.uniforms.uFlash.value = 0;
+                    }
+                }
+            } else if (this.colorInversion) {
                 this.colorInversion.setEnabled(isOn);
-                // endTimeをリセットしてupdate()で即座にOFFにされないようにする
                 this.colorInversion.endTime = 0;
             }
         } else if (trackNumber === 3) {
@@ -1229,6 +1285,15 @@ export class SceneBase {
                 if (idx !== -1) this.composer.passes.splice(idx, 1);
             }
             this.filmPass = null;
+        }
+
+        if (this.strobeFlashPass) {
+            if (this.composer) {
+                const idx = this.composer.passes.indexOf(this.strobeFlashPass);
+                if (idx !== -1) this.composer.passes.splice(idx, 1);
+            }
+            if (this.strobeFlashPass.material) this.strobeFlashPass.material.dispose();
+            this.strobeFlashPass = null;
         }
 
         // EffectComposerを破棄

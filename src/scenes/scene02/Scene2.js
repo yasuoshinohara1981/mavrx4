@@ -31,7 +31,7 @@ import { MagmaSphere } from '../../lib/MagmaSphere.js';
 export class Scene2 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'mathym | Xenofog';
+        this.title = 'mathym | Xenobirth';
         this.initialized = false;
         this.sceneNumber = 2;
         this.kitNo = 2;

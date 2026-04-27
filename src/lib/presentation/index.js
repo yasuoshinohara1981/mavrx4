@@ -23,6 +23,8 @@ export {
     disposePresentationOutputPass
 } from './PostEffectsPipeline.js';
 
+export { attachStrobeFlashPass, disposeStrobeFlashPass } from './StrobeFlashPass.js';
+
 export { attachDepthOfField, attachFilmGrainPass } from './DepthOfFieldAndGrain.js';
 export { AtmosphericDustField } from './AtmosphericDustField.js';
 

@@ -274,13 +274,9 @@ export class Scene1 extends SceneBase {
 
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
-        this.laserScanMesh = null;
-        this._laserScanMaterial = null;
         this.airNoiseVolume = null;
         this.airNoiseMaterial = null;
         this._wallCenterY = this.floorTopY + (this.ceilingY - this.floorTopY) * 0.5;
-        this._laserHalfW = this.roomHalfW - 240;
-        this._laserHalfD = this.roomHalfD - 240;
     }
 
     static TICK_LOOP = 36864;
@@ -313,8 +309,6 @@ export class Scene1 extends SceneBase {
     buildRoom() { Room.buildRoom(this); }
     _initWallMatteBlack3DText() { return Room.initWallMatteBlack3DText(this); }
     setupLights() { Room.setupLights(this); }
-    _initLaserScan() { Room.initLaserScan(this); }
-    _updateWallLaserScan() { Room.updateWallLaserScan(this, Scene1.TICK_LOOP); }
 
     // 金属片関連の委譲
     initMetalShardsSystem() { Shards.initMetalShardsSystem(this); }
@@ -479,7 +473,6 @@ export class Scene1 extends SceneBase {
         this.setupCameraParticleDistances();
         this.initPostProcessing();
         this.setParticleCount(this.maxShards + 8 + this.ambientParticleCount + this.maxCylinders + this.maxTrack9Spheres);
-        this._initLaserScan();
         this.initialized = true;
     }
 
@@ -571,7 +564,6 @@ export class Scene1 extends SceneBase {
         updateSsaoDistanceAttenuation(this, this._cameraFocusSmoothed ?? this._spawnFocusWorld);
 
         if (this.calloutSystem) this.calloutSystem.update(deltaTime, this.time, this.camera, { autoGenerate: false, maxCount: 8, margin: 200 });
-        this._updateWallLaserScan();
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -672,11 +664,6 @@ export class Scene1 extends SceneBase {
         if (this.promoWallFillLight) { this.scene.remove(this.promoWallFillLight); this.promoWallFillLight.dispose(); this.promoWallFillLight = null; }
         this.ceilingMesh = null;
         if (this.promoWallLightTarget) { this.scene.remove(this.promoWallLightTarget); this.promoWallLightTarget = null; }
-        if (this.laserScanMesh) {
-            this.scene.remove(this.laserScanMesh); if (this.laserScanMesh.geometry) this.laserScanMesh.geometry.dispose();
-            if (this._laserScanMaterial) { this._laserScanMaterial.dispose(); this._laserScanMaterial = null; }
-            this.laserScanMesh = null;
-        }
         if (this.cubeCamera) { this.scene.remove(this.cubeCamera); this.cubeCamera = null; }
         if (this.cubeRenderTarget) { this.cubeRenderTarget.dispose(); this.cubeRenderTarget = null; }
         if (this.roomGroup) {

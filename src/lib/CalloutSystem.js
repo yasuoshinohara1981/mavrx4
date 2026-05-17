@@ -18,6 +18,8 @@ export class CalloutSystem {
             "NUCLEUS_ID: 0x18", "XENO_LINK: ESTABLISHED",
             "SIGNAL: STABLE", "DATA_STREAM: FLOWING", "LINK_ID: 0xAF42"
         ];
+        /** HUD 投射の「気」リング（外周赤線・内側黄色半透明／コールアウト類似ワールドロック） */
+        this.qiPulses = [];
     }
 
     /**
@@ -52,8 +54,16 @@ export class CalloutSystem {
                 }
             }
             const elapsed = time - callout.startTime;
+
+            /** 開始前（startTime を未来にずらしたコールアウト）は非表示・寿命は進めない */
+            if (elapsed < 0) {
+                callout.opacity = 0;
+                if (callout.mesh3D) this.updateCallout3DMesh(callout);
+                continue;
+            }
+
             callout.life -= deltaTime;
-            
+
             // デュレーション（寿命）に合わせてアニメーションの各フェーズの時間を動的に計算
             // アニメーションを爆速化！寿命の最初の15%（以前は40%）で完結させる
             const animTotalTime = Math.min(callout.maxLife * 0.15, 0.8); // 最大でも0.8秒以内に全工程を終わらせる
@@ -77,15 +87,16 @@ export class CalloutSystem {
                 }
             }
 
-            // --- アニメーション状態の更新 ---
+            // --- アニメーション状態の更新（フェード前のベース不透明度 phaseOpacity）---
+            let phaseOpacity = 1;
             // 1. ◯のピピピ
             if (elapsed < phase1) {
                 callout.animState = 'circle_ping';
                 const ping = (elapsed % (phase1 / 2)) / (phase1 / 2); // 2回点滅
                 callout.circleScale = 0.3 + Math.sin(ping * Math.PI) * 1.0;
-                callout.opacity = 0.9;
+                phaseOpacity = 0.9;
                 callout.circleFillOpacity = 0;
-            } 
+            }
             // 2. 確定と赤い塗り
             else if (elapsed < phase2) {
                 callout.animState = 'circle_fix';
@@ -120,15 +131,20 @@ export class CalloutSystem {
                 callout.textCharCount = callout.labelText.length;
             }
 
-            // フェードアウト（寿命の最後の30%を使って滑らかに消える）
-            const fadeOutThreshold = callout.maxLife * 0.3;
-            if (callout.life < fadeOutThreshold) {
-                callout.opacity = Math.max(0, callout.life / fadeOutThreshold);
-            } else if (elapsed > 0.05 && isVisible) {
-                callout.opacity = 1.0;
-            } else if (!isVisible) {
-                callout.opacity = 0;
+            if (!isVisible) {
+                phaseOpacity = 0;
             }
+
+            /** 寿命に応じて全体をゆるくフェード（残りが半分以下から徐々に 0） */
+            const mx = Math.max(callout.maxLife, 1e-4);
+            const lifeRatio = THREE.MathUtils.clamp(callout.life / mx, 0, 1);
+            const fadeTailFrac = 0.52;
+            const lifeFade =
+                lifeRatio >= fadeTailFrac
+                    ? 1
+                    : THREE.MathUtils.smoothstep(lifeRatio / fadeTailFrac, 0, 1);
+
+            callout.opacity = THREE.MathUtils.clamp(phaseOpacity * lifeFade, 0, 1);
 
             // 強制的に透明度を0にする（寿命が尽きた場合）
             if (callout.life <= 0) {
@@ -139,6 +155,54 @@ export class CalloutSystem {
                 this.callouts.splice(i, 1);
             } else if (callout.mesh3D) {
                 this.updateCallout3DMesh(callout);
+            }
+        }
+
+        /** 2D 「気」リング — ライフは duration と同期、despawn でフェード透明 */
+        for (let i = this.qiPulses.length - 1; i >= 0; i--) {
+            const qi = this.qiPulses[i];
+            const elapsed = time - qi.startTime;
+
+            if (elapsed < 0) {
+                qi.alpha = 0;
+                qi.visible = false;
+                continue;
+            }
+
+            qi.ageAccum += deltaTime;
+            qi.life -= deltaTime;
+
+            let phaseVisible = 1;
+            if (camera && qi.worldPos) {
+                const vector = qi.worldPos.clone();
+                vector.project(camera);
+                qi.x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                qi.y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                qi.visible = vector.z <= 1.0;
+                if (!qi.visible || vector.z !== vector.z) {
+                    phaseVisible = 0;
+                }
+            } else {
+                qi.visible = false;
+                phaseVisible = 0;
+            }
+
+            const mx = Math.max(qi.maxLife, 1e-4);
+            const runT = THREE.MathUtils.clamp(qi.ageAccum / mx, 0, 2);
+            const expand = THREE.MathUtils.smoothstep(Math.min(runT * 1.28, 1), 0, 1);
+
+            qi.outerR = THREE.MathUtils.lerp(qi.radiusStartPx, qi.radiusEndPx, expand);
+            qi.innerR = THREE.MathUtils.clamp(qi.outerR * 0.76, qi.outerR * 0.35, qi.outerR - 4);
+
+            const rampInFast = THREE.MathUtils.smoothstep(qi.ageAccum / Math.max(mx * 0.06, 0.038), 0, 1);
+            const remain = THREE.MathUtils.clamp(qi.life / mx, 0, 1);
+            const rampOutTail =
+                remain > 0.34 ? 1 : THREE.MathUtils.smoothstep(remain / 0.34, 0, 1);
+
+            qi.alpha = THREE.MathUtils.clamp(rampInFast * rampOutTail * phaseVisible, 0, 1);
+
+            if (qi.life <= 0) {
+                this.qiPulses.splice(i, 1);
             }
         }
     }
@@ -212,6 +276,47 @@ export class CalloutSystem {
      */
     getCallouts() {
         return this.callouts.filter(c => !c.use3D);
+    }
+
+    /**
+     * 「気」の 2D リング（ワールドロック→ HUD 投射）。lifetimeSec は和弦 duration と一致させて使う想定。
+     * @returns {object | null}
+     */
+    createQiPulse(params = {}) {
+        const {
+            worldPos = null,
+            time = 0,
+            duration = 1.2,
+            radiusStartPx = 10,
+            radiusEndPx = 168,
+            startTimeOffset = 0
+        } = params;
+        const pos = worldPos ? worldPos.clone() : null;
+        if (!pos) return null;
+
+        const du = Math.max(Number(duration) || 0.5, 0.048);
+        const pulse = {
+            worldPos: pos,
+            startTime: time + (Number(startTimeOffset) || 0),
+            maxLife: du,
+            life: du,
+            ageAccum: 0,
+            radiusStartPx: Math.max(radiusStartPx, 4),
+            radiusEndPx: Math.max(radiusEndPx, radiusStartPx + 8),
+            outerR: Math.max(radiusStartPx, 4),
+            innerR: Math.max(radiusStartPx * 0.74, 2),
+            alpha: 0,
+            visible: true,
+            x: 0,
+            y: 0
+        };
+        this.qiPulses.push(pulse);
+        return pulse;
+    }
+
+    /** HUD へ渡す qi リスト（アルファ済み計算済み／毎フレーム update が前提） */
+    getQiPulses() {
+        return this.qiPulses;
     }
 
     /**

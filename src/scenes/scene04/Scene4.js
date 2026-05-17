@@ -1,6 +1,6 @@
 /**
- * Scene3: Studio 部屋＋StudioBox（箱は非表示）＋天井スポットまでを Scene1/2 と同系で構築。
- * メインオブジェクト・OSC トラック処理は後から追加する。
+ * Scene4: Scene3 系統をベースに、StudioBox 可視メッシュ＋部屋ジオメトリを非表示にした真っ黒空間。
+ * ポスト（DOF・SSAO・Bloom・フィルムグレイン等）は Scene3 と同じパイプライン。
  */
 
 import { SceneBase } from '../SceneBase.js';
@@ -17,8 +17,7 @@ import {
     studioBoxOptionsForStudioRoom,
     ceilingSpotRigOptionsForStudioRoom,
     applyStudioRoomFloorWallEnvMaps,
-    StudioBox,
-    STUDIO_ROOM_SCENE_FOG_COLOR
+    StudioBox
 } from '../../lib/presentation/index.js';
 import * as Room from '../scene02/scene2.room.js';
 import * as Motion from '../scene02/scene2.motion.js';
@@ -27,17 +26,17 @@ import {
     updateCurlSnakeSystems,
     disposeCurlSnakeSystems,
     scene3OnTrack6Spawn
-} from './scene3.snakeMain.js';
+} from '../scene03/scene3.snakeMain.js';
 import { parseTrackNumber } from '../scene02/scene2.helpers.js';
 import { StudioAtmosphere } from '../../lib/StudioAtmosphere.js';
 
-export class Scene3 extends SceneBase {
+export class Scene4 extends SceneBase {
     constructor(renderer, camera, sharedResourceManager = null) {
         super(renderer, camera);
-        this.title = 'mathym | Xenoxa';
+        this.title = 'mathym | Xenodub';
         this.initialized = false;
-        this.sceneNumber = 3;
-        this.kitNo = 3;
+        this.sceneNumber = 4;
+        this.kitNo = 4;
         this.sharedResourceManager = sharedResourceManager;
 
         this.studio = null;
@@ -50,14 +49,13 @@ export class Scene3 extends SceneBase {
         this.sceneLightingScale = 0.32;
 
         this.useTrack2Strobe = true;
-        this.usePhysicalStrobe = true; // 物理ストロボを有効化
+        this.usePhysicalStrobe = true;
 
         this.useDOF = true;
         this.useBloom = true;
         this.useSceneFog = true;
-        /** ストロボ時はキー光をカメラスポットに寄せるため、ベースはやや暗め */
-        this.sceneFogDensity = 0.00012; // フォグを少し薄くして見通しを良くする
-        this.sceneFogColor = 0x080808; // 漆黒から少しグレーに寄せて空間を感じさせる
+        this.sceneFogDensity = 0.00008;
+        this.sceneFogColor = 0x000000;
         this.useSSAO = true;
         this.useFilmGrain = true;
         this.useAutoFocusDOF = false;
@@ -76,10 +74,9 @@ export class Scene3 extends SceneBase {
         this.promoWallFillLight = null;
         this.promoWallLightTarget = null;
 
-        /** トラック2ストロボ用：カメラ視線方向のスポット（ポストフラッシュに同期） */
         this.strobeCameraSpot = null;
         this._strobeCameraSpotTarget = null;
-        this._strobeCameraSpotPeak = 450.0; // 1500.0 から 450.0 に落として、より「しっとり」したフラッシュに
+        this._strobeCameraSpotPeak = 450.0;
 
         this.atmosphere = null;
         this.ambientParticleCount = 2000;
@@ -98,8 +95,8 @@ export class Scene3 extends SceneBase {
         this.ceilingY = 5500;
 
         this._centerSmoothed = new THREE.Vector3(0, 900, 0);
-        this._totalSphereGlow = 0; // Sphere全体の輝度の合計値用
-        this.collectiveGlowLight = null; // Sphereの群れを代表するライト
+        this._totalSphereGlow = 0;
+        this.collectiveGlowLight = null;
     }
 
     buildRoom() {
@@ -108,8 +105,6 @@ export class Scene3 extends SceneBase {
 
     setupLights() {
         Room.setupLights(this);
-        // 部屋全体を暗くするために、ライトの強度を下げるか色を調整する
-        // 0.5から0.85に大幅に戻して、ディテールが見えるようにする
         if (this.fillPointLight) this.fillPointLight.intensity *= 0.85;
         if (this.promoWallFillLight) this.promoWallFillLight.intensity *= 0.85;
     }
@@ -132,14 +127,24 @@ export class Scene3 extends SceneBase {
     }
 
     setupCameraParticleDistance(cameraParticle) {
-        // 注視点（y=900付近）からの距離を確保するため、
-        // 原点からの最大距離制限（CameraParticle内部で使用）を少し広めに設定する
-        cameraParticle.minDistance = 800; // 400から800に引き上げてドアップを防止！🛡️
-        cameraParticle.maxDistance = 4500; 
+        cameraParticle.minDistance = 800;
+        cameraParticle.maxDistance = 4500;
         cameraParticle.maxDistanceReset = 4000;
         cameraParticle.minY = 100;
         cameraParticle.maxY = 5000;
         cameraParticle.initializePosition?.();
+    }
+
+    /** StudioBox の発光メッシュだけ消す（PointLight はそのまま）。 */
+    _hideStudioBoxVisuals() {
+        if (!this.studio) return;
+        if (this.studio.studioBox) this.studio.studioBox.visible = false;
+        if (this.studio.studioFloor) this.studio.studioFloor.visible = false;
+        const lamps = this.studio.fluorescentLights || [];
+        for (let i = 0; i < lamps.length; i++) {
+            const lamp = lamps[i];
+            if (lamp && lamp.group) lamp.group.visible = false;
+        }
     }
 
     async setup() {
@@ -168,33 +173,34 @@ export class Scene3 extends SceneBase {
         const L = this.sceneLightingScale;
         const studioOpts = {
             ...studioBoxOptionsForStudioRoom(L, this._roomEnvTexture),
-            ambientIntensity: 0.015, 
-            lightIntensity: Math.max(3.0, 3.5 * L), 
-            fluorescentPointIntensity: 45.0, // 15.0 から 45.0 に大幅アップ！💡
-            fluorescentPointDecay: 1.2 // 減衰を少し調整して広がりを出す
+            ambientIntensity: 0.015,
+            lightIntensity: Math.max(3.0, 3.5 * L),
+            fluorescentPointIntensity: 45.0,
+            fluorescentPointDecay: 1.2
         };
         this.studio = new StudioBox(this.scene, studioOpts);
-        if (this.studio.studioBox) this.studio.studioBox.visible = false;
+        this._hideStudioBoxVisuals();
 
         this.buildRoom();
 
         const ceilBase = ceilingSpotRigOptionsForStudioRoom(L);
         const ceilingOpts = {
             ...ceilBase,
-            emissiveIntensity: 0.0, // 天井ライトの自発光をオフにするやで！🌟
+            emissiveIntensity: 0.0,
             shadowDebugSpot: {
                 ...ceilBase.shadowDebugSpot,
-                intensity: 0.0 // 照り返しも完全にオフ
+                intensity: 0.0
             }
         };
         this.studio.attachCeilingSpotRig(this.roomGroup, ceilingOpts);
         this.ceilingMesh = this.studio.ceilingSpotRig.ceilingMesh;
-        if (this.ceilingMesh) this.ceilingMesh.visible = true;
 
         if (this.roomGroup) {
             const floorMat = this.roomGroup.children[0].material;
             const wallMat = this.roomGroup.children[1].material;
             applyStudioRoomFloorWallEnvMaps(wallMat, floorMat);
+            // 床・壁・天井プレーンを描画しない（ライト用ロジック・コリダーは維持）
+            this.roomGroup.visible = false;
         }
 
         this.setupLights();
@@ -212,14 +218,13 @@ export class Scene3 extends SceneBase {
         this.setupCameraParticleDistances();
         this.initPostProcessing();
 
-        this.setupPhysicalStrobeLight(1.0); // 15.0 -> 1.5 に10分の1ダウン！死ぬほど弱くしたで！📸
+        this.setupPhysicalStrobeLight(1.0);
 
-        // Sphereの群れを代表するライトを設置
         this.collectiveGlowLight = new THREE.PointLight(0xfff2a0, 0, 5000);
-        this.collectiveGlowLight.decay = 2.0; // 1.5 から 2.0 にして減衰を強める
+        this.collectiveGlowLight.decay = 2.0;
         this.scene.add(this.collectiveGlowLight);
 
-        this.scene.add(this.camera); // カメラをシーンに追加して、付随するライトを有効化するやで！🚀
+        this.scene.add(this.camera);
 
         initCurlSnakeSystems(this);
 
@@ -235,10 +240,8 @@ export class Scene3 extends SceneBase {
         }
         updateCurlSnakeSystems(this, deltaTime);
 
-        // Sphereの群れのライトを更新
         if (this.collectiveGlowLight && this._snakeHeadPos) {
             this.collectiveGlowLight.position.copy(this._snakeHeadPos);
-            // 総輝度に合わせて強度を調整（250.0 から 800.0 に引き上げ）
             this.collectiveGlowLight.intensity = (this._totalSphereGlow || 0) * 800.0;
         }
 
@@ -253,7 +256,6 @@ export class Scene3 extends SceneBase {
         else if (this.bokehPass?.uniforms?.focus) this.bokehPass.uniforms.focus.value = this.dofParams.focus;
         updateSsaoDistanceAttenuation(this, this._snakeHeadPos ?? this._centerSmoothed);
 
-        // 物理ストロボライトの更新
         if (this.usePhysicalStrobe && this.strobeCameraSpot) {
             this.strobeCameraSpot.intensity = (this.strobeFlashIntensity ?? 0) * this.strobePhysicalPeak;
         }
@@ -263,7 +265,6 @@ export class Scene3 extends SceneBase {
         const tn = parseTrackNumber(trackNumber, message);
         if (tn !== 6) return;
         const args = message.args || [];
-        const noteNumber = args[0] || 64;
         const velocity = args[1] != null ? Number(args[1]) : 100;
         const durationMs = args[2] != null ? Number(args[2]) : 0;
 
@@ -274,7 +275,7 @@ export class Scene3 extends SceneBase {
     initPostProcessing() {
         setupPostEffectsPipeline(this, {
             ssaoKernelSize: 48,
-            filmGrainIntensity: 0.65, // 0.46から引き上げて、ピント面のノイズをより強調
+            filmGrainIntensity: 0.65,
             filmGrainGrayscale: false
         });
         attachStrobeFlashPass(this);

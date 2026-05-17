@@ -10,6 +10,7 @@ import { CalloutSystem } from '../lib/CalloutSystem.js';
 import { ColorInversion } from '../lib/ColorInversion.js';
 import { GridRuler3D } from '../lib/GridRuler3D.js';
 import { debugLog } from '../lib/DebugLogger.js';
+import { parseChordHitsFromOscArgs } from '../lib/oscChordUtils.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
@@ -48,6 +49,8 @@ export class SceneBase {
         this.actualTick = 0;  // OSCの/actual_tick/メッセージで受け取る値（96小節で1ループ）
         this.kitNo = 0;  // シーン固有のキット番号（各シーンでハードコーディング）
         this.selectedKitNo = 0;  // OSCの/kit/メッセージで受け取る値（選択されたキット番号）
+        /** `/chord` 専用バースト（複数同時ノート）を `handleChordBurst` に回すか */
+        this.chordBurstEffectEnabled = true;
         /** Ctrl+数字のシーンバンク（SceneManagerと同期） */
         this.sceneBankIndex = 0;
         /** 登録シーン総数（HUDのバンク表示用・実際に存在するシーン数） */
@@ -68,8 +71,17 @@ export class SceneBase {
         this.strobeFlashIntensity = 0;
         /** トラック2 OSC 用のフラッシュ減衰値（0〜1） */
         this._strobeImpulse = 0;
+        /** トラック2 ストロボの終了時刻（デュレーション用） */
+        this._strobeEndTime = 0;
         /** 数字キー2トグルON中にキーを押し続けている間のベース光量（キーアップで解除） */
         this._strobeFromKeypad = false;
+        
+        /** 物理的なストロボライト（PointLight）を使用するかどうか */
+        this.usePhysicalStrobe = false;
+        /** 物理ストロボライトのインスタンス */
+        this.strobeCameraSpot = null;
+        /** 物理ストロボのピーク強度 */
+        this.strobePhysicalPeak = 450.0;
         
         // ポストプロセッシングエフェクト（共通化）
         this.composer = null;
@@ -663,11 +675,17 @@ export class SceneBase {
 
         if (this.useTrack2Strobe && this.strobeFlashPass) {
             const u = this.strobeFlashPass.uniforms.uFlash;
-            const sustain = this._strobeFromKeypad ? 0.78 : 0;
+            const now = Date.now();
+            const sustain = (this._strobeFromKeypad || (this._strobeEndTime > 0 && now < this._strobeEndTime)) ? 0.78 : 0;
             this._strobeImpulse *= Math.exp(-deltaTime * 17);
             if (this._strobeImpulse < 0.002) this._strobeImpulse = 0;
             u.value = Math.min(1, Math.max(sustain, this._strobeImpulse));
             this.strobeFlashIntensity = u.value;
+
+            // 物理ライトの強度を更新
+            if (this.usePhysicalStrobe && this.strobeCameraSpot) {
+                this.strobeCameraSpot.intensity = this.strobeFlashIntensity * (this.strobePhysicalPeak ?? 0.0);
+            }
         } else {
             this.strobeFlashIntensity = 0;
         }
@@ -870,6 +888,7 @@ export class SceneBase {
                 
                 // サブクラスからのコールアウトデータを取得（存在する場合）
                 const callouts = this.calloutSystem ? this.calloutSystem.getCallouts() : [];
+                const qiPulses = this.calloutSystem ? this.calloutSystem.getQiPulses() : [];
 
                 this.hud.display(
                     frameRate,
@@ -894,6 +913,7 @@ export class SceneBase {
                     null,  // cameraModeName（サブクラスで設定可能）
                     this.sceneNumber,  // sceneNumber（各シーンで設定）
                     callouts, // 2Dコールアウトデータを渡す
+                    qiPulses, // 和弦「気」2Dサークル
                     this.sceneBankIndex,
                     this.totalSceneCount,
                     this.sceneIndex,
@@ -963,11 +983,25 @@ export class SceneBase {
             }
             return;  // 処理済み
         }
-        
-        // /kit/メッセージを処理（/kit/ または /kit の両方に対応）
-        // 注意: このメッセージはSceneManagerで処理されるため、ここでは処理しない
+
+        // /chord … コードトラック専用（トラック番号へは流さない）。
+        // args を [n0,v0,d0,n1,v1,d1,...] の連続トリプレットとして複数ノートを一度に受け取れる。
+        {
+            const raw = typeof message.address === 'string' ? message.address.trim() : '';
+            if (raw === '/chord' || raw === '/chord/' || raw.startsWith('/chord/')) {
+                if (!this.chordBurstEffectEnabled) return;
+                const hits = parseChordHitsFromOscArgs(message.args);
+                debugLog('osc', `chord burst parsed=${hits.length} rawArgs=${JSON.stringify(message.args || [])}`);
+                if (hits.length > 0) {
+                    this.handleChordBurst(hits, message);
+                }
+                return;
+            }
+        }
+
+        // /kit/メッセージはSceneManagerで処理されるため、ここでは処理しない
         // SceneManagerでシーン切り替えが行われる
-        
+
         const trackNumber = message.trackNumber;
         
         // trackEffectsの状態をチェック（オフの場合は処理をスキップ）
@@ -992,10 +1026,15 @@ export class SceneBase {
             const durationMs = args[2] || 0.0;
 
             if (this.useTrack2Strobe) {
-                debugLog('effect', `handleOSC track2 strobe: args=${JSON.stringify(args)}, vel=${velocity}`);
+                debugLog('effect', `handleOSC track2 strobe: args=${JSON.stringify(args)}, vel=${velocity}, dur=${durationMs}`);
                 if (this.strobeFlashPass) {
                     const spike = THREE.MathUtils.clamp(velocity / 127, 0, 1) * 0.96;
                     this._strobeImpulse = Math.min(1, Math.max(this._strobeImpulse, spike));
+                    if (durationMs > 0) {
+                        this._strobeEndTime = Date.now() + durationMs;
+                    } else {
+                        this._strobeEndTime = 0;
+                    }
                 }
                 return;
             }
@@ -1042,19 +1081,15 @@ export class SceneBase {
     
     /**
      * キーダウン処理（全シーン共通）
-     * 注意: 数字キー1-9はtoggleEffect()で処理されるため、ここでは呼ばれない
-     * このメソッドは主にOSCメッセージからの呼び出し用
      */
     handleKeyDown(trackNumber) {
-        // このメソッドは主にOSCメッセージからの呼び出し用
-        // 数字キー1-9はtoggleEffect()で処理される
     }
     
     /**
      * キーアップ処理（全シーン共通）
      */
     handleKeyUp(trackNumber) {
-        // トラック2: 色反転 or ストロボ（キーが離されたら無効／キーパッド持続解除）
+        // トラック2: 色反転 or ストロボ
         if (trackNumber === 2) {
             if (this.useTrack2Strobe) {
                 this._strobeFromKeypad = false;
@@ -1064,10 +1099,9 @@ export class SceneBase {
                 }
             } else if (this.colorInversion) {
                 this.colorInversion.setEnabled(false);
-                debugLog('colorInversion', 'Track 2: OFF (キー解放)');
             }
         }
-        // トラック3: 色収差エフェクト（キーが離されたら無効）
+        // トラック3: 色収差
         else if (trackNumber === 3) {
             this.chromaticAberrationKeyPressed = false;
             if (this.chromaticAberrationPass) {
@@ -1076,7 +1110,7 @@ export class SceneBase {
                 this.chromaticAberrationEndTime = 0;
             }
         }
-        // トラック4: グリッチエフェクト（キーが離されたら無効）
+        // トラック4: グリッチ
         else if (trackNumber === 4) {
             this.glitchKeyPressed = false;
             if (this.glitchPass) {
@@ -1091,43 +1125,42 @@ export class SceneBase {
      * トラック番号を処理（サブクラスでオーバーライド）
      */
     handleTrackNumber(trackNumber, message) {
-        // サブクラスで実装
     }
-    
+
+    /**
+     * `/chord` 受信でパース済みの和音イベント（複数同時）。
+     * シングルノート `/track/N` と切り離してシーン側でエフェクトを定義する。
+     * @param {{ note: number, velocity: number, durationMs: number }[]} hits
+     * @param {Object} message - 元 OSC（address / args を参照したいとき用）
+     */
+    handleChordBurst(hits, message) {
+        void hits;
+        void message;
+    }
+
     /**
      * エフェクトのオン/オフを切り替え（数字キー1-9用）
-     * @param {number} trackNumber - トラック番号（1-9）
      */
     toggleEffect(trackNumber) {
         if (trackNumber < 1 || trackNumber > 9) return;
         
-        // エフェクト状態を切り替え
         this.trackEffects[trackNumber] = !this.trackEffects[trackNumber];
         const isOn = this.trackEffects[trackNumber];
         
-        debugLog('track', `Track ${trackNumber}: ${isOn ? 'ON' : 'OFF'}`);
-        
-        // 各トラックのエフェクトを実際に適用/解除
         if (trackNumber === 1) {
-            // トラック1: カメラをランダムに切り替え（ONの時のみ実行）
-            if (isOn) {
-                this.switchCameraRandom();
-            }
+            if (isOn) this.switchCameraRandom();
         } else if (trackNumber === 2) {
             if (this.useTrack2Strobe) {
                 this._strobeFromKeypad = isOn;
                 if (!isOn) {
                     this._strobeImpulse = 0;
-                    if (this.strobeFlashPass) {
-                        this.strobeFlashPass.uniforms.uFlash.value = 0;
-                    }
+                    if (this.strobeFlashPass) this.strobeFlashPass.uniforms.uFlash.value = 0;
                 }
             } else if (this.colorInversion) {
                 this.colorInversion.setEnabled(isOn);
                 this.colorInversion.endTime = 0;
             }
         } else if (trackNumber === 3) {
-            // 色収差エフェクト
             if (this.chromaticAberrationPass) {
                 this.chromaticAberrationPass.enabled = isOn;
                 if (!isOn) {
@@ -1137,7 +1170,6 @@ export class SceneBase {
                 }
             }
         } else if (trackNumber === 4) {
-            // グリッチエフェクト
             if (this.glitchPass) {
                 this.glitchPass.enabled = isOn;
                 if (!isOn) {
@@ -1147,19 +1179,14 @@ export class SceneBase {
                 }
             }
         }
-        // トラック5-9は各シーンで個別に処理（爆発、圧力など）
-        // サブクラスでhandleTrackNumber()をオーバーライドして処理
     }
-    
     
     /**
      * 背景を白にする
      */
     setBackgroundWhite(white, endTime = null) {
         this.backgroundWhite = white;
-        if (endTime !== null) {
-            this.backgroundWhiteEndTime = endTime;
-        }
+        if (endTime !== null) this.backgroundWhiteEndTime = endTime;
     }
     
     /**
@@ -1167,55 +1194,88 @@ export class SceneBase {
      */
     switchCameraRandom() {
         let newIndex = this.currentCameraIndex;
-        while (newIndex === this.currentCameraIndex) {
+        while (newIndex === this.currentCameraIndex && this.cameraParticles.length > 1) {
             newIndex = Math.floor(Math.random() * this.cameraParticles.length);
         }
         this.currentCameraIndex = newIndex;
+        const cp = this.cameraParticles[this.currentCameraIndex];
+
+        if (!cp) return;
+
+        const angle1 = Math.random() * Math.PI * 2;
+        const angle2 = Math.random() * Math.PI * 0.5 + 0.2;
         
-        // 8個全部のカメラにランダムな力を加える
-        debugLog('camera', `switchCameraRandom: ${this.cameraParticles.length} particles`);
-        this.cameraParticles.forEach((cp, index) => {
-            cp.applyRandomForce();
-            debugLog('camera', `  - Camera #${index + 1}: force applied`);
-        });
+        const minDist = cp.minDistance || 1000;
+        const maxDist = cp.maxDistance || 2500;
+        const dist = (minDist * 1.2) + Math.random() * (maxDist - minDist * 1.2);
+
+        const centerX = this._centerSmoothed ? this._centerSmoothed.x : 0;
+        const centerY = this._centerSmoothed ? this._centerSmoothed.y : 500;
+        const centerZ = this._centerSmoothed ? this._centerSmoothed.z : 0;
+
+        const targetX = centerX + Math.sin(angle2) * Math.cos(angle1) * dist;
+        const targetY = centerY + Math.cos(angle2) * dist;
+        const targetZ = centerZ + Math.sin(angle2) * Math.sin(angle1) * dist;
+
+        cp.position.set(targetX, targetY, targetZ);
+        if (cp.velocity) cp.velocity.set(0, 0, 0);
+        cp.applyRandomForce();
         
-        debugLog('camera', `Camera switched to index: ${this.currentCameraIndex}`);
+        debugLog('camera', `Camera switched to index: ${this.currentCameraIndex} relative to center`);
     }
     
     /**
      * リセット処理
      */
     reset() {
-        // TIMEをリセット（エフェクトはそのまま）
-        if (this.hud && this.hud.resetTime) {
-            this.hud.resetTime();
-        }
-        
-        // サブクラスで実装
+        if (this.hud && this.hud.resetTime) this.hud.resetTime();
     }
     
     /**
-     * クリーンアップ処理（シーン切り替え時に呼ばれる）
-     * Three.jsのオブジェクトを破棄してメモリリークを防ぐ
+     * 物理的なストロボライト（天井からのフラッシュ）をセットアップ
+     */
+    setupPhysicalStrobeLight(peakIntensity = 1.5) {
+        if (this.strobeCameraSpot) return;
+        
+        this.usePhysicalStrobe = true;
+        this.strobePhysicalPeak = peakIntensity;
+        
+        const flash = new THREE.PointLight(0xffffff, 0, 50000);
+        flash.decay = 0; 
+        
+        const yPos = this.ceilingY ? this.ceilingY * 0.8 : 4000;
+        flash.position.set(0, yPos, 0); 
+        
+        // 真下（床の方向）を向かせる
+        const target = new THREE.Object3D();
+        target.position.set(0, 0, 0);
+        if (this.scene) this.scene.add(target);
+        flash.target = target;
+        
+        if (this.scene) this.scene.add(flash);
+        this.strobeCameraSpot = flash;
+    }
+
+    /**
+     * クリーンアップ処理
      */
     dispose() {
         this.initialized = false;
         debugLog('init', 'SceneBase.dispose開始');
         
-        // HUDのCanvasをクリア（テキストが残らないように）
+        if (this.strobeCameraSpot) {
+            if (this.scene) this.scene.remove(this.strobeCameraSpot);
+            this.strobeCameraSpot.dispose();
+            this.strobeCameraSpot = null;
+        }
+        
         if (this.hud && this.hud.ctx && this.hud.canvas) {
             this.hud.ctx.clearRect(0, 0, this.hud.canvas.width, this.hud.canvas.height);
         }
         
-        // シーン内のすべてのオブジェクトを破棄
         if (this.scene) {
             this.scene.traverse((object) => {
-                // ジオメトリを破棄
-                if (object.geometry) {
-                    object.geometry.dispose();
-                }
-                
-                // マテリアルを破棄
+                if (object.geometry) object.geometry.dispose();
                 if (object.material) {
                     if (Array.isArray(object.material)) {
                         object.material.forEach(material => material.dispose());
@@ -1223,41 +1283,31 @@ export class SceneBase {
                         object.material.dispose();
                     }
                 }
-                
-                // テクスチャを破棄
-                if (object.material && object.material.map) {
-                    object.material.map.dispose();
-                }
+                if (object.material && object.material.map) object.material.map.dispose();
             });
-            
-            // シーンをクリア
             while (this.scene.children.length > 0) {
                 this.scene.remove(this.scene.children[0]);
             }
         }
         
-        // デバッグシーンも同様にクリア
         if (this.debugScene) {
             while (this.debugScene.children.length > 0) {
                 this.debugScene.remove(this.debugScene.children[0]);
             }
         }
         
-        // カメラデバッググループをクリア
         if (this.cameraDebugGroup) {
             while (this.cameraDebugGroup.children.length > 0) {
                 this.cameraDebugGroup.remove(this.cameraDebugGroup.children[0]);
             }
         }
         
-        // スカイドームの破棄
         if (this.skyDome) {
             this.skyDome.dispose();
             this.skyDome = null;
         }
         this.skyDomeLightConfig = null;
 
-        // レンズフレアの破棄
         if (this.lensFlare) {
             if (this.lensFlare.dispose) this.lensFlare.dispose();
             this.lensFlare = null;
@@ -1267,7 +1317,6 @@ export class SceneBase {
             this.lensFlareLight = null;
         }
 
-        // フィルムルック（CA+ソフト）の破棄
         if (this.filmLookPass) {
             this.filmLookPass.dispose();
             if (this.composer) {
@@ -1277,7 +1326,6 @@ export class SceneBase {
             this.filmLookPass = null;
         }
 
-        // フィルムグレインの破棄
         if (this.filmPass) {
             this.filmPass.dispose();
             if (this.composer) {
@@ -1296,53 +1344,44 @@ export class SceneBase {
             this.strobeFlashPass = null;
         }
 
-        // EffectComposerを破棄
         if (this.composer) {
             this.composer.dispose();
             this.composer = null;
         }
 
-        // DOFの破棄
         if (this.bokehPass) {
             this.bokehPass.enabled = false;
             this.bokehPass = null;
         }
         
-        // ColorInversionを破棄
         if (this.colorInversion && this.colorInversion.dispose) {
             this.colorInversion.dispose();
             this.colorInversion = null;
         }
         
-        // 3Dグリッドとルーラーを破棄
         if (this.gridRuler3D) {
             this.gridRuler3D.dispose();
             this.gridRuler3D = null;
         }
         
-        // カメラデバッグ用Canvasを削除
         if (this.cameraDebugCanvas && this.cameraDebugCanvas.parentElement) {
             this.cameraDebugCanvas.parentElement.removeChild(this.cameraDebugCanvas);
             this.cameraDebugCanvas = null;
             this.cameraDebugCtx = null;
         }
         
-        // スクリーンショット用Canvasを削除
         if (this.screenshotCanvas && this.screenshotCanvas.parentElement) {
             this.screenshotCanvas.parentElement.removeChild(this.screenshotCanvas);
             this.screenshotCanvas = null;
             this.screenshotCtx = null;
         }
         
-        // 配列をクリア
         this.cameraDebugSpheres = [];
         this.cameraDebugLines = [];
         this.cameraDebugCircles = [];
         this.cameraDebugTextPositions = [];
         
         debugLog('init', 'SceneBase.dispose完了');
-        
-        // サブクラスで追加のクリーンアップ処理を実装可能
     }
     
     /**

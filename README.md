@@ -158,6 +158,7 @@ mavrx4/
 ### メッセージ形式
 
 - **トラック**: `/track/{trackNumber} [note, velocity, duration]`
+- **和音（コード）**: `/chord` または `/chord/` — **トラックには流さない**。args を `[n0,v0,dur0, n1,v1,dur1, ...]` の連続トリプレットとして解釈し、各シーンの `handleChordBurst` で処理（`parseChordHitsFromOscArgs`）。オフにするには `chordBurstEffectEnabled = false`。
 - **キット**: `/kit [kitNumber]` (シーン切り替えに使用)
 - **フェーズ**: `/phase [phaseValue]`
 - **ティック**: `/actual_tick [tickValue]` (進行度表示に使用)

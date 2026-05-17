@@ -77,9 +77,12 @@ const SensorFilmGrainShader = {
                 float vz = viewZFromDepth(sampleDepth(vUv));
                 float factor = focus + vz;
                 float blurAmt = abs(clamp(factor * aperture, -maxblur, maxblur));
-                // ボケ域は粒が潰れるので弱め。合焦域は盛りすぎると画面全体がザラつくためブースト控えめ。
+                // ボケ域は粒が潰れるので弱め。
+                // 合焦域（blurAmt が 0 に近い）でノイズを濃くする。
                 float t = smoothstep(0.0, maxblur * 0.9, blurAmt);
-                dofMod = mix(0.9, 0.5, t);
+                
+                // t=0 (ピント面) で 1.4, t=1 (ボケ面) で 0.5 になるように調整
+                dofMod = mix(1.4, 0.5, t); 
                 focusSharp = 1.0 - t;
             }
 

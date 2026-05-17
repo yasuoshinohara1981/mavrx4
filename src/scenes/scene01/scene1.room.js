@@ -10,7 +10,7 @@ import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js';
 import helvetikerFontUrl from 'three/examples/fonts/helvetiker_regular.typeface.json?url';
 
 /**
- * Scene1 部屋・ライト・レーザー関連のロジック
+ * Scene1 部屋・ライト関連のロジック
  */
 
 /**
@@ -166,80 +166,4 @@ export function setupLights(scene) {
     });
     scene.promoWallLightTarget = promoWallLightTarget;
     scene.promoWallFillLight = promoWallFillLight;
-}
-
-/**
- * レーザースキャンの初期化
- */
-export function initLaserScan(scene) {
-    if (scene.laserScanMesh) return;
-    scene._laserScanMaterial = new THREE.MeshStandardMaterial({
-        color: 0xff0a0a,
-        emissive: 0xff0033,
-        emissiveIntensity: 32,
-        metalness: 0,
-        roughness: 0.22,
-        fog: true,
-        side: THREE.DoubleSide
-    });
-    const geo = new THREE.PlaneGeometry(1, 1);
-    scene.laserScanMesh = new THREE.Mesh(geo, scene._laserScanMaterial);
-    scene.laserScanMesh.frustumCulled = false;
-    scene.laserScanMesh.renderOrder = 2;
-    scene.scene.add(scene.laserScanMesh);
-}
-
-/**
- * レーザーの位相計算
- */
-export function getLaserMeasurePhase(scene, TICK_LOOP) {
-    const tpm = TICK_LOOP / 96;
-    if (scene.actualTick != null && Number.isFinite(Number(scene.actualTick))) {
-        const t = Number(scene.actualTick);
-        const mod = ((Math.floor(t) % tpm) + tpm) % tpm;
-        return mod / tpm;
-    }
-    const beat = scene.time * 0.52;
-    return beat - Math.floor(beat);
-}
-
-/**
- * 壁レーザースキャンの更新
- */
-export function updateWallLaserScan(scene, TICK_LOOP) {
-    if (!scene.laserScanMesh) return;
-
-    const hw = scene.roomHalfW;
-    const hd = scene.roomHalfD;
-    const inset = 44;
-    const iw = hw - inset;
-    const id = hd - inset;
-    const edgeX = 2 * iw;
-    const edgeZ = 2 * id;
-    const P = 2 * edgeX + 2 * edgeZ;
-    const phase = getLaserMeasurePhase(scene, TICK_LOOP);
-    const s = phase * P;
-    const beamW = Math.min(2200, edgeX * 0.48, edgeZ * 0.48);
-    const y = scene._wallCenterY;
-
-    let x, z, rotY, segLen;
-
-    if (s < edgeX) {
-        x = -iw + s; z = -id; rotY = 0; segLen = edgeX;
-    } else if (s < edgeX + edgeZ) {
-        const u = s - edgeX;
-        x = iw; z = -id + u; rotY = Math.PI / 2; segLen = edgeZ;
-    } else if (s < edgeX + edgeZ + edgeX) {
-        const u = s - edgeX - edgeZ;
-        x = iw - u; z = id; rotY = Math.PI; segLen = edgeX;
-    } else {
-        const u = s - edgeX - edgeZ - edgeX;
-        x = -iw; z = id - u; rotY = -Math.PI / 2; segLen = edgeZ;
-    }
-
-    const w = Math.min(beamW, segLen * 0.98);
-    const h = 56;
-    scene.laserScanMesh.scale.set(w, h, 1);
-    scene.laserScanMesh.position.set(x, y, z);
-    scene.laserScanMesh.rotation.set(0, rotY, 0);
 }

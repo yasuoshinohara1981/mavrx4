@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { OSCManager } from './systems/OSCManager.js';
 import { SceneManager } from './systems/SceneManager.js';
 import { SharedResourceManager } from './lib/SharedResourceManager.js';
+import { attachCanvasDragOrbit } from './lib/CanvasDragOrbit.js';
 
 // ============================================
 // 設定
@@ -17,8 +18,8 @@ import { SharedResourceManager } from './lib/SharedResourceManager.js';
 // false: ライブモード（全てのシーンをプリロード）
 const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
 
-// デフォルトシーンのインデックス（0 = Scene1, 1 = Scene2, 2 = Scene3）
-const DEFAULT_SCENE_INDEX = 2;
+// デフォルトシーンのインデックス（0 = Scene1, 1 = Scene2, 2 = Scene3, 3 = Scene4）
+const DEFAULT_SCENE_INDEX = 3;
 
 // ============================================
 // 初期化
@@ -28,6 +29,8 @@ let renderer, camera, scene;
 let sceneManager;
 let oscManager;
 let sharedResourceManager;
+/** @type {ReturnType<typeof attachCanvasDragOrbit> | null} */
+let canvasDragOrbit = null;
 
 /** osc-server の WebSocket ポート（osc-server.js の WS_PORT と一致） */
 const OSC_WS_PORT = 8080;
@@ -161,6 +164,14 @@ function initSceneManager() {
         isDevelopmentMode: IS_DEVELOPMENT_MODE,
         defaultSceneIndex: DEFAULT_SCENE_INDEX
     });
+
+    canvasDragOrbit = attachCanvasDragOrbit(renderer.domElement, camera, {
+        getTarget(out) {
+            const sc = sceneManager?.getCurrentScene();
+            if (sc && sc._centerSmoothed && sc._centerSmoothed.isVector3) return out.copy(sc._centerSmoothed);
+            return out.set(0, 400, 0);
+        }
+    });
     
     // モード表示
     if (IS_DEVELOPMENT_MODE) {
@@ -170,6 +181,9 @@ function initSceneManager() {
     // シーン切り替え時のコールバック
     sceneManager.onSceneChange = (sceneName) => {
         document.getElementById('sceneName').textContent = sceneName;
+        if (canvasDragOrbit) {
+            canvasDragOrbit.reset();
+        }
     };
 }
 
@@ -195,6 +209,9 @@ function animate() {
     // シーンの更新
     if (sceneManager) {
         sceneManager.update(deltaTime);
+        if (canvasDragOrbit) {
+            canvasDragOrbit.applyAdditive();
+        }
         sceneManager.render();
     }
 }

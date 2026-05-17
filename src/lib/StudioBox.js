@@ -11,7 +11,8 @@ import { StudioFluorescentLamp } from './StudioFluorescentLamp.js';
  * シーンは `new StudioBox(scene, options)` を基本とし、照明の試作・調整は **StudioBox（＋ StudioEmissiveCeilingSpotRig）側** に寄せる。
  * 採用できたら各シーン固有の `setupLights` 等は削っていく。シーンはオプションで挙動を選ぶだけに寄せる。
  * デフォルトで **薄い AmbientLight**（`ambientIntensity` 既定 0.16）を足し、陰影は残したまま全体をほんのり均す。
- * 四隅の蛍光灯は **{@link StudioFluorescentLamp}**（emissive メッシュ + 同位置の PointLight）。
+ * 蛍光灯：`fluorescentLayout` が `'corners'` のときは四隅に **{@link StudioFluorescentLamp}**（emissive メッシュ + 同位置の PointLight）。
+ * `'ceilingRow'` のときは四隅ではなく天井付近へ同型ランプを少し離して **並列（既定4本・軸は Z に沿う水平管）**で配置する。
  * 背景＋距離フォグは **{@link StudioBox.applySceneBackdrop}**（`lib/presentation` からも再エクスポート可）。
  */
 export class StudioBox {
@@ -50,6 +51,12 @@ export class StudioBox {
         this.fluorescentPointIntensity = options.fluorescentPointIntensity;
         this.fluorescentPointDistance = options.fluorescentPointDistance;
         this.fluorescentPointDecay = options.fluorescentPointDecay !== undefined ? options.fluorescentPointDecay : 2;
+
+        /** 蛍光灯の配置：`corners`（四隅の縦管） / `ceilingRow`（天井付近へ水平に複数並べ） */
+        this.fluorescentLayout =
+            options.fluorescentLayout === 'ceilingRow' ? 'ceilingRow' : 'corners';
+        /** `ceilingRow` 時のみ参照 */
+        this.ceilingRowFluorescent = options.ceilingRowFluorescent || {};
 
         this.studioBox = null;
         this.studioFloor = null;
@@ -294,10 +301,11 @@ export class StudioBox {
         }
     }
 
-    /**
-     * 巨大な蛍光灯を作成（デフォルト：四隅に4本）。emissive メッシュ + 同位置の PointLight。
-     */
     createFluorescentLights() {
+        if (this.fluorescentLayout === 'ceilingRow') {
+            this._createCeilingRowFluorescentLights();
+            return;
+        }
         const lightHeight = this.size;
         const lightRadius = 50;
         const cornerDist = this.size / 2 - 100;
@@ -329,6 +337,51 @@ export class StudioBox {
             });
             this.fluorescentLights.push(lamp);
         });
+    }
+
+    /**
+     * 天井付近に水平蛍光灯を直列配置（軸は Z、位置は X で等間隔）。
+     * `ceilingRowFluorescent` で調整可。
+     */
+    _createCeilingRowFluorescentLights() {
+        const cfg = this.ceilingRowFluorescent;
+        const count = Math.max(1, cfg.count ?? 4);
+        const ceilingY = cfg.ceilingY ?? 5500;
+        const yOffset = cfg.yOffset ?? -135;
+        const spacingAlongX = cfg.spacingAlongX ?? 2400;
+        const tubeLengthAlongZ = cfg.tubeLengthAlongZ ?? 7200;
+        const radius = cfg.radius ?? 38;
+        const rowZ = cfg.rowZ ?? 0;
+
+        const y = ceilingY + yOffset;
+        const totalSpan = spacingAlongX * (count - 1);
+        const startX = -(totalSpan / 2);
+
+        const lampOpts = {
+            color: this.lightColor,
+            emissiveIntensity: this.lightIntensity,
+            radius,
+            height: tubeLengthAlongZ,
+            envMapIntensity: 1.0,
+            distance:
+                this.fluorescentPointDistance ??
+                cfg.pointDistance ??
+                Math.max(this.size * 2, tubeLengthAlongZ * 2),
+            decay: this.fluorescentPointDecay,
+            rotation: new THREE.Euler(Math.PI / 2, 0, 0)
+        };
+        if (this.fluorescentPointIntensity !== undefined) {
+            lampOpts.pointIntensity = this.fluorescentPointIntensity;
+        }
+
+        for (let i = 0; i < count; i++) {
+            const x = startX + i * spacingAlongX;
+            const lamp = new StudioFluorescentLamp(this.scene, {
+                ...lampOpts,
+                position: { x, y, z: rowZ }
+            });
+            this.fluorescentLights.push(lamp);
+        }
     }
 
     /**

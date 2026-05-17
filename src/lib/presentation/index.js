@@ -40,6 +40,8 @@ export {
     disposeStudioRoomEnvironmentMap,
     applyStudioRoomFloorWallEnvMaps,
     studioBoxOptionsForStudioRoom,
+    studioBoxOptionsForStudioCeilingRow,
     ceilingSpotRigOptionsForStudioRoom,
+    ceilingSpotRigOptionsForStudioCeilingRow,
     setupStudioRoomPromoWallFillLight
 } from './studioRoomEnvironment.js';

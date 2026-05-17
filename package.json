@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "osc-server": "node osc-server.js",
+    "osc-ping": "node scripts/osc-udp-ping.mjs",
     "start": "concurrently -n osc,vite -c cyan,magenta \"npm run osc-server\" \"npm run dev\"",
     "download-hdri": "node scripts/download-hdri-from-config.js"
   },

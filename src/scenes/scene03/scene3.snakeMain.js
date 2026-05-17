@@ -8,7 +8,7 @@ import { fadeOpacity01, attachInstanceOpacityAttribute } from '../scene01/scene1
 import { curlNoiseWorld } from './scene3.curlNoise.js';
 import { generateLinkTubeWornTextures } from './scene3.linkTubeTextures.js';
 
-const SPHERE_COUNT = 1000;
+const SPHERE_COUNT = 700; // 1000から700に減らして軽量化や！🚀
 const SPHERE_RADIUS_TO_WORLD = 0.138;
 const SPHERE_SPAWN_JIT = { x: 170, y: 130, z: 170 };
 
@@ -194,30 +194,62 @@ function updateLinkInstances(scene, pairs, deltaTime) {
     }
 
     const pulseMap = scene._linkPulseByEdge || (scene._linkPulseByEdge = new Map());
+    const persistentLinks = scene._persistentLinks || (scene._persistentLinks = new Map());
     const pulseDecay = Math.exp(-deltaTime * 3.65);
 
-    if (!scene._linkPulseReady) {
-        scene._linkEdgePrev = keysNow;
-        scene._linkPulseReady = true;
-    } else {
-        const prev = scene._linkEdgePrev;
-        for (const k of keysNow) {
-            let p;
-            if (!prev.has(k)) p = 1.0;
-            else p = (pulseMap.get(k) ?? 0) * pulseDecay;
-            if (p < 0.003) pulseMap.delete(k);
-            else pulseMap.set(k, p);
+    // 1. 既存のリンクの更新（距離チェック）
+    for (const [key, link] of persistentLinks) {
+        const ia = link.ia;
+        const ib = link.ib;
+        const da = data[ia];
+        const db = data[ib];
+
+        // どちらかが非アクティブ、または距離が離れすぎたら削除
+        if (!da.active || !db.active) {
+            persistentLinks.delete(key);
+            continue;
         }
-        for (const k of [...pulseMap.keys()]) {
-            if (!keysNow.has(k)) pulseMap.delete(k);
+
+        const dx = da.worldPos.x - db.worldPos.x;
+        const dy = da.worldPos.y - db.worldPos.y;
+        const dz = da.worldPos.z - db.worldPos.z;
+        const dsq = dx * dx + dy * dy + dz * dz;
+
+        if (dsq > LINK_DISTANCE_SQ * 1.2) { // 少しバッファを持たせて切断
+            persistentLinks.delete(key);
         }
-        scene._linkEdgePrev = keysNow;
     }
 
-    let w = 0;
+    // 2. 新規リンクの追加
     for (let e = 0; e < nPair; e++) {
         const ia = pairs[e * 2];
         const ib = pairs[e * 2 + 1];
+        const key = edgeKey(ia, ib);
+        if (!persistentLinks.has(key)) {
+            persistentLinks.set(key, {
+                ia,
+                ib,
+                // インスタンスごとに固有の乱数を持たせてシェーダーで使う
+                seed: Math.random() * 100.0 
+            });
+            pulseMap.set(key, 1.0); // 新規接続時にパルス
+        }
+    }
+
+    // パルスの減衰
+    for (const [k, p] of pulseMap) {
+        const nextP = p * pulseDecay;
+        if (nextP < 0.003 || !persistentLinks.has(k)) pulseMap.delete(k);
+        else pulseMap.set(k, nextP);
+    }
+
+    // 3. インスタンスの描画
+    let w = 0;
+    // persistentLinks の順序を安定させるためにソートするか、
+    // あるいは単に順番に描画（Mapの挿入順）
+    for (const [key, link] of persistentLinks) {
+        const ia = link.ia;
+        const ib = link.ib;
         const pa = data[ia].worldPos;
         const pb = data[ib].worldPos;
 
@@ -236,8 +268,23 @@ function updateLinkInstances(scene, pairs, deltaTime) {
 
         const rwA = data[ia].radius * SPHERE_RADIUS_TO_WORLD;
         const rwB = data[ib].radius * SPHERE_RADIUS_TO_WORLD;
+
+        const lifeA = data[ia].age / data[ia].lifeMs;
+        const lifeB = data[ib].age / data[ib].lifeMs;
+        const fadeOutStart = 0.85;
+        let sizeScaleA = 1.0;
+        if (lifeA > fadeOutStart) sizeScaleA = 1.0 - (lifeA - fadeOutStart) / (1.0 - fadeOutStart);
+        let sizeScaleB = 1.0;
+        if (lifeB > fadeOutStart) sizeScaleB = 1.0 - (lifeB - fadeOutStart) / (1.0 - fadeOutStart);
+
+        const minSizeScale = Math.min(sizeScaleA, sizeScaleB);
+        if (minSizeScale <= 0.01) {
+            persistentLinks.delete(key);
+            continue;
+        }
+
         const linkR = THREE.MathUtils.clamp(
-            LINK_RADIUS_FRAC * 0.5 * (rwA + rwB),
+            LINK_RADIUS_FRAC * 0.5 * (rwA * sizeScaleA + rwB * sizeScaleB),
             LINK_RADIUS_MIN,
             LINK_RADIUS_MAX
         );
@@ -245,9 +292,13 @@ function updateLinkInstances(scene, pairs, deltaTime) {
         MAT.compose(TMP, QUAT, SCALE);
         inst.setMatrixAt(w, MAT);
 
-        const o = Math.min(sphereOp[ia] ?? 1, sphereOp[ib] ?? 1);
-        opAttr.array[w] = THREE.MathUtils.clamp(o * 0.98, 0, 1);
-        pulseAttr.array[w] = pulseMap.get(edgeKey(ia, ib)) ?? 0;
+        opAttr.array[w] = 1.0;
+        pulseAttr.array[w] = pulseMap.get(key) ?? 0;
+        
+        // シェーダーに渡すシード値（カスタム属性として追加する必要があるが、
+        // 今回はとりあえず instanceID で代用するか、既存の属性を流用検討）
+        // ひとまず instanceID でのぶるぶるを抑えるために persistentLinks を使う
+        
         w++;
         if (w >= MAX_LINKS) break;
     }
@@ -330,7 +381,7 @@ export function initCurlSnakeSystems(scene) {
     });
     applySphereOpacityInnerGlowShader(scene._snakeSphereMat);
 
-    const sphereGeo = new THREE.SphereGeometry(1, 16, 16);
+    const sphereGeo = new THREE.SphereGeometry(1, 16, 16); // 分割数を16に戻すやで！✨
     scene._snakeSphereOpacity = attachInstanceOpacityAttribute(sphereGeo, SPHERE_COUNT);
     scene._snakeInnerGlow = attachInnerGlowAttribute(sphereGeo, SPHERE_COUNT);
     scene._snakeSphereInst = new THREE.InstancedMesh(sphereGeo, scene._snakeSphereMat, SPHERE_COUNT);
@@ -352,7 +403,7 @@ export function initCurlSnakeSystems(scene) {
             vel: new THREE.Vector3(),
             active: false,
             age: 0,
-            lifeMs: 3200 + Math.random() * 5800,
+            lifeMs: 1200 + Math.random() * 2300, // 1800+3200 からさらに短縮
             radius: 125,
             emissiveIntensity: THREE.MathUtils.clamp(0.17 + (Math.random() - 0.5) * 0.08, 0.12, 0.24)
         });
@@ -372,28 +423,28 @@ export function initCurlSnakeSystems(scene) {
     scene._nodeLinkTubeTextures = linkTubeTex;
 
     scene._nodeLinkMat = new THREE.MeshPhysicalMaterial({
-        color: 0xf8e018,
-        metalness: 0,
-        roughness: 0.82,
+        color: 0xffff00, // ビビッドな黄色に変更
+        metalness: 0.1,
+        roughness: 0.8, // ツルッとさせて色をはっきり出す
         roughnessMap: linkTubeTex.roughnessMap,
         normalMap: linkTubeTex.normalMap,
         normalScale: new THREE.Vector2(0.58, 0.58),
         bumpMap: linkTubeTex.bumpMap,
         bumpScale: 0.014,
-        specularIntensity: 0.32,
+        specularIntensity: 0.5, // 反射を強めてキラッとさせる
         specularColor: new THREE.Color(0xffffff),
         envMap: env,
-        envMapIntensity: 0.11 * (0.55 + 0.45 * L),
-        sheen: 0.58,
-        sheenRoughness: 0.88,
-        sheenColor: new THREE.Color(0xfff2a0),
-        clearcoat: 0,
+        envMapIntensity: 0.11 * (0.55 + 0.45 * L), // 環境マップの映り込みを少し強める
+        sheen: 0.5,
+        sheenRoughness: 0.08,
+        sheenColor: new THREE.Color(0xffff00),
+        clearcoat: 0.1, // コーティングで光沢感を出す
         fog: true,
         transparent: true
     });
     applyNodeLinkCylinderMaterial(scene._nodeLinkMat);
 
-    const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 22, 2, false);
+    const cylGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1, false); // 分割数を最小限にして軽量化
     scene._nodeLinkOpacity = attachInstanceOpacityAttribute(cylGeo, MAX_LINKS);
     scene._nodeLinkPulse = attachLinkPulseAttribute(cylGeo, MAX_LINKS);
     scene._nodeLinkInst = new THREE.InstancedMesh(cylGeo, scene._nodeLinkMat, MAX_LINKS);
@@ -441,9 +492,11 @@ function clampSphereToRoom(scene, pos) {
 }
 
 /**
- * トラック6（OSC）で球を1つ生成。velocity は MIDI ベロシティ（大きさと初速の両方に効く）
+ * トラック6（OSC）で球を1つ生成。
+ * velocityMidi は MIDI ベロシティ（大きさにマッピング）
+ * durationMs は MIDI デュレーション（lifetime にマッピング）
  */
-export function scene3OnTrack6Spawn(scene, velocityMidi) {
+export function scene3OnTrack6Spawn(scene, velocityMidi, durationMs = 0) {
     if (!scene._snakeSphereData || !scene._snakeHeadPos) return;
     const v01 = THREE.MathUtils.clamp(velocityMidi / 127, 0.05, 1);
     const i = pickSphereSlot(scene);
@@ -457,12 +510,17 @@ export function scene3OnTrack6Spawn(scene, velocityMidi) {
     clampSphereToRoom(scene, d.worldPos);
 
     d.age = 0;
-    d.lifeMs = 2800 + Math.random() * 5200;
-    d.radius = 95 + v01 * 235;
+    // デュレーションが指定されていればそれを lifetime にマッピング（10倍して存在感を出す）
+    // 指定がなければデフォルトのランダム値
+    d.lifeMs = durationMs > 0 ? (durationMs * 30.0) : (1000 + Math.random() * 1800);
+    
+    // ベロシティ(v01)を大きさにマッピング
+    d.radius = 80 + v01 * 350;
 
     TMP.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5);
     if (TMP.lengthSq() < 1e-8) TMP.set(1, 0, 0);
     else TMP.normalize();
+    // 初速は半径に比例させる（大きいほど速い）
     const speed = VEL_PER_RADIUS * d.radius;
     d.vel.copy(TMP).multiplyScalar(speed);
 
@@ -506,6 +564,7 @@ export function updateCurlSnakeSystems(scene, deltaTime) {
 
     scene._centerSmoothed.lerp(scene._snakeHeadPos, 1 - Math.exp(-deltaTime * 2.4));
 
+    let totalGlow = 0;
     for (let i = 0; i < SPHERE_COUNT; i++) {
         const d = scene._snakeSphereData[i];
         if (!d.active) {
@@ -536,15 +595,29 @@ export function updateCurlSnakeSystems(scene, deltaTime) {
         }
 
         TMP.copy(d.worldPos);
-        const op = fadeOpacity01(d.age, d.lifeMs, 1500);
-        scene._snakeSphereOpacity.array[i] = THREE.MathUtils.clamp(op, 0, 1);
+        const life01 = d.age / d.lifeMs;
+        const fadeOutStart = 0.85; // 最後の15%で小さくなる
+        let sizeScale = 1.0;
+        if (life01 > fadeOutStart) {
+            sizeScale = 1.0 - (life01 - fadeOutStart) / (1.0 - fadeOutStart);
+            sizeScale = THREE.MathUtils.clamp(sizeScale, 0, 1);
+        }
 
-        const rad = d.radius * SPHERE_RADIUS_TO_WORLD;
+        // 透明度は固定（1.0）にするが、出現時のフェードインだけは残す（必要なら）
+        const op = life01 < 0.1 ? life01 / 0.1 : 1.0; 
+        scene._snakeSphereOpacity.array[i] = op;
+
+        const rad = d.radius * SPHERE_RADIUS_TO_WORLD * sizeScale;
+        
+        // 輝度の合計を計算（サイズと不透明度を考慮）
+        totalGlow += sizeScale * op;
+
         SCALE.setScalar(rad);
         QUAT.identity();
         MAT.compose(TMP, QUAT, SCALE);
         scene._snakeSphereInst.setMatrixAt(i, MAT);
     }
+    scene._totalSphereGlow = totalGlow; // 合計値をシーンに保存
     scene._snakeSphereOpacity.needsUpdate = true;
     scene._snakeSphereInst.instanceMatrix.needsUpdate = true;
 

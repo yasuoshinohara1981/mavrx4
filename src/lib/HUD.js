@@ -143,7 +143,7 @@ export class HUD {
     /**
      * HUDを描画
      */
-    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = [], sceneBankIndex = 0, totalSceneCount = 21, sceneIndex = 0, maxSceneSlots = 100) {
+    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = [], qiPulses = [], sceneBankIndex = 0, totalSceneCount = 21, sceneIndex = 0, maxSceneSlots = 100) {
         // 目盛りのスケール（カメラに合わせる）
         this.hudScales = hudScales;
         
@@ -193,7 +193,12 @@ export class HUD {
         // 航空機風HUD要素
         this.drawAltitudeTape(cameraPosition);
         this.drawFlightParameters(frameRate, distance, rotationX, rotationY);
-        
+
+        // 和弦「気」2Dサークル（ワールドロック投影・コールアウトより下層）
+        if (qiPulses && qiPulses.length > 0) {
+            this.drawQiPulses(qiPulses);
+        }
+
         // 2Dコールアウト
         if (callouts && callouts.length > 0) {
             this.drawCallouts(callouts);
@@ -201,6 +206,44 @@ export class HUD {
 
         // 最下端・最前面：スキャン＋シーンバンク（各列スロット10個は横並び）
         this.drawBottomSceneBankCluster(time, phase, currentBar, trackEffects, actualTick, sceneBankIndex, sceneIndex, totalSceneCount, maxSceneSlots);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * 和弦イベント用 HUD サークル：外側は赤縁線、内側は半透明イエロー塗り。alpha で消滅時フェード。
+     */
+    drawQiPulses(qiPulses) {
+        if (!qiPulses?.length) return;
+        this.ctx.save();
+
+        this.ctx.translate(-this.squareX, -this.squareY);
+
+        qiPulses.forEach((qi) => {
+            const a = qi.alpha ?? 0;
+            if (a <= 0.008 || qi.visible === false) return;
+
+            const { x, y, outerR, innerR } = qi;
+            if (!Number.isFinite(outerR) || outerR < 2) return;
+
+            const iy = typeof innerR === 'number' && innerR > 1 ? innerR : outerR * 0.75;
+
+            this.ctx.globalAlpha = 1;
+
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, Math.min(iy, outerR - 1.5), 0, Math.PI * 2);
+            this.ctx.closePath();
+            this.ctx.fillStyle = `rgba(255, 230, 74, ${0.38 * a})`;
+            this.ctx.fill();
+
+            this.ctx.strokeStyle = `rgba(220, 32, 48, ${a})`;
+            this.ctx.lineWidth = Math.max(2.2, Math.min(3.8, outerR * 0.045));
+            this.ctx.lineJoin = 'round';
+            this.ctx.beginPath();
+            this.ctx.arc(x, y, outerR, 0, Math.PI * 2);
+            this.ctx.closePath();
+            this.ctx.stroke();
+        });
 
         this.ctx.restore();
     }
@@ -488,7 +531,7 @@ export class HUD {
         const scanBandH = 26;
 
         const ph = Number.isFinite(phase) ? Math.floor(phase) : 0;
-        const t2 = trackEffects?.[2] ? 'INV' : '--';
+        const t2 = trackEffects?.[2] ? 'FLS' : '--';
         const t3 = trackEffects?.[3] ? 'CHR' : '--';
         const t4 = trackEffects?.[4] ? 'GLT' : '--';
 

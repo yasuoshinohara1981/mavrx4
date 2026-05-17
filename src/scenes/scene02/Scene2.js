@@ -74,8 +74,6 @@ export class Scene2 extends SceneBase {
 
         this.atmosphere = null;
 
-        this.laserScanMesh = null;
-        this._laserScanMaterial = null;
         this.wallTitleGroup = null;
         this._wallTitleMaterial = null;
 
@@ -172,8 +170,6 @@ export class Scene2 extends SceneBase {
     buildRoom() { Room.buildRoom(this); }
     _initWallMatteBlack3DText() { return Room.initWallMatteBlack3DText(this); }
     setupLights() { Room.setupLights(this); }
-    _initLaserScan() { Room.initLaserScan(this); }
-    _updateWallLaserScan() { Room.updateWallLaserScan(this, Scene2.TICK_LOOP); }
 
     // パーティクル・インスタンスの委譲
     createSpheres() { Shards.createSpheres(this); }
@@ -285,7 +281,6 @@ export class Scene2 extends SceneBase {
         this.setupCameraParticleDistances();
         this.initPostProcessing();
         await this._initWallMatteBlack3DText();
-        this._initLaserScan();
         this.initialized = true;
     }
 
@@ -355,7 +350,6 @@ export class Scene2 extends SceneBase {
         updateSsaoDistanceAttenuation(this, this._centerSmoothed);
 
         if (this.calloutSystem) this.calloutSystem.update(deltaTime, this.time, this.camera, { autoGenerate: false, maxCount: 8, margin: 200 });
-        this._updateWallLaserScan();
     }
 
     handleTrackNumber(trackNumber, message) {
@@ -400,11 +394,6 @@ export class Scene2 extends SceneBase {
         }
         if (this.promoWallFillLight) { this.scene.remove(this.promoWallFillLight); this.promoWallFillLight.dispose(); this.promoWallFillLight = null; }
         if (this.promoWallLightTarget) { this.scene.remove(this.promoWallLightTarget); this.promoWallLightTarget = null; }
-        if (this.laserScanMesh) {
-            this.scene.remove(this.laserScanMesh); if (this.laserScanMesh.geometry) this.laserScanMesh.geometry.dispose();
-            if (this._laserScanMaterial) { this._laserScanMaterial.dispose(); this._laserScanMaterial = null; }
-            this.laserScanMesh = null;
-        }
         if (this.wallTitleGroup) {
             this.scene.remove(this.wallTitleGroup);
             this.wallTitleGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); });

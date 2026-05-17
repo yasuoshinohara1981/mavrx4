@@ -62,11 +62,17 @@ osc.on('*', (message) => {
 });
 
 osc.on('open', () => {
-    console.log(`OSC受信開始: ポート ${OSC_PORT}`);
+    console.log(`OSC受信開始: UDP/IPv4 ポート ${OSC_PORT} (バインド ${osc.options?.plugin?.options?.open?.host ?? '0.0.0.0'})`);
+    console.log(
+        `OSC送信先は **127.0.0.1:${OSC_PORT}** を推奨。「localhost」だけだと IPv6(::1) になり届かん環境がある（特に Windows）で。`
+    );
 });
 
 osc.on('error', (error) => {
-    console.error('OSC Error:', error);
+    console.error('OSC Error (受信パケットの解凍失敗やソケットエラーのときもここに来る):', error?.message || error);
+    if (error?.stack) {
+        console.error(error.stack);
+    }
 });
 
 osc.open();

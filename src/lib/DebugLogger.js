@@ -32,14 +32,12 @@ const debugCategories = {
     
     // === 調査用（必要に応じてON） ===
     colorInversion: false,   // 色反転デバッグ
-    laserScan: false,        // レーザースキャン
-    
+
     // === シーン固有 ===
     scene01: false,
     scene02: false,
     scene03: false,
     scene04: false,
-    scene05: false,
     scene06: false,
     scene07: false,
     scene08: false,

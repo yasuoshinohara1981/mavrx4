@@ -19,7 +19,8 @@ const strobeFlashShader = {
         varying vec2 vUv;
         void main() {
             vec4 tex = texture2D(tDiffuse, vUv);
-            vec3 col = mix(tex.rgb, vec3(1.0), clamp(uFlash, 0.0, 1.0));
+            // 塗りつぶしを完全に廃止して、物理ライトの照り返しのみで見せる！
+            vec3 col = tex.rgb;
             gl_FragColor = vec4(col, tex.a);
         }
     `

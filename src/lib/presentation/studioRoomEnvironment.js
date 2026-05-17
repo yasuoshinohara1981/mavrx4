@@ -98,6 +98,29 @@ export function studioBoxOptionsForStudioRoom(sceneLightingScale, roomEnvTexture
 }
 
 /**
+ * 四隅蛍光灯の代わりに、天井付近へ水平 tube を **等間隔4本（軸 Z）** で並べる {@link StudioBox} オプション。
+ */
+export function studioBoxOptionsForStudioCeilingRow(sceneLightingScale, roomEnvTexture) {
+    const L = sceneLightingScale ?? 1;
+    return {
+        ...studioBoxOptionsForStudioRoom(sceneLightingScale, roomEnvTexture),
+        fluorescentLayout: 'ceilingRow',
+        ceilingRowFluorescent: {
+            ceilingY: STUDIO_CEILING_Y,
+            yOffset: -135,
+            count: 4,
+            spacingAlongX: 2400,
+            tubeLengthAlongZ: 7600,
+            radius: 40,
+            rowZ: 0
+        },
+        // 天井寄り配置のため角灯より均しが増えやすい — わずかに抑えキー Spot とのコントラストを残す
+        lightIntensity: 10.2 * L,
+        fluorescentPointIntensity: 32
+    };
+}
+
+/**
  * StudioBox.attachCeilingSpotRig に渡す共通フィールド（includeCeilingPlane は呼び側で上書き）
  */
 export function ceilingSpotRigOptionsForStudioRoom(sceneLightingScale) {
@@ -121,6 +144,16 @@ export function ceilingSpotRigOptionsForStudioRoom(sceneLightingScale) {
             intensity: 5_800_000,
             penumbra: 0.26
         }
+    };
+}
+
+/**
+ * シャドウ用キー Spot のみ。巨大な天井発光プレーン（emissive plane）は出さない。
+ */
+export function ceilingSpotRigOptionsForStudioCeilingRow(sceneLightingScale) {
+    return {
+        ...ceilingSpotRigOptionsForStudioRoom(sceneLightingScale),
+        includeCeilingPlane: false
     };
 }
 

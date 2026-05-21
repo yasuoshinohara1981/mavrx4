@@ -14,22 +14,14 @@ import { Scene07 } from '../scenes/scene07/Scene07.js';
 import { Scene08 } from '../scenes/scene08/Scene08.js';
 import { Scene09 } from '../scenes/scene09/Scene09.js';
 import { Scene10 } from '../scenes/scene10/Scene10.js';
-import { Scene11 } from '../scenes/scene11/Scene11.js';
-import { Scene12 } from '../scenes/scene12/Scene12.js';
-import { Scene13 } from '../scenes/scene13/Scene13.js';
-import { Scene14 } from '../scenes/scene14/Scene14.js';
-import { Scene15 } from '../scenes/scene15/Scene15.js';
-import { Scene16 } from '../scenes/scene16/Scene16.js';
-import { Scene17 } from '../scenes/scene17/Scene17.js';
-import { Scene18 } from '../scenes/scene18/Scene18.js';
-import { Scene19 } from '../scenes/scene19/Scene19.js';
-import { Scene20 } from '../scenes/scene20/Scene20.js';
-import { Scene21 } from '../scenes/scene21/Scene21.js';
-import { Scene22 } from '../scenes/scene22/Scene22.js';
 
-/** シーンバンク数（[]で切替）。10バンク × 10スロット = 100シーンまでUI上指定可能 */
-export const SCENE_BANK_COUNT = 10;
-/** 最大シーンスロット数（0〜99） */
+/** 登録シーン数（Scene01 = インデックス0） */
+export const SCENE_COUNT = 10;
+
+/** シーンバンク数（[]で切替。1バンク=最大10シーンまで） */
+export const SCENE_BANK_COUNT = Math.max(1, Math.ceil(SCENE_COUNT / 10));
+
+/** HUD・キー入力のクランプ用（バンク内は常に最大10スロット） */
 export const MAX_SCENE_SLOTS = SCENE_BANK_COUNT * 10;
 
 export class SceneManager {
@@ -103,42 +95,6 @@ export class SceneManager {
             case 9:
                 scene = new Scene10(this.renderer, this.camera, this.sharedResourceManager);
                 break;
-            case 10:
-                scene = new Scene11(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 11:
-                scene = new Scene12(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 12:
-                scene = new Scene13(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 13:
-                scene = new Scene14(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 14:
-                scene = new Scene15(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 15:
-                scene = new Scene16(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 16:
-                scene = new Scene17(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 17:
-                scene = new Scene18(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 18:
-                scene = new Scene19(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 19:
-                scene = new Scene20(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 20:
-                scene = new Scene21(this.renderer, this.camera, this.sharedResourceManager);
-                break;
-            case 21:
-                scene = new Scene22(this.renderer, this.camera, this.sharedResourceManager);
-                break;
             default:
                 console.warn(`無効なシーンインデックス: ${index}`);
                 return null;
@@ -170,18 +126,6 @@ this.createScene(this.defaultSceneIndex);
             this.scenes.push(new Scene08(this.renderer, this.camera));
             this.scenes.push(new Scene09(this.renderer, this.camera, this.sharedResourceManager));
             this.scenes.push(new Scene10(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene11(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene12(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene13(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene14(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene15(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene16(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene17(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene18(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene19(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene20(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene21(this.renderer, this.camera, this.sharedResourceManager));
-            this.scenes.push(new Scene22(this.renderer, this.camera, this.sharedResourceManager));
             
             // デフォルトシーンに設定
             this.currentSceneIndex = this.defaultSceneIndex;
@@ -296,8 +240,8 @@ return;
                             // if (index === 3 && newScene.updateInitialColors) {
                             //     newScene.updateInitialColors();
                             // }
-                            // シーン10の場合は、初期色を再計算
-                            if (index === 9 && newScene.updateInitialColors) {
+                            // カラビ・ヤウシーンの場合は、初期色を再計算（旧 Scene10 → インデックス8）
+                            if (index === 8 && newScene.updateInitialColors) {
                                 newScene.updateInitialColors();
                             }
                         });
@@ -379,7 +323,7 @@ this.switchScene(i);
     }
     
     /**
-     * シーンバンクの最大インデックス（0始まり）。常に 9（10バンク）まで [] で移動可能。
+     * シーンバンクの最大インデックス（0始まり）
      */
     getMaxSceneBankIndex() {
         return SCENE_BANK_COUNT - 1;

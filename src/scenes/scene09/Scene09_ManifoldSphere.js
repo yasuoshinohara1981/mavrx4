@@ -1,11 +1,11 @@
 /**
- * Scene10_ManifoldSphere: カラビ・ヤウ多様体上のマーカースフィア
+ * Scene09_ManifoldSphere: カラビ・ヤウ多様体上のマーカースフィア
  * 特定の位置を示す赤いsphereとコールアウトを管理
  */
 
 import * as THREE from 'three';
 
-export class Scene10_ManifoldSphere {
+export class Scene09_ManifoldSphere {
     constructor(position, label = '') {
         this.position = position.clone();
         this.label = label;

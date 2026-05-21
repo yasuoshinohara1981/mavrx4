@@ -57,26 +57,15 @@ export class SharedResourceManager {
                 },
                 pool: []
             },
-            // シーン9で使用：1万粒 = 100 x 100（リキッドグラス風エフェクト、メタボール効果）
+            // シーン9（カラビ・ヤウ）：100万粒。旧 scene10 をリナンバリング済み。
             scene09: {
-                maxParticles: 100 * 100,  // 10,000粒
-                cols: 100,
-                rows: 100,
-                baseRadius: 200.0,  // 球面上に配置
-                particleSize: 20.0,  // パーティクルサイズ（小さめ、メタボール効果で融合）
-                placementType: 'sphere',  // sphere
-                shaderPath: 'scene09',
-                pool: []
-            },
-            // シーン10で使用：100万粒 = 1000 x 1000（カラビ・ヤウ多様体、メモリ不足対策で減らす）
-            scene10: {
                 maxParticles: 1000 * 1000,  // 1,000,000
                 cols: 1000,
                 rows: 1000,
-                baseRadius: 0.0,  // 使用しない
-                particleSize: 4.0,  // カラビ・ヤウ多様体用
-                placementType: 'grid',  // デフォルト（カラビ・ヤウ多様体は後で初期化）
-                shaderPath: 'scene10',
+                baseRadius: 0.0,
+                particleSize: 4.0,
+                placementType: 'grid',
+                shaderPath: 'scene09',
                 pool: []
             }
         };

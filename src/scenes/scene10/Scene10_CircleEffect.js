@@ -1,10 +1,10 @@
 /**
- * Scene11_CircleEffect: トラック6用のCircleエフェクト
+ * Scene10_CircleEffect: トラック6用のCircleエフェクト
  */
 
 import * as THREE from 'three';
 
-export class Scene11_CircleEffect {
+export class Scene10_CircleEffect {
     constructor(center, velocity, durationMs) {
         this.center = center.clone();
         this.velocity = velocity;

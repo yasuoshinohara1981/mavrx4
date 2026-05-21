@@ -84,7 +84,7 @@ mavrx4/
 │   ├── scenes/
 │   │   ├── SceneBase.js    # シーンの基底クラス
 │   │   ├── SceneTemplate.js # 新規シーン用テンプレート
-│   │   ├── scene01/ 〜 scene17/ # 各シーン関連ファイル
+│   │   ├── scene01/ 〜 scene10/ # 各シーン関連ファイル（全10シーン）
 │   │   └── ...
 │   ├── systems/
 │   │   ├── OSCManager.js   # OSC通信管理
@@ -98,7 +98,7 @@ mavrx4/
 └── public/
     └── shaders/            # GLSLシェーダー
         ├── common/         # 共通シェーダー
-        ├── scene01/ 〜 scene17/ # 各シーン専用シェーダー
+        ├── scene01/ 〜 scene10/ # GPUパーティクル等各シーン専用シェーダー
         └── ...
 ```
 
@@ -114,18 +114,20 @@ mavrx4/
 
 #### シーン切り替え（Ctrl + 数字）
 
-起動時のデフォルトは `src/main.js` の `DEFAULT_SCENE_INDEX`（現在は Scene21）。
+起動時のデフォルトは `src/main.js` の `DEFAULT_SCENE_INDEX`（現在は **Scene10** = PLATEAU、index `9`）。
 
-- **Ctrl + 1**: Scene21
-- **Ctrl + 2**: Scene22（未実装なら無効）
-- **Ctrl + 3**: Scene23（同上）
-- **Ctrl + 4**: Scene24（同上）
-- **Ctrl + 5**: Scene25（同上）
-- **Ctrl + 6**: Scene26（同上）
-- **Ctrl + 7**: Scene27（同上）
-- **Ctrl + 8**: Scene28（同上）
-- **Ctrl + 9**: Scene29（同上）
-- **Ctrl + 0**: Scene20
+バンク0のみ（登録シーンは **Scene01〜10** の10本）。**`[` `]` でバンク切替しても当面はバンク0のみ有効**。
+
+- **Ctrl + 1**: Scene01
+- **Ctrl + 2**: Scene02
+- **Ctrl + 3**: Scene03
+- **Ctrl + 4**: Scene04
+- **Ctrl + 5**: Scene05
+- **Ctrl + 6**: Scene06
+- **Ctrl + 7**: Scene07
+- **Ctrl + 8**: Scene08
+- **Ctrl + 9**: Scene09（カラビ・ヤウ多様体／旧 Scene10）
+- **Ctrl + 0**: Scene10（Project PLATEAU／旧 Scene11）
 
 #### エフェクト・トラック処理（数字キー単体）
 - **0**: トラック10処理
@@ -167,11 +169,15 @@ mavrx4/
 - **Scene01**: 爆発とミサイルのパーティクルシステム
 - **Scene02**: 接続線と球体のネットワーク
 - **Scene03**: レーザースキャンとグラデーション背景
-- **Scene04**: 大規模なTerrain表示 (1000x1000)
-- **Scene07**: インスタンス化されたビルディング群
-- **Scene08**: GPUによる布（Cloth）シミュレーション
-- **Scene10**: カラビ・ヤウ多様体の可視化
-- **Scene11-17**: 最新の追加シーン（パーティクル、幾何学エフェクト等）
+- **Scene04**: 大規模 Terrain（1000×1000）
+- **Scene05**: テンプレート／軽量シーン
+- **Scene06**: パーティクル実験
+- **Scene07**: インスタンス建物など
+- **Scene08**: 布シミュレーション（Cloth）
+- **Scene09**: カラビ・ヤウ多様体（共有GPUパーティクル、`public/shaders/scene09/`）
+- **Scene10**: Project PLATEAU 街モデル表示
+
+**削除済み（実験室シリーズは `mavrx4-lab` へ移行後に本repoから除去）**: 旧 Scene09（新宿駅可視化）、Scene12〜22。
 
 ## 🔧 開発ガイド
 

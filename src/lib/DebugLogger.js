@@ -6,11 +6,11 @@
  *   import { debugLog, setDebugCategory } from './lib/DebugLogger.js';
  *   
  *   // ログ出力（カテゴリを指定）
- *   debugLog('scene10', 'メッセージ');
+ *   debugLog('scene09', 'メッセージ');
  *   debugLog('osc', 'OSCメッセージ', data);
  *   
  *   // カテゴリのON/OFF
- *   setDebugCategory('scene10', true);  // ON
+ *   setDebugCategory('scene09', true);  // ON（カラビ・ヤウ等）
  *   setDebugCategory('osc', false);     // OFF
  *   
  *   // 全カテゴリON/OFF

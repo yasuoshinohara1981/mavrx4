@@ -18,7 +18,7 @@ import { SharedResourceManager } from './lib/SharedResourceManager.js';
 const IS_DEVELOPMENT_MODE = false;  // 開発時は true に変更
 
 // デフォルトシーンのインデックス（0 = Scene01, 1 = Scene02, ...）
-const DEFAULT_SCENE_INDEX = 20;  // Scene21（配列0始まりで index 20）
+const DEFAULT_SCENE_INDEX = 9;  // Scene10（PLATEAU・旧 Scene11／index 9）
 
 // ============================================
 // 初期化

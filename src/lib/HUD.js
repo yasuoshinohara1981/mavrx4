@@ -143,7 +143,7 @@ export class HUD {
     /**
      * HUDを描画
      */
-    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = [], sceneBankIndex = 0, totalSceneCount = 21, sceneIndex = 0, maxSceneSlots = 100) {
+    display(frameRate, currentCameraIndex, cameraPosition, activeSpheres, time, rotationX, rotationY, distance, noiseLevel, backgroundWhite, oscStatus, particleCount, trackEffects = null, phase = 0, hudScales = null, hudGrid = null, currentBar = 0, debugText = '', actualTick = 0, cameraModeName = null, sceneNumber = null, callouts = [], sceneBankIndex = 0, totalSceneCount = 10, sceneIndex = 0, maxSceneSlots = 100) {
         // 目盛りのスケール（カメラに合わせる）
         this.hudScales = hudScales;
         
@@ -441,7 +441,7 @@ export class HUD {
         actualTick = 0,
         sceneBankIndex = 0,
         sceneIndex = 0,
-        loadedSceneCount = 21,
+        loadedSceneCount = 10,
         maxSceneSlots = 100
     ) {
         const w = this.squareWidth;

@@ -22,8 +22,8 @@ export class Scene08 extends SceneBase {
         this.useGPU = false;
         
         // グリッド設定
-        this.gridSizeX = 200; // CPU版は200x200 = 40000パーティクル
-        this.gridSizeZ = 200;
+        this.gridSizeX = 245; // CPU版 245x245 = 60025 パーティクル（6万前後）
+        this.gridSizeZ = 245;
         this.gridSpacing = 10.0; // グリッド間隔
         this.sphereRadius = 1.0; // Sphereの半径
         

@@ -6,11 +6,11 @@
  *   import { debugLog, setDebugCategory } from './lib/DebugLogger.js';
  *   
  *   // ログ出力（カテゴリを指定）
- *   debugLog('scene09', 'メッセージ');
+ *   debugLog('scene01', 'メッセージ');
  *   debugLog('osc', 'OSCメッセージ', data);
  *   
  *   // カテゴリのON/OFF
- *   setDebugCategory('scene09', true);  // ON（カラビ・ヤウ等）
+ *   setDebugCategory('scene01', true);  // ON
  *   setDebugCategory('osc', false);     // OFF
  *   
  *   // 全カテゴリON/OFF
@@ -43,8 +43,6 @@ const debugCategories = {
     scene06: false,
     scene07: false,
     scene08: false,
-    scene09: false,
-    scene10: false,
     
     // === システム ===
     init: false,             // 初期化ログ

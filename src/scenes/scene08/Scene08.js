@@ -822,99 +822,10 @@ export class Scene08 extends SceneBase {
     }
     
     /**
-     * 描画処理
+     * 描画処理（HUD・actualTick/phase は SceneBase.render に委譲）
      */
     render() {
-        // 背景色を設定
-        if (this.backgroundWhite) {
-            this.renderer.setClearColor(0xffffff);
-        } else {
-            this.renderer.setClearColor(0x000000);
-        }
-        
-        // 色反転エフェクトが有効な場合はColorInversionのcomposerを使用
-        if (this.colorInversion && this.colorInversion.isEnabled()) {
-            const rendered = this.colorInversion.render();
-            if (!rendered) {
-                if (this.scene) {
-                    this.renderer.render(this.scene, this.camera);
-                }
-            }
-        } else {
-            // ポストプロセッシングエフェクトが有効な場合はEffectComposerを使用
-            if (this.composer && 
-                ((this.chromaticAberrationPass && this.chromaticAberrationPass.enabled) ||
-                 (this.glitchPass && this.glitchPass.enabled) ||
-                 (this.bloomPass && this.bloomPass.enabled))) {
-                this.composer.render();
-            } else {
-                // 通常のレンダリング
-                if (this.scene) {
-                    this.renderer.render(this.scene, this.camera);
-                }
-            }
-        }
-        
-        // HUDを描画
-        if (this.hud) {
-            if (this.showHUD) {
-                const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
-                const now = performance.now();
-                const frameRate = this.lastFrameTime ? 1.0 / ((now - this.lastFrameTime) / 1000.0) : 60.0;
-                this.lastFrameTime = now;
-                
-                const isInverted = this.colorInversion && this.colorInversion.isEnabled();
-                
-                this.hud.display(
-                    frameRate,
-                    this.currentCameraIndex,
-                    cameraPos,
-                    this.numParticles,
-                    this.time,
-                    0,
-                    0,
-                    cameraPos.length(),
-                    0,
-                    isInverted,
-                    this.oscStatus,
-                    this.particleCount || this.numParticles, // particleCountが0の場合はnumParticlesを使用
-                    this.trackEffects,  // エフェクト状態を渡す
-                    this.phase,  // phase値を渡す
-                    this.title || null,  // sceneName
-                    this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
-                );
-            } else {
-                this.hud.clear();
-            }
-        }
-        
-        // スクリーンショットテキストを描画
-        this.drawScreenshotText();
-        
-        // デバッグ用シーンを描画（エフェクト適用後、HUDと同じタイミング）
-        // カメラデバッグとAxesHelperはエフェクトから除外
-        // SHOW_CAMERA_DEBUGがtrueの時のみレンダリング
-        if (this.SHOW_CAMERA_DEBUG && this.debugScene) {
-            // debugSceneの背景を確実に透明にする
-            this.debugScene.background = null;
-            
-            // EffectComposerがレンダーターゲットを変更している可能性があるので、
-            // 明示的にnull（画面）に設定
-            this.renderer.setRenderTarget(null);
-            
-            // autoClearを一時的にfalseにして、sceneの描画結果を保持したまま
-            // debugSceneを上書きレンダリングする
-            const originalAutoClear = this.renderer.autoClear;
-            this.renderer.autoClear = false;
-            
-            this.renderer.render(this.debugScene, this.camera);
-            
-            // autoClearを復元
-            this.renderer.autoClear = originalAutoClear;
-        }
-        
-        // カメラデバッグを描画
-        this.drawCameraDebug();
+        super.render();
     }
     
     /**

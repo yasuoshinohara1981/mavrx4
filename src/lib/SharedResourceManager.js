@@ -56,17 +56,6 @@ export class SharedResourceManager {
                     terrainZRange: { min: -100, max: 100 }
                 },
                 pool: []
-            },
-            // シーン9（カラビ・ヤウ）：100万粒。旧 scene10 をリナンバリング済み。
-            scene09: {
-                maxParticles: 1000 * 1000,  // 1,000,000
-                cols: 1000,
-                rows: 1000,
-                baseRadius: 0.0,
-                particleSize: 4.0,
-                placementType: 'grid',
-                shaderPath: 'scene09',
-                pool: []
             }
         };
         

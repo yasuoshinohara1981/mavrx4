@@ -5,7 +5,6 @@
 
 import { SceneBase } from '../SceneBase.js';
 import { Scene02_RedSphere } from './Scene02_RedSphere.js';
-// import { Scene02_YellowSphere } from './Scene02_YellowSphere.js';  // 黄色いsphereをコメントアウト
 import { Scene02_Connection } from './Scene02_Connection.js';
 import { Scene02_Scope } from './Scene02_Scope.js';
 import * as THREE from 'three';

@@ -926,105 +926,15 @@ export class Scene06 extends SceneBase {
 }
     
     /**
-     * 描画処理
+     * 描画処理（HUD・actualTick/phase は SceneBase.render に委譲。爆発コールアウトのみ後描画）
      */
     render() {
-        // 背景色を設定
-        if (this.backgroundWhite) {
-            this.renderer.setClearColor(0xffffff);
-        } else {
-            this.renderer.setClearColor(0x000000);
-        }
-        
-        // 色反転エフェクトが有効な場合はColorInversionのcomposerを使用
-        if (this.colorInversion && this.colorInversion.isEnabled()) {
-            // ColorInversionのcomposerがシーンをレンダリングして色反転を適用
-            const rendered = this.colorInversion.render();
-            if (!rendered) {
-                // レンダリングに失敗した場合は通常のレンダリング
-        if (this.scene) {
-            this.renderer.render(this.scene, this.camera);
-                }
-            }
-        } else {
-            // ポストプロセッシングエフェクトが有効な場合はEffectComposerを使用
-            if (this.composer && 
-                ((this.chromaticAberrationPass && this.chromaticAberrationPass.enabled) ||
-                 (this.glitchPass && this.glitchPass.enabled))) {
-                this.composer.render();
-            } else {
-                // 通常のレンダリング
-                if (this.scene) {
-                    this.renderer.render(this.scene, this.camera);
-                }
-            }
-        }
-        
-        // HUDを描画
-        if (this.hud) {
-            if (this.showHUD) {
-                const cameraPos = this.cameraParticles[this.currentCameraIndex]?.getPosition() || new THREE.Vector3();
-                const now = performance.now();
-                const frameRate = this.lastFrameTime ? 1.0 / ((now - this.lastFrameTime) / 1000.0) : 60.0;
-                this.lastFrameTime = now;
-                
-                // 色反転エフェクトが有効な場合は、HUDの色も反転する
-                const isInverted = this.colorInversion && this.colorInversion.isEnabled();
-                
-                this.hud.display(
-                    frameRate,
-                    this.currentCameraIndex,
-                    cameraPos,
-                    this.numParticles,
-                    this.time,
-                    0,
-                    0,
-                    cameraPos.length(),
-                    this.explosions.length > 0 ? this.explosions[this.explosions.length - 1].getIntensity() : 0,
-                    isInverted, // backgroundWhite（色反転エフェクトが有効な場合はtrue）
-                    this.oscStatus,
-                    this.particleCount,
-                    this.trackEffects,  // エフェクト状態を渡す
-                    this.phase,  // phase値を渡す
-                    this.title || null,  // sceneName
-                    this.sceneIndex !== undefined ? this.sceneIndex : null  // sceneIndex
-                );
-            } else {
-                this.hud.clear();
-            }
-        }
-        
-        // 爆発のコールアウトを描画（全ての爆発に対して、HUDの後に描画して一番手前に表示）
-        // 爆発sphereが表示されている時だけコールアウトを表示
+        super.render();
         for (const explosion of this.explosions) {
             if (explosion.explosionMesh && explosion.explosionMesh.visible) {
                 this.drawExplosionCallout(explosion);
             }
         }
-        
-        // スクリーンショットテキストを描画
-        this.drawScreenshotText();
-        
-        // デバッグ用シーンを描画（エフェクト適用後、HUDと同じタイミング）
-        // カメラデバッグとAxesHelperはエフェクトから除外
-        // SHOW_CAMERA_DEBUGがtrueの時のみレンダリング
-        if (this.SHOW_CAMERA_DEBUG && this.debugScene) {
-            // debugSceneの背景を確実に透明にする
-            this.debugScene.background = null;
-            
-            // autoClearを一時的にfalseにして、sceneの描画結果を保持したまま
-            // debugSceneを上書きレンダリングする
-            const originalAutoClear = this.renderer.autoClear;
-            this.renderer.autoClear = false;
-            
-            this.renderer.render(this.debugScene, this.camera);
-            
-            // autoClearを復元
-            this.renderer.autoClear = originalAutoClear;
-        }
-        
-        // カメラデバッグを描画（テキスト）
-        this.drawCameraDebug();
     }
     
     /**

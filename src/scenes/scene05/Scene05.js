@@ -48,7 +48,7 @@ export class Scene05 extends SceneBase {
         
         // ヒートマップ用の色設定（赤になりにくくする）
         this.heatMapMinValue = 0.0; // 最小値（速度や高さ）
-        this.heatMapMaxValue = 100.0; // 最大値（8.0 → 100.0に大幅に上げて赤になりにくく）
+        this.heatMapMaxValue = 60.0; // 最大値（100.0 → 60.0に調整してブルーを見えやすく）
         
         // 線で接続するための情報
         this.connections = []; // 接続情報 [{from: index, to: index}, ...]
@@ -89,7 +89,7 @@ export class Scene05 extends SceneBase {
         
         // ブルームエフェクト
         this.bloomPass = null;
-        this.bloomEnabled = true;  // デフォルトで有効
+        this.bloomEnabled = false;  // デフォルトで無効
         
         // 赤い十字と数字のマーカー
         this.markerGroup = null;
@@ -340,10 +340,10 @@ export class Scene05 extends SceneBase {
                 this.pointsPositions[idx + 2] = gridZ;
                 this.pointsSizes[particleIndex] = this.sphereRadius * 2.0;
                 
-                // 初期色（青）
-                this.pointsColors[idx] = 0.0;     // R
-                this.pointsColors[idx + 1] = 0.0; // G
-                this.pointsColors[idx + 2] = 1.0; // B
+                // 初期色（濃いグレー）
+                this.pointsColors[idx] = 0.2;     // R
+                this.pointsColors[idx + 1] = 0.2; // G
+                this.pointsColors[idx + 2] = 0.2; // B
                 
                 particleIndex++;
             }
@@ -979,18 +979,18 @@ export class Scene05 extends SceneBase {
     }
     
     /**
-     * ヒートマップの色を計算（0.0-1.0の値から色を生成、黒 → 白のグラデーション）
+     * ヒートマップの色を計算（0.0-1.0の値から色を生成、濃いグレー → 薄いブルーのグラデーション）
      * @param {number} value - 0.0（低い値）から1.0（高い値）
      * @returns {THREE.Color} ヒートマップの色
      */
     getHeatMapColor(value) {
-        // 黒 → 白 のグラデーション
+        // 濃いグレー → 薄いブルー のグラデーション
         const color = new THREE.Color();
         
-        // valueが0.0の時は黒（0, 0, 0）、1.0の時は白（1, 1, 1）
-        color.r = value;
-        color.g = value;
-        color.b = value;
+        // valueが0.0の時は濃いグレー（0.2, 0.2, 0.2）、1.0の時は薄いブルー（0.7, 0.9, 1.0）
+        color.r = 0.2 + value * 0.5;
+        color.g = 0.2 + value * 0.7;
+        color.b = 0.2 + value * 0.8;
         
         return color;
     }
@@ -1649,10 +1649,10 @@ export class Scene05 extends SceneBase {
             this.pointsPositions[idx + 1] = y;
             this.pointsPositions[idx + 2] = gridZ;
             
-            // 初期色（青）
-            this.pointsColors[idx] = 0.0;
-            this.pointsColors[idx + 1] = 0.0;
-            this.pointsColors[idx + 2] = 1.0;
+            // 初期色（濃いグレー）
+            this.pointsColors[idx] = 0.2;
+            this.pointsColors[idx + 1] = 0.2;
+            this.pointsColors[idx + 2] = 0.2;
         }
         
         // Pointsの属性を更新

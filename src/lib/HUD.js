@@ -264,8 +264,11 @@ export class HUD {
                     if (textCharCount > 0) {
                         const displayPadding = 5;
                         const displayText = labelText.substring(0, textCharCount);
+                        // fontScale が指定されていれば拡大（未指定=1倍で従来通り）
+                        const fontPx = Math.round(14 * (callout.fontScale || 1));
                         this.ctx.fillStyle = '#ffffff';
-                        this.ctx.font = 'bold 14px Courier New';
+                        // HUD本体と同じフォントファミリーに揃える
+                        this.ctx.font = `${this.fontWeight} ${fontPx}px ${this.fontFamily}`;
                         this.ctx.textAlign = dirX > 0 ? 'left' : 'right';
                         this.ctx.textBaseline = 'bottom';
                         this.ctx.fillText(displayText, dirX > 0 ? tipX + displayPadding : tipX - displayPadding, tipY - displayPadding);
@@ -488,9 +491,9 @@ export class HUD {
         const scanBandH = 26;
 
         const ph = Number.isFinite(phase) ? Math.floor(phase) : 0;
-        const t2 = trackEffects?.[2] ? 'INV' : '--';
-        const t3 = trackEffects?.[3] ? 'CHR' : '--';
-        const t4 = trackEffects?.[4] ? 'GLT' : '--';
+        const t2 = trackEffects?.[2] ? 'FX2' : '---';
+        const t3 = trackEffects?.[3] ? 'FX3' : '---';
+        const t4 = trackEffects?.[4] ? 'FX4' : '---';
 
         // 上→下：スキャン → バンクラベル → スロット横列（必ず bandTop から開始）
         let y = bandTop;
@@ -997,24 +1000,12 @@ export class HUD {
             this.ctx.fillText('EFFECTS:', x, y);
             y += lineHeight;
             
-            const effectNames = {
-                1: 'CAM',
-                2: 'INV',
-                3: 'CHR',
-                4: 'GLT',
-                5: 'FX5',
-                6: 'FX6',
-                7: 'FX7',
-                8: 'FX8',
-                9: 'FX9'
-            };
-            
             for (let track = 1; track <= 9; track++) {
                 const isOn = trackEffects[track] || false;
                 const status = isOn ? 'ON' : 'OFF';
                 const color = isOn ? this.hudColor : this.hudColorDim;
                 this.ctx.fillStyle = color;
-                this.ctx.fillText(`  ${effectNames[track]}: ${status}`, x, y);
+                this.ctx.fillText(`  FX${track}: ${status}`, x, y);
                 y += lineHeight;
             }
             this.ctx.fillStyle = this.hudColor;  // 色を戻す

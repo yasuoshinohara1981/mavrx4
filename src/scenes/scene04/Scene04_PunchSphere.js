@@ -98,7 +98,7 @@ export class Scene04_PunchSphere {
     createThreeObjects(scene, group, debugScene, terrainRotationX = Math.PI / 12) {
         // 赤いsphereを作成
         const sphereSize = this.calculateSphereSize();
-        const geometry = new THREE.SphereGeometry(sphereSize, 16, 16);
+        const geometry = new THREE.SphereGeometry(sphereSize, 32, 32);
         const material = new THREE.MeshStandardMaterial({
             color: 0xff0000,  // 赤
             emissive: 0x330000,
@@ -121,7 +121,7 @@ export class Scene04_PunchSphere {
      */
     createCircleEffect(scene, terrainRotationX = 0) {
         // 水平方向のCircle（地形の回転に合わせて地面と平行）
-        const circleSegments = 32;
+        const circleSegments = 256;
         const circleGeometry = new THREE.RingGeometry(0, 1, circleSegments);
         
         // 黄色のCircle（半透明）
@@ -170,7 +170,7 @@ export class Scene04_PunchSphere {
             const sphereSize = this.calculateSphereSize();
             if (this.sphereMesh.geometry.parameters.radius !== sphereSize) {
                 const oldGeometry = this.sphereMesh.geometry;
-                this.sphereMesh.geometry = new THREE.SphereGeometry(sphereSize, 16, 16);
+                this.sphereMesh.geometry = new THREE.SphereGeometry(sphereSize, 32, 32);
                 oldGeometry.dispose();
             }
         }

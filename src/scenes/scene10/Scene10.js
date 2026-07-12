@@ -114,11 +114,12 @@ export class Scene10 extends SceneBase {
         this.boundSphereShader = null;   // 境界球のノイズ変位uniform更新用
 
         /**
-         * 境界球ヒートマップのモード（フラグで切替。戻すときはここを0に）
+         * 境界球ヒートマップのモード（フラグで切替）
          * 0 = 黒→青→シアン→緑→黄→赤（標高マップ）
          * 1 = 白→赤（シンプル2色）
+         * 2 = 全部白（ヒートマップ無し・素のワイヤーフレーム）
          */
-        this.sphereHeatmapMode = 1;
+        this.sphereHeatmapMode = 2;
 
         // ---- 境界球ノイズのLFO群（RandomLFO = LFOでLFOを揺らす → 予測不能な漂い）----
         // 4オクターブそれぞれの「時間の速さ・振幅・空間周波数」を独立に漂わせる。
@@ -502,9 +503,15 @@ vec3 heatColor(float t) {
 vec3 heatColorWhiteRed(float t) {
     return mix(vec3(1.0), vec3(1.0, 0.0, 0.0), clamp(t, 0.0, 1.0));
 }
+// モード2: 全部白（ヒートマップ無し）
+vec3 pickHeatColor(float t) {
+    if (uHeatMode < 0.5) return heatColor(t);
+    if (uHeatMode < 1.5) return heatColorWhiteRed(t);
+    return vec3(1.0);
+}
 ` + shader.fragmentShader.replace(
                 'vec4 diffuseColor = vec4( diffuse, opacity );',
-                'vec4 diffuseColor = vec4( uHeatMode < 0.5 ? heatColor(vHeat) : heatColorWhiteRed(vHeat), opacity );'
+                'vec4 diffuseColor = vec4( pickHeatColor(vHeat), opacity );'
             );
             this.boundSphereShader = shader;
         };

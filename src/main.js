@@ -62,8 +62,8 @@ let frameCount = 0;
 // キー入力管理
 let ctrlPressed = false;
 
-// マウスカーソル表示（デフォルト表示、c/C で表示/非表示を切り替え）
-let appCursorVisible = true;
+// マウスカーソル表示（デフォルト非表示、c/C で表示/非表示を切り替え）
+let appCursorVisible = false;
 
 function applyAppCursorVisibility() {
     const style = appCursorVisible ? '' : 'none';

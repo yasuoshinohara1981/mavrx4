@@ -575,10 +575,16 @@ export class Scene11 extends SceneBase {
             let d = Math.sin(x * 3.1 + seed) * Math.cos(y * 2.7 - seed) * 0.5
                   + Math.sin(y * 4.3 + seed * 1.7) * Math.cos(z * 3.9 + seed) * 0.3
                   + Math.sin(z * 5.1 - seed) * Math.cos(x * 4.5 + seed * 2.1) * 0.2;
-            // ハッシュで「たまーーーに」だけ、ごく弱く尖る（上位5%の頂点のみ）
+            // 高周波のディテール（detailを上げた細かい面に乗る二次うねり。
+            // ampに比例させて全体の量感は保ちつつ、表面の凹凸感を一段リッチに）
+            d += (Math.sin(x * 9.7 - seed * 1.3) * Math.cos(z * 8.9 + seed) * 0.16
+                + Math.sin(y * 11.3 + seed * 0.7) * Math.cos(x * 10.1 - seed) * 0.12
+                + Math.sin(z * 12.7 + seed * 2.3) * Math.cos(y * 9.3 + seed) * 0.10);
+            // ハッシュで「たまーーーに」だけ、ごく弱く尖る（上位3%の頂点のみ。
+            // detailを上げて頂点が増えたぶん、しきい値を上げてスパイクの本数を保つ）
             const h = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed * 13.1) * 43758.5453;
             const f = h - Math.floor(h);
-            const spike = f > 0.95 ? (f - 0.95) * 6.0 * spikeAmt : 0;
+            const spike = f > 0.97 ? (f - 0.97) * 10.0 * spikeAmt : 0;
             const r = 1 + amp * d + spike;
             pos.setXYZ(i, x * r, y * r, z * r);
         }
@@ -586,21 +592,22 @@ export class Scene11 extends SceneBase {
         return geo;
     }
 
-    /** ノード球（ハブ／普通で別ジオメトリの InstancedMesh・ライティングで陰影） */
+    /** ノード球（ハブ／普通で別ジオメトリの InstancedMesh・ワイヤーフレーム表示） */
     _buildNodeMesh() {
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0xffffff, roughness: 0.9, metalness: 0.0,
-            emissive: 0x223040, emissiveIntensity: 0.25,
-            bumpMap: this.bumpTexture, bumpScale: 0.5,   // 微細凸凹でマット
+        // ワイヤーフレーム：三角形の辺だけを線で見せる（データビジュアル／解剖図っぽい趣）。
+        // ライティング非依存の Basic にして、辺の白線がくっきり出るようにする。
+        const mat = new THREE.MeshBasicMaterial({
+            color: 0xffffff, wireframe: true,
+            transparent: true, opacity: 0.85, depthWrite: true,
         });
-        // 普通ノード：丸みを保った軽い歪み（尖りはたまーーーに）
-        const nodeGeo = this._makeNeuronGeometry(2, 0.18, 0.35, 1.3);
+        // 普通ノード：丸みを保った軽い歪み（尖りはたまーーーに）。detailを上げて面を細かく
+        const nodeGeo = this._makeNeuronGeometry(4, 0.18, 0.35, 1.3);
         this.nodeMesh = new THREE.InstancedMesh(nodeGeo, mat, this.nodeCount - this.hubCount);
         this.nodeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.nodeMesh.frustumCulled = false;
         this.scene.add(this.nodeMesh);
         // ハブ：丸みは保ちつつ少しゴツい神経核（尖りは控えめ・高ディテール）
-        const hubGeo = this._makeNeuronGeometry(3, 0.24, 0.5, 7.7);
+        const hubGeo = this._makeNeuronGeometry(5, 0.24, 0.5, 7.7);
         this.hubMesh = new THREE.InstancedMesh(hubGeo, mat, this.hubCount);
         this.hubMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         this.hubMesh.frustumCulled = false;
@@ -720,7 +727,8 @@ export class Scene11 extends SceneBase {
         }
 
         // エナジーで発光/サイズを持ち上げ（パルスは小さめ）
-        if (this.nodeMesh) this.nodeMesh.material.emissiveIntensity = 0.22 + eBoost * 0.5;
+        // ワイヤーフレームは emissive が無いので、エナジーで線の不透明度を上げて“光る”表現に
+        if (this.nodeMesh) this.nodeMesh.material.opacity = 0.7 + eBoost * 0.3;
         if (this.fiberLines) this.fiberLines.material.opacity = 0.5 + eBoost * 0.4;
         if (this.pulsePoints) this.pulsePoints.material.size = 11 + eBoost * 6;
 
